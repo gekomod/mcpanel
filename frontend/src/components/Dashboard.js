@@ -13,11 +13,13 @@ import {
   FiTrash2,
   FiAlertCircle,
   FiDownload,
-  FiXCircle
+  FiXCircle,
+  FiUserPlus
 } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import AddServer from './AddServer';
+import AddUserDialog from './AddUserDialog';
 
 const DashboardContainer = styled.div`
   padding: 20px;
@@ -257,6 +259,14 @@ const ErrorMessage = styled.div`
   font-size: 0.9rem;
 `;
 
+const AddUserButton = styled(AddButton)`
+  background: #3b82f6;
+  
+  &:hover {
+    background: #2563eb;
+  }
+`;
+
 function Dashboard() {
   const [servers, setServers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -265,6 +275,7 @@ function Dashboard() {
   const [actionErrors, setActionErrors] = useState({});
   const [serverSizes, setServerSizes] = useState({});
   const navigate = useNavigate();
+  const [showAddUser, setShowAddUser] = useState(false);
 
   useEffect(() => {
     fetchServers();
@@ -451,6 +462,10 @@ function Dashboard() {
     }
     return server.status === 'running';
   }).length;
+  
+  const handleUserAdded = () => {
+    console.log('User added - refresh users list if needed');
+  };
 
   // Calculate total storage used
   const totalStorageUsed = Object.values(serverSizes).reduce((total, size) => total + size, 0);
@@ -463,9 +478,14 @@ function Dashboard() {
     <DashboardContainer>
       <Header>
         <Title>Server Dashboard</Title>
-        <AddButton onClick={() => setShowAddServer(true)}>
-          <FiPlus /> Add Server
-        </AddButton>
+		    <div style={{ display: 'flex', gap: '10px' }}>
+		    <AddButton onClick={() => setShowAddUser(true)} style={{ backgroundColor: '#3b82f6' }}>
+		      <FiUserPlus /> Add User
+		    </AddButton>
+		    <AddButton onClick={() => setShowAddServer(true)}>
+		      <FiPlus /> Add Server
+		    </AddButton>
+        </div>
       </Header>
       
       <StatsGrid>
@@ -628,6 +648,12 @@ function Dashboard() {
         isOpen={showAddServer}
         onClose={() => setShowAddServer(false)}
         onServerAdded={handleServerAdded}
+      />
+      
+      <AddUserDialog
+        isOpen={showAddUser}
+        onClose={() => setShowAddUser(false)}
+        onUserAdded={handleUserAdded}
       />
     </DashboardContainer>
   );

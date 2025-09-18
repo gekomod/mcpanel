@@ -51,7 +51,8 @@ def login():
                 'user': {
                     'id': user.id,
                     'username': user.username,
-                    'email': user.email
+                    'email': user.email,
+                    'role': user.role
                 },
                 'access_token': access_token
             }), 200
