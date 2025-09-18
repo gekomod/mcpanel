@@ -32,42 +32,33 @@ def register():
 
 @auth.route('/login', methods=['POST'])
 def login():
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
-    
-    if not username or not password:
-        return jsonify({'error': 'Username and password required'}), 400
-    
-    user = User.query.filter_by(username=username).first()
-    
-    if user and user.check_password(password):
-        # Create access token
-        access_token = create_access_token(
-            identity=user.id,
-            expires_delta=timedelta(hours=24)
-        )
+    try:
+        data = request.get_json()
+        username = data.get('username')
+        password = data.get('password')
         
-        # Create response with cookie
-        response = jsonify({
-            'message': 'Login successful',
-            'user': user.to_dict(),
-            'access_token': access_token
-        })
+        if not username or not password:
+            return jsonify({'error': 'Username and password required'}), 400
         
-        # Set HTTP-only cookie
-        response.set_cookie(
-            'access_token',
-            access_token,
-            httponly=True,
-            secure=False,  # True in production
-            samesite='Lax',
-            max_age=24 * 60 * 60  # 24 hours
-        )
+        user = User.query.filter_by(username=username).first()
         
-        return response
-    
-    return jsonify({'error': 'Invalid credentials'}), 401
+        if user and user.check_password(password):
+            # ZMIENIONE: Użyj stringa jako identity
+            access_token = create_access_token(identity=str(user.id))
+            
+            return jsonify({
+                'message': 'Login successful',
+                'user': {
+                    'id': user.id,
+                    'username': user.username,
+                    'email': user.email
+                },
+                'access_token': access_token
+            }), 200
+        
+        return jsonify({'error': 'Invalid credentials'}), 401
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @auth.route('/profile', methods=['GET'])
 @jwt_required()
@@ -110,3 +101,17 @@ def get_all_users():
     
     users = User.query.all()
     return jsonify([user.to_dict() for user in users])
+
+@auth.route('/debug-token', methods=['GET'])
+@jwt_required()
+def debug_token():
+    from flask_jwt_extended import get_jwt
+    current_user_id = get_jwt_identity()
+    jwt_data = get_jwt()
+    
+    return jsonify({
+        'user_id': current_user_id,
+        'user_id_type': type(current_user_id).__name__,
+        'jwt_data': jwt_data,
+        'message': 'Token debug information'
+    })
