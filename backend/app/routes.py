@@ -1,0 +1,1428 @@
+from flask import Blueprint, request, jsonify, current_app
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from .models import db, User, Server, Permission, BedrockVersion, Addon
+from .managers import server_manager, file_manager
+from .bedrock_manager import BedrockAddonManager
+from datetime import datetime
+import os
+
+main = Blueprint('main', __name__)
+
+def get_bedrock_manager():
+    from flask import current_app
+    return BedrockAddonManager(current_app.config['SERVER_BASE_PATH'])
+
+@main.route('/servers', methods=['GET'])
+@jwt_required()
+def get_servers():
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    if user.role == 'admin':
+        servers = Server.query.all()
+    else:
+        # Get servers that the user has permissions for
+        servers = Server.query.join(Permission).filter(
+            Permission.user_id == current_user_id
+        ).all()
+    
+    return jsonify([server.to_dict() for server in servers])
+    
+@main.route('/servers', methods=['POST'])
+@jwt_required()
+def create_server():
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    if user.role != 'admin':
+        return jsonify({'error': 'Only admins can create servers'}), 403
+    
+    data = request.get_json()
+    name = data.get('name')
+    server_type = data.get('type')
+    version = data.get('version')
+    port = data.get('port', 25565)
+    
+    if not name or not server_type or not version:
+        return jsonify({'error': 'Missing required fields'}), 400
+    
+    # Check if server name already exists
+    if Server.query.filter_by(name=name).first():
+        return jsonify({'error': 'Server with this name already exists'}), 400
+    
+    # Check if port is already in use
+    if Server.query.filter_by(port=port).first():
+        return jsonify({'error': 'Port is already in use'}), 400
+    
+    # Create server directory
+    server_path = os.path.join(current_app.config['SERVER_BASE_PATH'], name)
+    try:
+        os.makedirs(server_path, exist_ok=True)
+    except Exception as e:
+        return jsonify({'error': f'Failed to create server directory: {str(e)}'}), 500
+    
+    # Create server
+    server = Server(
+        name=name,
+        type=server_type,
+        version=version,
+        port=port,
+        path=server_path,
+        status='stopped'
+    )
+    
+    db.session.add(server)
+    db.session.commit()
+    
+    # Create default server.properties for Java servers
+    if server_type == 'java':
+        try:
+            properties_file = os.path.join(server_path, 'server.properties')
+            with open(properties_file, 'w') as f:
+                f.write(f"#Minecraft server properties\n")
+                f.write(f"server-port={port}\n")
+                f.write(f"motd={name}\n")
+                f.write(f"max-players=20\n")
+                f.write(f"online-mode=true\n")
+                f.write(f"enable-rcon=false\n")
+        except Exception as e:
+            print(f"Warning: Could not create server.properties: {e}")
+    
+    return jsonify(server.to_dict()), 201
+    
+@main.route('/servers/<int:server_id>', methods=['DELETE'])
+@jwt_required()
+def delete_server(server_id):
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    if user.role != 'admin':
+        return jsonify({'error': 'Only admins can delete servers'}), 403
+    
+    server = Server.query.get_or_404(server_id)
+    
+    # Stop server if it's running
+    if server.status == 'running':
+        server_manager.stop_server(server_id)
+    
+    # Delete server directory
+    try:
+        import shutil
+        server_path = server_manager.get_server_path(server.name)
+        if os.path.exists(server_path):
+            shutil.rmtree(server_path)
+    except Exception as e:
+        print(f"Warning: Could not delete server directory: {e}")
+    
+    # Delete server from database
+    db.session.delete(server)
+    db.session.commit()
+    
+    return jsonify({'message': 'Server deleted successfully'})
+
+@main.route('/servers/<int:server_id>', methods=['GET'])
+@jwt_required()
+def get_server(server_id):
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'view'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    return jsonify(server.to_dict())
+
+@main.route('/servers/<int:server_id>/start', methods=['POST'])
+@jwt_required()
+def start_server(server_id):
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_start'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    print(f"Starting server {server_id} ({server.name})")
+    
+    # Get bedrock URL if needed (BEFORE starting thread)
+    bedrock_url = None
+    if server.type == 'bedrock':
+        from .models import BedrockVersion
+        bedrock_version = BedrockVersion.query.filter_by(
+            version=server.version, 
+            is_active=True
+        ).first()
+        if bedrock_version:
+            bedrock_url = bedrock_version.download_url
+        else:
+            return jsonify({'error': f'Bedrock version {server.version} not found'}), 400
+    
+    success, message = server_manager.start_server(server, bedrock_url)
+    
+    if success:
+        print(f"Server {server_id} start initiated: {message}")
+        return jsonify({'message': message})
+    else:
+        print(f"Server {server_id} start failed: {message}")
+        return jsonify({'error': message}), 500
+
+@main.route('/servers/<int:server_id>/stop', methods=['POST'])
+@jwt_required()
+def stop_server(server_id):
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_stop'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    success, message = server_manager.stop_server(server_id)
+    if success:
+        server.status = 'stopped'
+        db.session.commit()
+        return jsonify({'message': message})
+    else:
+        return jsonify({'error': message}), 500
+
+@main.route('/servers/<int:server_id>/restart', methods=['POST'])
+@jwt_required()
+def restart_server(server_id):
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_restart'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    # Stop the server
+    stop_success, stop_message = server_manager.stop_server(server_id)
+    if not stop_success:
+        return jsonify({'error': f"Failed to stop server: {stop_message}"}), 500
+    
+    # Start the server
+    start_success, start_message = server_manager.start_server(server)
+    if start_success:
+        server.status = 'running'
+        db.session.commit()
+        return jsonify({'message': 'Server restarted successfully'})
+    else:
+        server.status = 'stopped'
+        db.session.commit()
+        return jsonify({'error': f"Failed to start server: {start_message}"}), 500
+
+@main.route('/servers/<int:server_id>/files', methods=['GET'])
+@jwt_required()
+def list_files(server_id):
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    path = request.args.get('path', '')
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    files, error = file_manager.list_files(server.name, path)
+    if error:
+        return jsonify({'error': error}), 500
+    
+    return jsonify(files)
+
+@main.route('/servers/<int:server_id>/files/read', methods=['GET'])
+@jwt_required()
+def read_file(server_id):
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    file_path = request.args.get('path', '')
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    content, error = file_manager.read_file(server.name, file_path)
+    if error:
+        return jsonify({'error': error}), 500
+    
+    return jsonify({'content': content})
+
+@main.route('/servers/<int:server_id>/files/write', methods=['POST'])
+@jwt_required()
+def write_file(server_id):
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    data = request.get_json()
+    file_path = data.get('path', '')
+    content = data.get('content', '')
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    success, error = file_manager.write_file(server.name, file_path, content)
+    if error:
+        return jsonify({'error': error}), 500
+    
+    return jsonify({'message': 'File saved successfully'})
+
+@main.route('/servers/<int:server_id>/properties', methods=['GET'])
+@jwt_required()
+def get_properties(server_id):
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    properties = server_manager.get_server_properties(server.name)
+    if properties is None:
+        return jsonify({'error': 'Server properties not found'}), 404
+    
+    return jsonify(properties)
+
+@main.route('/servers/<int:server_id>/properties', methods=['POST'])
+@jwt_required()
+def update_properties(server_id):
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    properties = request.get_json()
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    success, message = server_manager.update_server_properties(server.name, properties)
+    if success:
+        return jsonify({'message': message})
+    else:
+        return jsonify({'error': message}), 500
+
+@main.route('/servers/<int:server_id>/users', methods=['GET'])
+@jwt_required()
+def get_server_users(server_id):
+    current_user_id = get_jwt_identity()
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_manage_users'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    permissions = Permission.query.filter_by(server_id=server_id).all()
+    users = []
+    
+    for perm in permissions:
+        user = User.query.get(perm.user_id)
+        users.append({
+            'user_id': user.id,
+            'username': user.username,
+            'permissions': {
+                'can_start': perm.can_start,
+                'can_stop': perm.can_stop,
+                'can_restart': perm.can_restart,
+                'can_edit_files': perm.can_edit_files,
+                'can_manage_users': perm.can_manage_users,
+                'can_install_plugins': perm.can_install_plugins
+            }
+        })
+    
+    return jsonify(users)
+
+@main.route('/servers/<int:server_id>/users', methods=['POST'])
+@jwt_required()
+def add_server_user(server_id):
+    current_user_id = get_jwt_identity()
+    data = request.get_json()
+    username = data.get('username')
+    permissions = data.get('permissions', {})
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_manage_users'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    
+    # Check if permission already exists
+    existing_perm = Permission.query.filter_by(
+        user_id=user.id, server_id=server_id
+    ).first()
+    
+    if existing_perm:
+        return jsonify({'error': 'User already has permissions for this server'}), 400
+    
+    # Create new permission
+    new_perm = Permission(
+        user_id=user.id,
+        server_id=server_id,
+        can_start=permissions.get('can_start', False),
+        can_stop=permissions.get('can_stop', False),
+        can_restart=permissions.get('can_restart', False),
+        can_edit_files=permissions.get('can_edit_files', False),
+        can_manage_users=permissions.get('can_manage_users', False),
+        can_install_plugins=permissions.get('can_install_plugins', False)
+    )
+    
+    db.session.add(new_perm)
+    db.session.commit()
+    
+    return jsonify({'message': 'User added to server successfully'})
+
+@main.route('/servers/<int:server_id>/users/<int:user_id>', methods=['PUT'])
+@jwt_required()
+def update_server_user(server_id, user_id):
+    current_user_id = get_jwt_identity()
+    data = request.get_json()
+    permissions = data.get('permissions', {})
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_manage_users'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    perm = Permission.query.filter_by(
+        user_id=user_id, server_id=server_id
+    ).first_or_404()
+    
+    perm.can_start = permissions.get('can_start', perm.can_start)
+    perm.can_stop = permissions.get('can_stop', perm.can_stop)
+    perm.can_restart = permissions.get('can_restart', perm.can_restart)
+    perm.can_edit_files = permissions.get('can_edit_files', perm.can_edit_files)
+    perm.can_manage_users = permissions.get('can_manage_users', perm.can_manage_users)
+    perm.can_install_plugins = permissions.get('can_install_plugins', perm.can_install_plugins)
+    
+    db.session.commit()
+    
+    return jsonify({'message': 'User permissions updated successfully'})
+    
+@main.route('/servers/<int:server_id>/download-progress', methods=['GET'])
+@jwt_required()
+def get_download_progress(server_id):
+    current_user_id = get_jwt_identity()
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'view'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    progress = server_manager.get_download_progress(server_id)
+    
+    # Stop polling if progress is complete or error
+    if progress['status'] in ['complete', 'error', 'idle']:
+        print(f"Stopping polling for server {server_id} - status: {progress['status']}")
+    
+    return jsonify(progress)
+
+@main.route('/servers/<int:server_id>/users/<int:user_id>', methods=['DELETE'])
+@jwt_required()
+def remove_server_user(server_id, user_id):
+    current_user_id = get_jwt_identity()
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_manage_users'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    perm = Permission.query.filter_by(
+        user_id=user_id, server_id=server_id
+    ).first_or_404()
+    
+    db.session.delete(perm)
+    db.session.commit()
+    
+    return jsonify({'message': 'User removed from server successfully'})
+    
+@main.route('/servers/<int:server_id>/cancel-download', methods=['POST'])
+@jwt_required()
+def cancel_download(server_id):
+    current_user_id = get_jwt_identity()
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_start'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    success = server_manager.cancel_download(server_id)
+    if success:
+        return jsonify({'message': 'Download cancelled successfully'})
+    else:
+        return jsonify({'error': 'No active download to cancel'}), 400
+    
+@main.route('/users', methods=['GET'])
+@jwt_required()
+def get_users():
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    # Only admins can see all users
+    if user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    users = User.query.all()
+    return jsonify([user.to_dict() for user in users])
+    
+# Endpointy do zarządzania wersjami Bedrock
+@main.route('/bedrock-versions', methods=['GET'])
+@jwt_required()
+def get_bedrock_versions():
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    # Only admins can manage bedrock versions
+    if user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    versions = BedrockVersion.query.filter_by(is_active=True).all()
+    return jsonify([version.to_dict() for version in versions])
+
+@main.route('/bedrock-versions/all', methods=['GET'])
+@jwt_required()
+def get_all_bedrock_versions():
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    # Only admins can manage bedrock versions
+    if user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    versions = BedrockVersion.query.all()
+    return jsonify([version.to_dict() for version in versions])
+
+@main.route('/bedrock-versions', methods=['POST'])
+@jwt_required()
+def add_bedrock_version():
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    # Only admins can add bedrock versions
+    if user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    data = request.get_json()
+    version = data.get('version')
+    download_url = data.get('download_url')
+    
+    if not version or not download_url:
+        return jsonify({'error': 'Missing required fields'}), 400
+    
+    # Check if version already exists
+    if BedrockVersion.query.filter_by(version=version).first():
+        return jsonify({'error': 'Version already exists'}), 400
+    
+    bedrock_version = BedrockVersion(
+        version=version,
+        download_url=download_url
+    )
+    
+    db.session.add(bedrock_version)
+    db.session.commit()
+    
+    return jsonify(bedrock_version.to_dict()), 201
+
+@main.route('/bedrock-versions/<int:version_id>', methods=['PUT'])
+@jwt_required()
+def update_bedrock_version(version_id):
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    # Only admins can update bedrock versions
+    if user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    bedrock_version = BedrockVersion.query.get_or_404(version_id)
+    data = request.get_json()
+    
+    if 'version' in data:
+        # Check if new version already exists (excluding current version)
+        existing = BedrockVersion.query.filter(
+            BedrockVersion.version == data['version'],
+            BedrockVersion.id != version_id
+        ).first()
+        if existing:
+            return jsonify({'error': 'Version already exists'}), 400
+        bedrock_version.version = data['version']
+    
+    if 'download_url' in data:
+        bedrock_version.download_url = data['download_url']
+    
+    if 'is_active' in data:
+        bedrock_version.is_active = data['is_active']
+    
+    db.session.commit()
+    
+    return jsonify(bedrock_version.to_dict())
+
+@main.route('/bedrock-versions/<int:version_id>', methods=['DELETE'])
+@jwt_required()
+def delete_bedrock_version(version_id):
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    # Only admins can delete bedrock versions
+    if user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    bedrock_version = BedrockVersion.query.get_or_404(version_id)
+    
+    # Check if any server is using this version
+    servers_using_version = Server.query.filter_by(
+        type='bedrock', 
+        version=bedrock_version.version
+    ).count()
+    
+    if servers_using_version > 0:
+        return jsonify({
+            'error': f'Cannot delete version. {servers_using_version} server(s) are using it.'
+        }), 400
+    
+    db.session.delete(bedrock_version)
+    db.session.commit()
+    
+    return jsonify({'message': 'Version deleted successfully'})
+    
+@main.route('/servers/<int:server_id>/real-status', methods=['GET'])
+@jwt_required()
+def get_real_server_status(server_id):
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'view'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    # Get real status from server manager
+    real_status = server_manager.get_server_status(server_id)
+    
+    # Update database if status is different
+    if real_status['running'] and server.status != 'running':
+        server.status = 'running'
+        db.session.commit()
+    elif not real_status['running'] and server.status != 'stopped':
+        server.status = 'stopped'
+        db.session.commit()
+    
+    return jsonify({
+        'database_status': server.status,
+        'real_status': real_status,
+        'is_running': real_status['running']
+    })
+    
+@main.route('/servers/<int:server_id>/logs', methods=['GET'])
+@jwt_required()
+def get_server_logs(server_id):
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    # Get logs from server manager
+    logs, error = server_manager.get_server_logs(server.name)
+    if error:
+        return jsonify({'error': error}), 500
+    
+    return jsonify({'logs': logs})
+    
+@main.route('/servers/<int:server_id>/command', methods=['POST'])
+@jwt_required()
+def send_command(server_id):
+    current_user_id = get_jwt_identity()
+    data = request.get_json()
+    command = data.get('command', '')
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    # Check if server is running
+    server = Server.query.get_or_404(server_id)
+    if server.status != 'running':
+        return jsonify({'error': 'Server is not running'}), 400
+    
+    success, message = server_manager.send_command(server_id, command)
+    if success:
+        return jsonify({'message': message})
+    else:
+        return jsonify({'error': message}), 500
+
+@main.route('/servers/<int:server_id>/realtime-output', methods=['GET'])
+@jwt_required()
+def get_realtime_output(server_id):
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    # Get real-time output from server manager
+    output = server_manager.get_realtime_output(server_id)
+    
+    return jsonify({'output': output})
+    
+# Endpointy do zarządzania addonami
+@main.route('/addons', methods=['GET'])
+@jwt_required()
+def get_addons():
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    # Only admins can manage addons
+    if user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    addons = Addon.query.all()
+    return jsonify([addon.to_dict() for addon in addons])
+
+@main.route('/addons', methods=['POST'])
+@jwt_required()
+def create_addon():
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    # Only admins can create addons
+    if user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    data = request.get_json()
+    
+    required_fields = ['name', 'type', 'version', 'minecraft_version']
+    for field in required_fields:
+        if not data.get(field):
+            return jsonify({'error': f'Missing required field: {field}'}), 400
+    
+    # Sprawdź czy wymagane URL są obecne w zależności od typu
+    if data['type'] == 'addon':
+        if not data.get('behavior_pack_url') and not data.get('resource_pack_url'):
+            return jsonify({'error': 'Bedrock addon requires at least one pack URL'}), 400
+    else:
+        if not data.get('download_url'):
+            return jsonify({'error': 'Plugin/script requires download URL'}), 400
+    
+    # Check if addon with same name and version already exists
+    existing = Addon.query.filter_by(
+        name=data['name'], 
+        version=data['version']
+    ).first()
+    
+    if existing:
+        return jsonify({'error': 'Addon with this name and version already exists'}), 400
+    
+    addon = Addon(
+        name=data['name'],
+        type=data['type'],
+        version=data['version'],
+        minecraft_version=data['minecraft_version'],
+        download_url=data.get('download_url'),
+        behavior_pack_url=data.get('behavior_pack_url'),
+        resource_pack_url=data.get('resource_pack_url'),
+        image_url=data.get('image_url'),
+        description=data.get('description'),
+        author=data.get('author'),
+        is_installed=False  # Zawsze false przy tworzeniu
+    )
+    
+    db.session.add(addon)
+    db.session.commit()
+    
+    return jsonify(addon.to_dict()), 201
+
+@main.route('/addons/<int:addon_id>', methods=['PUT'])
+@jwt_required()
+def update_addon(addon_id):
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    # Only admins can update addons
+    if user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    addon = Addon.query.get_or_404(addon_id)
+    data = request.get_json()
+    
+    if 'name' in data and 'version' in data:
+        # Check if new name and version already exists (excluding current addon)
+        existing = Addon.query.filter(
+            Addon.name == data['name'],
+            Addon.version == data['version'],
+            Addon.id != addon_id
+        ).first()
+        if existing:
+            return jsonify({'error': 'Addon with this name and version already exists'}), 400
+    
+    # Aktualizuj pola
+    update_fields = ['name', 'type', 'version', 'minecraft_version', 'download_url',
+                    'behavior_pack_url', 'resource_pack_url', 'image_url', 
+                    'description', 'author', 'is_active', 'is_installed']
+    
+    for field in update_fields:
+        if field in data:
+            setattr(addon, field, data[field])
+    
+    db.session.commit()
+    
+    return jsonify(addon.to_dict())
+    
+@main.route('/servers/<int:server_id>/installed-addons', methods=['GET'])
+@jwt_required()
+def get_installed_addons(server_id):
+    current_user_id = get_jwt_identity()
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    # Pobierz zainstalowane addony dla tego serwera
+    installed_addons = Addon.query.filter_by(is_installed=True).all()
+    return jsonify([addon.to_dict() for addon in installed_addons])
+
+# Dodaj endpoint do instalacji/odinstalowania addona
+@main.route('/servers/<int:server_id>/addons/<int:addon_id>/install', methods=['POST'])
+@jwt_required()
+def install_addon(server_id, addon_id):
+    current_user_id = get_jwt_identity()
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    addon = Addon.query.get_or_404(addon_id)
+    server = Server.query.get_or_404(server_id)
+    
+    # Dla światów - specjalna obsługa
+    if addon.type == 'worlds':
+        if server.type != 'bedrock':
+            return jsonify({'error': 'Worlds can only be installed on Bedrock servers'}), 400
+        
+        # Sprawdź kompatybilność wersji
+        if addon.minecraft_version != server.version:
+            return jsonify({'error': f'World is for Minecraft {addon.minecraft_version}, server is running {server.version}'}), 400
+    else:
+        # Dla innych typów - oryginalna logika
+        if server.type != 'bedrock':
+            return jsonify({'error': 'Addons can only be installed on Bedrock servers'}), 400
+        
+        # Sprawdź kompatybilność wersji
+        if addon.minecraft_version != server.version:
+            return jsonify({'error': f'Addon is for Minecraft {addon.minecraft_version}, server is running {server.version}'}), 400
+    
+    # Utwórz manager
+    bedrock_manager = get_bedrock_manager()
+    
+    # Instaluj addon (metoda install_addon teraz obsługuje wszystkie typy)
+    success, result = bedrock_manager.install_addon(addon, server.name)
+    
+    if success:
+        print(f"Install result: {result}")
+        
+        # Dla addonów (nie światów) - zapisz informacje o packach
+        if addon.type != 'worlds' and 'pack_info' in result:
+            pack_info = result['pack_info']
+            if 'behavior_pack_uuid' in pack_info:
+                addon.behavior_pack_uuid = pack_info['behavior_pack_uuid']
+            if 'behavior_pack_version' in pack_info:
+                addon.behavior_pack_version = pack_info['behavior_pack_version']
+            if 'resource_pack_uuid' in pack_info:
+                addon.resource_pack_uuid = pack_info['resource_pack_uuid']
+            if 'resource_pack_version' in pack_info:
+                addon.resource_pack_version = pack_info['resource_pack_version']
+        
+        # UŻYJ NOWYCH METOD do zarządzania installed_on_servers
+        addon.add_installed_server(server.id)
+        addon.is_installed = True
+        
+        # Dla światów nie ustawiamy enabled (światy nie mają stanu enabled/disabled)
+        if addon.type != 'worlds':
+            addon.enabled = True
+        
+        db.session.commit()
+        
+        # Zwróć odpowiedź w zależności od typu
+        if addon.type == 'worlds':
+            return jsonify({
+                'message': result.get('message', 'World installed successfully'),
+                'details': result.get('results', {}),
+                'server_added': server.id in addon.get_installed_servers()
+            })
+        else:
+            return jsonify({
+                'message': f"{addon.type.capitalize()} installed successfully",
+                'details': result.get('results', {}),
+                'server_added': server.id in addon.get_installed_servers()
+            })
+    else:
+        # Obsłuż błąd - result może być stringiem lub dict z polem 'error'
+        error_message = result.get('error', result) if isinstance(result, dict) else result
+        return jsonify({'error': error_message}), 500
+        
+@main.route('/admin/fix-installed-addons', methods=['POST'])
+@jwt_required()
+def fix_installed_addons():
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    # Only admins can run this
+    if user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    # Pobierz wszystkie serwery
+    servers = Server.query.all()
+    fixed_count = 0
+    
+    for server in servers:
+        if server.type != 'bedrock':
+            continue
+            
+        server_path = os.path.join(current_app.config['SERVER_BASE_PATH'], server.name)
+        
+        # Sprawdź behavior_packs
+        behavior_packs_path = os.path.join(server_path, 'behavior_packs')
+        if os.path.exists(behavior_packs_path):
+            for addon_name in os.listdir(behavior_packs_path):
+                addon_path = os.path.join(behavior_packs_path, addon_name)
+                if os.path.isdir(addon_path):
+                    # Znajdź addon po nazwie
+                    addon = Addon.query.filter_by(name=addon_name).first()
+                    if addon:
+                        # Napraw installed_on_servers
+                        if addon.installed_on_servers is None:
+                            addon.installed_on_servers = []
+                        elif isinstance(addon.installed_on_servers, dict):
+                            addon.installed_on_servers = list(addon.installed_on_servers.values())
+                        
+                        # Dodaj serwer do listy jeśli go nie ma
+                        if server.id not in addon.installed_on_servers:
+                            addon.installed_on_servers.append(server.id)
+                            addon.is_installed = True
+                            fixed_count += 1
+                            print(f"Added server {server.id} to addon {addon.name}")
+        
+        # Sprawdź resource_packs
+        resource_packs_path = os.path.join(server_path, 'resource_packs')
+        if os.path.exists(resource_packs_path):
+            for addon_name in os.listdir(resource_packs_path):
+                addon_path = os.path.join(resource_packs_path, addon_name)
+                if os.path.isdir(addon_path):
+                    # Znajdź addon po nazwie
+                    addon = Addon.query.filter_by(name=addon_name).first()
+                    if addon:
+                        # Napraw installed_on_servers
+                        if addon.installed_on_servers is None:
+                            addon.installed_on_servers = []
+                        elif isinstance(addon.installed_on_servers, dict):
+                            addon.installed_on_servers = list(addon.installed_on_servers.values())
+                        
+                        # Dodaj serwer do listy jeśli go nie ma
+                        if server.id not in addon.installed_on_servers:
+                            addon.installed_on_servers.append(server.id)
+                            addon.is_installed = True
+                            fixed_count += 1
+                            print(f"Added server {server.id} to addon {addon.name}")
+    
+    db.session.commit()
+    
+    return jsonify({
+        'message': f'Fixed {fixed_count} addon-server relationships'
+    })
+
+@main.route('/servers/<int:server_id>/addons/<int:addon_id>/uninstall', methods=['POST'])
+@jwt_required()
+def uninstall_addon(server_id, addon_id):
+    current_user_id = get_jwt_identity()
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    addon = Addon.query.get_or_404(addon_id)
+    server = Server.query.get_or_404(server_id)
+    
+    # Utwórz manager
+    bedrock_manager = get_bedrock_manager()
+    
+    # Odinstaluj addon
+    success, result = bedrock_manager.uninstall_addon(addon, server.name)
+    
+    if success:
+        # UŻYJ NOWYCH METOD do zarządzania installed_on_servers
+        addon.remove_installed_server(server.id)
+        
+        # Jeśli nie zainstalowany na żadnym serwerze, zresetuj status
+        if not addon.get_installed_servers():
+            addon.is_installed = False
+            # Dla addonów (nie światów) - zresetuj informacje o packach
+            if addon.type != 'worlds':
+                addon.behavior_pack_uuid = None
+                addon.behavior_pack_version = None
+                addon.resource_pack_uuid = None
+                addon.resource_pack_version = None
+        
+        db.session.commit()
+        
+        # Zwróć odpowiedź w zależności od typu wyniku
+        if isinstance(result, dict) and 'message' in result:
+            return jsonify({'message': result['message']})
+        else:
+            return jsonify({'message': result})
+    else:
+        # Obsłuż błąd - result może być stringiem lub dict z polem 'error'
+        error_message = result.get('error', result) if isinstance(result, dict) else result
+        return jsonify({'error': error_message}), 500
+        
+@main.route('/servers/<int:server_id>/addons/<int:addon_id>/enable', methods=['POST'])
+@jwt_required()
+def enable_addon(server_id, addon_id):
+    current_user_id = get_jwt_identity()
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    addon = Addon.query.get_or_404(addon_id)
+    server = Server.query.get_or_404(server_id)
+    
+    # Tylko dla serwerów Bedrock
+    if server.type != 'bedrock':
+        return jsonify({'error': 'Addons can only be enabled on Bedrock servers'}), 400
+    
+    # Sprawdź czy addon jest zainstalowany (UŻYJ NOWEJ METODY)
+    if not addon.is_installed or server.id not in addon.get_installed_servers():
+        return jsonify({'error': 'Addon is not installed on this server'}), 400
+    
+    # Utwórz manager
+    bedrock_manager = get_bedrock_manager()
+    
+    # Włącz addon
+    success, result = bedrock_manager.toggle_addon(server.name, addon, enable=True)
+    
+    if success:
+        # Zapisz status enabled
+        addon.enabled = True
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Addon enabled successfully',
+            'details': result
+        })
+    else:
+        return jsonify({'error': result}), 500
+
+@main.route('/servers/<int:server_id>/addons/<int:addon_id>/disable', methods=['POST'])
+@jwt_required()
+def disable_addon(server_id, addon_id):
+    current_user_id = get_jwt_identity()
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    addon = Addon.query.get_or_404(addon_id)
+    server = Server.query.get_or_404(server_id)
+    
+    # Tylko dla serwerów Bedrock
+    if server.type != 'bedrock':
+        return jsonify({'error': 'Addons can only be disabled on Bedrock servers'}), 400
+    
+    # Sprawdź czy addon jest zainstalowany (UŻYJ NOWEJ METODY)
+    if not addon.is_installed or server.id not in addon.get_installed_servers():
+        return jsonify({'error': 'Addon is not installed on this server'}), 400
+    
+    # Utwórz manager
+    bedrock_manager = get_bedrock_manager()
+    
+    # Wyłącz addon
+    success, result = bedrock_manager.toggle_addon(server.name, addon, enable=False)
+    
+    if success:
+        # Zapisz status enabled
+        addon.enabled = False
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Addon disabled successfully',
+            'details': result
+        })
+    else:
+        return jsonify({'error': result}), 500
+
+@main.route('/addons/<int:addon_id>', methods=['DELETE'])
+@jwt_required()
+def delete_addon(addon_id):
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    # Only admins can delete addons
+    if user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    addon = Addon.query.get_or_404(addon_id)
+    
+    db.session.delete(addon)
+    db.session.commit()
+    
+    return jsonify({'message': 'Addon deleted successfully'})
+
+@main.route('/addons/types', methods=['GET'])
+@jwt_required()
+def get_addon_types():
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    # Only admins can access addon types
+    if user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    return jsonify({
+        'types': ['addon', 'plugin', 'script','worlds','textures'],
+        'minecraft_versions': ['1.20.15','1.20.10','1.20.1']
+    })
+
+@main.route('/servers/<int:server_id>/performance', methods=['GET'])
+@jwt_required()
+def get_server_performance(server_id):
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'view'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    try:
+        import psutil
+        import time
+        
+        performance_data = {
+            'cpu_percent': 0.0,
+            'memory_percent': 0.0,
+            'tps': 20.0,  # Domyślnie maksymalne TPS
+            'players_online': 0,
+            'network_up': 0,
+            'network_down': 0,
+            'uptime': 0
+        }
+        
+        # Pobierz rzeczywiste statystyki jeśli serwer działa
+        if server.status == 'running' and server.pid:
+            try:
+                process = psutil.Process(server.pid)
+                
+                # CPU usage
+                performance_data['cpu_percent'] = round(process.cpu_percent(interval=0.1), 1)
+                
+                # Memory usage
+                memory_info = process.memory_info()
+                performance_data['memory_percent'] = round((memory_info.rss / psutil.virtual_memory().total) * 100, 1)
+                
+                # Uptime
+                create_time = process.create_time()
+                performance_data['uptime'] = int(time.time() - create_time)
+                
+                # Network stats (jeśli dostępne)
+                try:
+                    net_io = process.io_counters()
+                    performance_data['network_up'] = net_io.write_bytes // 1024
+                    performance_data['network_down'] = net_io.read_bytes // 1024
+                except (AttributeError, psutil.AccessDenied):
+                    pass
+                    
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                # Proces nie istnieje lub brak uprawnień
+                server.status = 'stopped'
+                server.pid = None
+                db.session.commit()
+        
+        # Pobierz liczbę graczy z server.properties (dla Minecraft)
+        try:
+            properties = server_manager.get_server_properties(server.name)
+            if properties and 'max-players' in properties:
+                # To jest uproszczenie - w rzeczywistości trzeba by parsować listę graczy
+                performance_data['players_online'] = 0  # Tymczasowo 0
+        except:
+            pass
+        
+        # TPS - trudne do zmierzenia bez bezpośredniego dostępu do logów serwera
+        # Można spróbować oszacować na podstawie obciążenia CPU
+        if performance_data['cpu_percent'] > 90:
+            performance_data['tps'] = round(20 * (1 - (performance_data['cpu_percent'] - 90) / 100), 1)
+        else:
+            performance_data['tps'] = 20.0
+        
+        return jsonify(performance_data)
+        
+    except Exception as e:
+        return jsonify({'error': f'Error getting performance stats: {str(e)}'}), 500
+
+@main.route('/servers/<int:server_id>/quick-settings', methods=['GET'])
+@jwt_required()
+def get_quick_settings(server_id):
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    # Pobierz ustawienia z server.properties
+    properties = server_manager.get_server_properties(server.name)
+    
+    quick_settings = {
+        'difficulty': properties.get('difficulty', 'easy'),
+        'gamemode': properties.get('gamemode', 'survival'),
+        'whitelist': properties.get('white-list', 'false').lower() == 'true'
+    }
+    
+    return jsonify(quick_settings)
+
+@main.route('/servers/<int:server_id>/quick-settings', methods=['POST'])
+@jwt_required()
+def update_quick_settings(server_id):
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    data = request.get_json()
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    # Pobierz aktualne properties
+    properties = server_manager.get_server_properties(server.name)
+    if not properties:
+        return jsonify({'error': 'Could not read server properties'}), 500
+    
+    # Aktualizuj wybrane ustawienia
+    if 'difficulty' in data:
+        properties['difficulty'] = data['difficulty']
+    
+    if 'gamemode' in data:
+        properties['gamemode'] = data['gamemode']
+    
+    if 'whitelist' in data:
+        properties['white-list'] = 'true' if data['whitelist'] else 'false'
+    
+    # Zapisz zmiany
+    success, message = server_manager.update_server_properties(server.name, properties)
+    if success:
+        return jsonify({'message': 'Quick settings updated successfully'})
+    else:
+        return jsonify({'error': message}), 500
+
+@main.route('/servers/<int:server_id>/backups', methods=['GET'])
+@jwt_required()
+def get_server_backups(server_id):
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    # Symuluj listę backupów (w rzeczywistości sprawdź katalog backupów)
+    backups = []
+    backup_dir = os.path.join(server.path, 'backups')
+    
+    if os.path.exists(backup_dir):
+        for file_name in os.listdir(backup_dir):
+            if file_name.endswith('.zip'):
+                file_path = os.path.join(backup_dir, file_name)
+                created_at = os.path.getctime(file_path)
+                backups.append({
+                    'name': file_name,
+                    'size': os.path.getsize(file_path),
+                    'created_at': created_at,
+                    'created_at_formatted': datetime.fromtimestamp(created_at).strftime('%Y-%m-%d %H:%M:%S')
+                })
+    
+    # Sortuj od najnowszego
+    backups.sort(key=lambda x: x['created_at'], reverse=True)
+    
+    return jsonify({'backups': backups})
+
+@main.route('/servers/<int:server_id>/backups', methods=['POST'])
+@jwt_required()
+def create_server_backup(server_id):
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    # Sprawdź czy serwer jest wyłączony
+    if server.status == 'running':
+        return jsonify({'error': 'Server must be stopped to create backup'}), 400
+    
+    try:
+        import zipfile
+        import shutil
+        from datetime import datetime
+        
+        # Utwórz katalog backupów jeśli nie istnieje
+        backup_dir = os.path.join(server.path, 'backups')
+        os.makedirs(backup_dir, exist_ok=True)
+        
+        # Nazwa pliku backupu
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_name = f'backup_{server.name}_{timestamp}.zip'
+        backup_path = os.path.join(backup_dir, backup_name)
+        
+        # Utwórz backup (skompresuj świat i ważne pliki)
+        with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            # Dodaj świat
+            world_dir = os.path.join(server.path, 'world')
+            if os.path.exists(world_dir):
+                for root, dirs, files in os.walk(world_dir):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        arcname = os.path.relpath(file_path, server.path)
+                        zipf.write(file_path, arcname)
+            
+            # Dodaj server.properties
+            properties_file = os.path.join(server.path, 'server.properties')
+            if os.path.exists(properties_file):
+                zipf.write(properties_file, 'server.properties')
+            
+            # Dodaj inne ważne pliki
+            important_files = ['whitelist.json', 'ops.json', 'banned-players.json', 'banned-ips.json']
+            for file in important_files:
+                file_path = os.path.join(server.path, file)
+                if os.path.exists(file_path):
+                    zipf.write(file_path, file)
+        
+        return jsonify({'message': f'Backup created: {backup_name}'})
+        
+    except Exception as e:
+        return jsonify({'error': f'Failed to create backup: {str(e)}'}), 500
+
+@main.route('/servers/<int:server_id>/backups/<backup_name>/restore', methods=['POST'])
+@jwt_required()
+def restore_server_backup(server_id, backup_name):
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    # Sprawdź czy serwer jest wyłączony
+    if server.status == 'running':
+        return jsonify({'error': 'Server must be stopped to restore backup'}), 400
+    
+    try:
+        import zipfile
+        import shutil
+        
+        backup_dir = os.path.join(server.path, 'backups')
+        backup_path = os.path.join(backup_dir, backup_name)
+        
+        if not os.path.exists(backup_path):
+            return jsonify({'error': 'Backup not found'}), 404
+        
+        # Przywróć backup
+        with zipfile.ZipFile(backup_path, 'r') as zipf:
+            zipf.extractall(server.path)
+        
+        return jsonify({'message': f'Backup {backup_name} restored successfully'})
+        
+    except Exception as e:
+        return jsonify({'error': f'Failed to restore backup: {str(e)}'}), 500
+
+@main.route('/servers/<int:server_id>/console', methods=['GET'])
+@jwt_required()
+def get_console_output(server_id):
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    # Pobierz ostatnie linie z konsoli (z logów lub outputu)
+    try:
+        log_file = os.path.join(server.path, 'logs', 'latest.log')
+        lines = []
+        
+        if os.path.exists(log_file):
+            with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+                lines = f.readlines()[-50:]  # Ostatnie 50 linii
+        
+        return jsonify({'lines': lines})
+        
+    except Exception as e:
+        return jsonify({'error': f'Error reading console: {str(e)}'}), 500
+
+@main.route('/servers/<int:server_id>/console', methods=['POST'])
+@jwt_required()
+def send_console_command(server_id):
+    current_user_id = get_jwt_identity()
+    data = request.get_json()
+    command = data.get('command', '')
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    # Sprawdź czy serwer działa
+    if server.status != 'running':
+        return jsonify({'error': 'Server is not running'}), 400
+    
+    # Wyślij komendę do serwera
+    success, message = server_manager.send_command(server_id, command)
+    
+    if success:
+        return jsonify({'message': 'Command sent successfully'})
+    else:
+        return jsonify({'error': message}), 500
+        
+@main.route('/servers/<int:server_id>/size', methods=['GET'])
+@jwt_required()
+def get_server_size(server_id):
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'view'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    try:
+        import shutil
+        server_path = server_manager.get_server_path(server.name)
+        
+        if os.path.exists(server_path):
+            total_size = 0
+            for dirpath, dirnames, filenames in os.walk(server_path):
+                for filename in filenames:
+                    filepath = os.path.join(dirpath, filename)
+                    total_size += os.path.getsize(filepath)
+            
+            # Convert to GB
+            size_gb = total_size / (1024 ** 3)
+            return jsonify({'size_gb': round(size_gb, 2)})
+        else:
+            return jsonify({'size_gb': 0})
+            
+    except Exception as e:
+        return jsonify({'error': f'Error calculating size: {str(e)}'}), 500
+
+def _check_permission(user_id, server_id, permission):
+    user = User.query.get(user_id)
+    if user.role == 'admin':
+        return True
+    
+    perm = Permission.query.filter_by(
+        user_id=user_id, server_id=server_id
+    ).first()
+    
+    if not perm:
+        return False
+    
+    if permission == 'view':
+        return True
+    elif permission == 'can_start':
+        return perm.can_start
+    elif permission == 'can_stop':
+        return perm.can_stop
+    elif permission == 'can_restart':
+        return perm.can_restart
+    elif permission == 'can_edit_files':
+        return perm.can_edit_files
+    elif permission == 'can_manage_users':
+        return perm.can_manage_users
+    elif permission == 'can_install_plugins':
+        return perm.can_install_plugins
+    
+    return False
