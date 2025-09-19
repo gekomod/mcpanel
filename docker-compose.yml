@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  mcpanel:
+    build: .
+    image: gekomod/mcpanel:latest
+    container_name: MCPanel
+    network_mode: host
+    ports:
+      - "3000:3000"    # Frontend
+      - "5000:5000"    # Backend API
+      - "19132:19132/udp" # Minecraft Bedrock UDP
+      - "19133:19133/udp" # Minecraft Bedrock UDP
+      - "25565:25565"  # Minecraft Java TCP
+      - "25566:25566"  # Dodatkowy port Java TCP
+      - "25567:25567"  # Dodatkowy port Java TCP
+    volumes:
+      - /home/docker_data/mcpanel/data:/app/data
+      - /home/docker_data/mcpanel/minecraft_servers:/app/servers
+    environment:
+      - FLASK_ENV=production
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
