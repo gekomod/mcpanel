@@ -634,6 +634,7 @@ def send_command(server_id):
     if server.status != 'running':
         return jsonify({'error': 'Server is not running'}), 400
     
+    # Wyślij komendę do serwera
     success, message = server_manager.send_command(server_id, command)
     if success:
         return jsonify({'message': message})
@@ -784,27 +785,18 @@ def install_addon(server_id, addon_id):
     addon = Addon.query.get_or_404(addon_id)
     server = Server.query.get_or_404(server_id)
     
-    # Dla światów - specjalna obsługa
-    if addon.type == 'worlds':
-        if server.type != 'bedrock':
-            return jsonify({'error': 'Worlds can only be installed on Bedrock servers'}), 400
-        
-        # Sprawdź kompatybilność wersji
-        if addon.minecraft_version != server.version:
-            return jsonify({'error': f'World is for Minecraft {addon.minecraft_version}, server is running {server.version}'}), 400
-    else:
-        # Dla innych typów - oryginalna logika
-        if server.type != 'bedrock':
-            return jsonify({'error': 'Addons can only be installed on Bedrock servers'}), 400
-        
-        # Sprawdź kompatybilność wersji
-        if addon.minecraft_version != server.version:
-            return jsonify({'error': f'Addon is for Minecraft {addon.minecraft_version}, server is running {server.version}'}), 400
+    # Tylko dla serwerów Bedrock
+    if server.type != 'bedrock':
+        return jsonify({'error': 'Addons can only be installed on Bedrock servers'}), 400
+    
+    # Sprawdź kompatybilność wersji
+    if addon.minecraft_version != server.version:
+        return jsonify({'error': f'Addon is for Minecraft {addon.minecraft_version}, server is running {server.version}'}), 400
     
     # Utwórz manager
     bedrock_manager = get_bedrock_manager()
     
-    # Instaluj addon (metoda install_addon teraz obsługuje wszystkie typy)
+    # Instaluj addon
     success, result = bedrock_manager.install_addon(addon, server.name)
     
     if success:
@@ -832,19 +824,11 @@ def install_addon(server_id, addon_id):
         
         db.session.commit()
         
-        # Zwróć odpowiedź w zależności od typu
-        if addon.type == 'worlds':
-            return jsonify({
-                'message': result.get('message', 'World installed successfully'),
-                'details': result.get('results', {}),
-                'server_added': server.id in addon.get_installed_servers()
-            })
-        else:
-            return jsonify({
-                'message': f"{addon.type.capitalize()} installed successfully",
-                'details': result.get('results', {}),
-                'server_added': server.id in addon.get_installed_servers()
-            })
+        return jsonify({
+            'message': f"{addon.type.capitalize()} installed successfully",
+            'details': result.get('results', {}),
+            'server_added': server.id in addon.get_installed_servers()
+        })
     else:
         # Obsłuż błąd - result może być stringiem lub dict z polem 'error'
         error_message = result.get('error', result) if isinstance(result, dict) else result
@@ -1357,6 +1341,7 @@ def send_console_command(server_id):
         return jsonify({'error': 'Access denied'}), 403
     
     # Sprawdź czy serwer działa
+    server = Server.query.get_or_404(server_id)
     if server.status != 'running':
         return jsonify({'error': 'Server is not running'}), 400
     

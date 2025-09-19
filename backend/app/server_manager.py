@@ -594,18 +594,26 @@ class ServerManager:
     def send_command(self, server_id, command):
         if server_id not in self.processes:
             return False, "Server not running"
-        
+    
         process = self.processes[server_id]
-        
+    
         try:
-            if process.stdin:
-                process.stdin.write(command + '\n')
+            if process.stdin and not process.stdin.closed:
+                # Upewnij się, że komenda ma nową linię
+                if not command.endswith('\n'):
+                    command += '\n'
+            
+                # Sprawdź czy proces nadal działa
+                if process.poll() is not None:
+                    return False, "Server process has terminated"
+            
+                process.stdin.write(command)
                 process.stdin.flush()
                 return True, "Command sent successfully"
             else:
-                return False, "Cannot send command to server"
+                return False, "Cannot send command to server - stdin not available"
         except Exception as e:
-            return False, f"Failed to send command: {str(e)}"
+           return False, f"Failed to send command: {str(e)}"
     
     def _capture_output(self, server_id, process):
         while server_id in self.output_listeners and self.output_listeners[server_id]:
