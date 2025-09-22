@@ -157,7 +157,7 @@ def start_server(server_id):
     
     print(f"Starting server {server_id} ({server.name})")
     
-    # Get bedrock URL if needed (BEFORE starting thread)
+    # Get bedrock URL if needed
     bedrock_url = None
     if server.type == 'bedrock':
         from .models import BedrockVersion
@@ -170,11 +170,16 @@ def start_server(server_id):
         else:
             return jsonify({'error': f'Bedrock version {server.version} not found'}), 400
     
+    # Przekaż serwer jako obiekt (nie tylko ID)
     success, message = server_manager.start_server(server, bedrock_url)
     
     if success:
         print(f"Server {server_id} start initiated: {message}")
-        return jsonify({'message': message})
+        
+        return jsonify({
+            'message': message,
+            'pid': None  # PID będzie dostępne później przez endpoint status
+        })
     else:
         print(f"Server {server_id} start failed: {message}")
         return jsonify({'error': message}), 500
@@ -603,15 +608,20 @@ def get_real_server_status(server_id):
     # Update database if status is different
     if real_status['running'] and server.status != 'running':
         server.status = 'running'
+        # ZACHOWAJ PID JEŚLI JEST W real_status
+        if real_status.get('pid'):
+            server.pid = real_status['pid']
         db.session.commit()
     elif not real_status['running'] and server.status != 'stopped':
         server.status = 'stopped'
+        server.pid = None  # WYCZYŚĆ PID
         db.session.commit()
     
     return jsonify({
         'database_status': server.status,
         'real_status': real_status,
-        'is_running': real_status['running']
+        'is_running': real_status['running'],
+        'pid': server.pid  # DODAJ PID DO ODPOWIEDZI
     })
     
 @main.route('/servers/<int:server_id>/logs', methods=['GET'])
@@ -1093,10 +1103,12 @@ def get_server_performance(server_id):
             'uptime': 0
         }
         
+        server_pid = server.pid
+        
         # Pobierz rzeczywiste statystyki jeśli serwer działa
-        if server.status == 'running' and server.pid:
+        if server.status == 'running' and server_pid:
             try:
-                process = psutil.Process(server.pid)
+                process = psutil.Process(server_pid)
                 
                 # CPU usage
                 performance_data['cpu_percent'] = round(process.cpu_percent(interval=0.1), 1)

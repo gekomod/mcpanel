@@ -812,20 +812,40 @@ function AddonManager() {
               <AddonDescription>{addon.description}</AddonDescription>
             )}
             
-            <AddonCardFooter>
-              <AddonAuthor>
-                <FiUser size={14} />
-                <span>{addon.author || 'Unknown'}</span>
-              </AddonAuthor>
-              <div style={{ display: 'flex', gap: '5px' }}>
-                <ManageAddonBtn onClick={(e) => {
-                  e.stopPropagation();
-                  handleEdit(addon);
-                }}>
-                  <FiEdit /> Edit
-                </ManageAddonBtn>
-              </div>
-            </AddonCardFooter>
+<AddonCardFooter>
+  <AddonAuthor>
+    <FiUser size={14} />
+    <span>{addon.author || 'Unknown'}</span>
+  </AddonAuthor>
+  <div style={{ display: 'flex', gap: '5px' }}>
+    <ManageAddonBtn 
+      onClick={(e) => {
+        e.stopPropagation();
+        handleToggleStatus(addon);
+      }}
+      style={{ 
+        background: addon.is_active ? '#dc2626' : '#059669'
+      }}
+    >
+      {addon.is_active ? <FiX /> : <FiCheck />}
+    </ManageAddonBtn>
+    <ManageAddonBtn onClick={(e) => {
+      e.stopPropagation();
+      handleEdit(addon);
+    }}>
+      <FiEdit />
+    </ManageAddonBtn>
+    <ManageAddonBtn 
+      onClick={(e) => {
+        e.stopPropagation();
+        handleDelete(addon);
+      }}
+      style={{ background: '#dc2626' }}
+    >
+      <FiTrash2 />
+    </ManageAddonBtn>
+  </div>
+</AddonCardFooter>
           </AddonCard>
         ))}
         

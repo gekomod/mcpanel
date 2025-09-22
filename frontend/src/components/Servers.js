@@ -302,11 +302,11 @@ function Servers() {
                 </ServerDetail>
                 <ServerDetail>
                   <ServerDetailLabel>IP:</ServerDetailLabel>
-                  <ServerDetailValue>{server.address || 'mc.shockbyte.com'}</ServerDetailValue>
+                  <ServerDetailValue>{server.address || 'localhost'}</ServerDetailValue>
                 </ServerDetail>
                 <ServerDetail>
                   <ServerDetailLabel>Lokalizacja:</ServerDetailLabel>
-                  <ServerDetailValue>Europa (Frankfurt)</ServerDetailValue>
+                  <ServerDetailValue>Europa</ServerDetailValue>
                 </ServerDetail>
               </ServerCardDetails>
               

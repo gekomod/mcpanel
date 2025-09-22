@@ -103,7 +103,7 @@ def get_all_users():
     users = User.query.all()
     return jsonify([user.to_dict() for user in users])
     
-@main.route('/users/<int:user_id>', methods=['PUT'])
+@auth.route('/users/<int:user_id>', methods=['PUT'])
 @jwt_required()
 def update_user(user_id):
     current_user_id = get_jwt_identity()
@@ -148,7 +148,7 @@ def update_user(user_id):
         'created_at': user.created_at.isoformat() if user.created_at else None
     })
 
-@main.route('/users/<int:user_id>', methods=['DELETE'])
+@auth.route('/users/<int:user_id>', methods=['DELETE'])
 @jwt_required()
 def delete_user(user_id):
     current_user_id = get_jwt_identity()

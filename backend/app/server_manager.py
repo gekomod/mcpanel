@@ -5,11 +5,11 @@ import time
 import json
 import threading
 import requests
-import zipfile  # Dodaj import dla obsługi ZIP
-import tarfile  # Dodaj import dla obsługi TAR (jeśli potrzebne)
+import zipfile
+import tarfile
+from flask import current_app
 from pathlib import Path
 from datetime import datetime
-from flask import current_app 
 
 class ServerManager:
     def __init__(self, server_base_path):
@@ -50,7 +50,6 @@ class ServerManager:
     def _download_with_curl(self, url, file_path, server_id, total_size):
         """Download using curl with progress tracking"""
         try:
-            # Użyj curl z opcją progress bar
             cmd = [
                 'curl', '-L', '--progress-bar', 
                 '--output', file_path, url
@@ -63,7 +62,6 @@ class ServerManager:
                 universal_newlines=True
             )
             
-            # Zapisz proces do możliwości anulowania
             with self.lock:
                 self.download_processes[server_id] = process
             
@@ -76,16 +74,13 @@ class ServerManager:
                     break
                 
                 if output:
-                    # Parsuj output curl progress bar
                     if '%' in output:
                         try:
-                            # Format: [percentage]% [downloaded]/[total]
                             parts = output.strip().split()
                             if len(parts) >= 2:
                                 percentage_str = parts[0].replace('%', '')
                                 progress = float(percentage_str)
                                 
-                                # Aktualizuj co 0.5 sekundy lub gdy postęp się zmienia
                                 current_time = time.time()
                                 if current_time - last_update_time > 0.5 or progress > downloaded_size:
                                     downloaded_bytes = (progress / 100) * total_size if total_size > 0 else 0
@@ -104,7 +99,6 @@ class ServerManager:
                         except:
                             pass
             
-            # Sprawdź czy pobieranie zakończone sukcesem
             if process.returncode == 0:
                 self._update_progress(
                     server_id,
@@ -124,13 +118,13 @@ class ServerManager:
                 )
                 return False
                 
-            with self.lock:
-                if server_id in self.download_processes:
-                    del self.download_processes[server_id]        
-                
         except Exception as e:
             print(f"CURL download error: {e}")
             return False
+        finally:
+            with self.lock:
+                if server_id in self.download_processes:
+                    del self.download_processes[server_id]
     
     def _download_with_wget(self, url, file_path, server_id, total_size):
         """Download using wget with progress tracking"""
@@ -146,7 +140,6 @@ class ServerManager:
                 universal_newlines=True
             )
             
-            # Zapisz proces do możliwości anulowania
             with self.lock:
                 self.download_processes[server_id] = process
             
@@ -159,14 +152,11 @@ class ServerManager:
                     break
                 
                 if output:
-                    # Parsuj output wget
                     if '%' in output and '[' in output and ']' in output:
                         try:
-                            # Format: [percentage]% [downloaded] [speed]
                             percentage_str = output.split('%')[0].split()[-1]
                             progress = float(percentage_str)
                             
-                            # Aktualizuj co 0.5 sekundy
                             current_time = time.time()
                             if current_time - last_update_time > 0.5:
                                 downloaded_bytes = (progress / 100) * total_size if total_size > 0 else 0
@@ -184,7 +174,6 @@ class ServerManager:
                         except:
                             pass
             
-            # Sprawdź czy pobieranie zakończone sukcesem
             if process.returncode == 0:
                 self._update_progress(
                     server_id,
@@ -204,15 +193,14 @@ class ServerManager:
                 )
                 return False
                 
-            with self.lock:
-                if server_id in self.download_processes:
-                    del self.download_processes[server_id]        
-
         except Exception as e:
             print(f"WGET download error: {e}")
             return False
+        finally:
+            with self.lock:
+                if server_id in self.download_processes:
+                    del self.download_processes[server_id]
             
-# Dodaj metodę do anulowania pobierania
     def cancel_download(self, server_id):
         """Cancel ongoing download for a server"""
         with self.lock:
@@ -226,13 +214,12 @@ class ServerManager:
                 except:
                     pass
             
-                # Clean up
-                if server_id in self.download_processes:
-                    del self.download_processes[server_id]
-                if server_id in self.download_progress:
-                    del self.download_progress[server_id]
+            if server_id in self.download_processes:
+                del self.download_processes[server_id]
+            if server_id in self.download_progress:
+                del self.download_progress[server_id]
             
-                return True
+            return True
         return False
     
     def _download_file_with_progress(self, url, file_path, server_id):
@@ -240,15 +227,13 @@ class ServerManager:
         try:
             print(f"Starting download from {url} to {file_path}")
             
-            # Sprawdź, które narzędzie jest dostępne
-            curl_available = 0
+            curl_available = subprocess.run(['which', 'curl'], capture_output=True).returncode == 0
             wget_available = subprocess.run(['which', 'wget'], capture_output=True).returncode == 0
             
             if not curl_available and not wget_available:
                 self._update_progress(server_id, 'error', 0, 'Brak curl lub wget do pobierania plików')
                 return False
             
-            # Pobierz rozmiar pliku najpierw
             try:
                 head_response = subprocess.run([
                     'curl', '-s', '-I', '-L', url
@@ -271,14 +256,12 @@ class ServerManager:
                 0
             )
             
-            # Użyj curl jeśli dostępne (lepsze wsparcie dla progress bar)
             if curl_available:
                 success = self._download_with_curl(url, file_path, server_id, total_size)
             else:
                 success = self._download_with_wget(url, file_path, server_id, total_size)
             
             if success and file_path.endswith('.zip'):
-                # Jeśli to plik ZIP, rozpakuj go
                 return self._extract_zip_file(file_path, server_id, total_size)
             
             return success
@@ -305,22 +288,18 @@ class ServerManager:
                 total_size
             )
             
-            # Pobierz ścieżkę do katalogu serwera
             server_dir = os.path.dirname(zip_path)
             
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                # Pobierz listę plików i całkowity rozmiar
                 file_list = zip_ref.namelist()
                 total_files = len(file_list)
                 
-                # Rozpakuj pliki z progresem
                 for i, file in enumerate(file_list):
                     try:
                         zip_ref.extract(file, server_dir)
                         
-                        # Aktualizuj postęp co 10 plików lub dla dużych plików
                         if i % 10 == 0 or i == total_files - 1:
-                            progress = 95 + (i / total_files) * 5  # 95-100%
+                            progress = 95 + (i / total_files) * 5
                             self._update_progress(
                                 server_id,
                                 'extracting',
@@ -334,7 +313,6 @@ class ServerManager:
                         print(f"Error extracting {file}: {e}")
                         continue
             
-            # Usuń plik ZIP po rozpakowaniu
             try:
                 os.remove(zip_path)
             except:
@@ -361,8 +339,18 @@ class ServerManager:
             )
             return False
     
-    def _start_server_async(self, server, bedrock_url=None):
-        """Start server in a separate thread"""
+    def _start_server_async(self, server, bedrock_url=None, app_context=None):
+        """Start server in a separate thread with application context"""
+        # Użyj przekazanego kontekstu aplikacji
+        if app_context is None:
+            # Fallback: spróbuj utworzyć własny kontekst
+            try:
+                from flask import current_app
+                app_context = current_app.app_context
+            except:
+                # Ostateczny fallback - aktualizuj tylko progress bez bazy danych
+                app_context = None
+        
         try:
             server_path = self.get_server_path(server.name)
             
@@ -380,10 +368,10 @@ class ServerManager:
                     self._update_progress(server.id, 'error', 0, f'Błąd tworzenia katalogu: {str(e)}')
                     return
             
-            # For Bedrock servers - pobierz i rozpakuj
+            # For Bedrock servers
             if server.type == 'bedrock':
                 bedrock_binary = 'bedrock_server'
-                if os.name == 'nt':  # Windows
+                if os.name == 'nt':
                     bedrock_binary = 'bedrock_server.exe'
                 
                 bedrock_path = os.path.join(server_path, bedrock_binary)
@@ -394,20 +382,15 @@ class ServerManager:
                         return
                     
                     try:
-                        # Pobierz do tymczasowego pliku ZIP
                         temp_zip_path = os.path.join(server_path, 'bedrock_server.zip')
-                        
-                        # Download with progress - funkcja teraz sama obsłuży rozpakowywanie
                         success = self._download_file_with_progress(bedrock_url, temp_zip_path, server.id)
                         if not success:
                             return
                         
-                        # Sprawdź czy plik wykonywalny istnieje po rozpakowaniu
                         if not os.path.exists(bedrock_path):
                             self._update_progress(server.id, 'error', 0, 'Brak pliku wykonywalnego po rozpakowaniu')
                             return
                         
-                        # Make executable on Linux
                         if os.name != 'nt':
                             os.chmod(bedrock_path, 0o755)
                         
@@ -415,7 +398,7 @@ class ServerManager:
                         self._update_progress(server.id, 'error', 0, f'Błąd pobierania serwera Bedrock: {str(e)}')
                         return
             
-            # Dla Java servers - pozostały kod bez zmian
+            # For Java servers
             if server.type == 'java':
                 jar_file = None
                 for file in os.listdir(server_path):
@@ -424,15 +407,12 @@ class ServerManager:
                         break
                 
                 if not jar_file:
-                    # Try to download server.jar
                     try:
                         self._update_progress(server.id, 'fetching_manifest', 15, 'Pobieranie informacji o wersji...')
                         
-                        # Get the specific version manifest
                         version_manifest_url = "https://launchermeta.mojang.com/mc/game/version_manifest.json"
                         version_manifest = requests.get(version_manifest_url).json()
                         
-                        # Find the specific version
                         version_info = None
                         for version in version_manifest['versions']:
                             if version['id'] == server.version and version['type'] == 'release':
@@ -443,11 +423,9 @@ class ServerManager:
                             self._update_progress(server.id, 'error', 0, f'Wersja {server.version} nie znaleziona')
                             return
                         
-                        # Get server jar download URL
                         server_jar_url = version_info['downloads']['server']['url']
                         jar_path = os.path.join(server_path, 'server.jar')
                         
-                        # Download with progress
                         success = self._download_file_with_progress(server_jar_url, jar_path, server.id)
                         if not success:
                             return
@@ -458,7 +436,7 @@ class ServerManager:
                         self._update_progress(server.id, 'error', 0, f'Błąd pobierania server.jar: {str(e)}')
                         return
             
-            # Create eula.txt for Java servers - bez zmian
+            # Create eula.txt for Java servers
             if server.type == 'java':
                 eula_path = os.path.join(server_path, 'eula.txt')
                 if not os.path.exists(eula_path):
@@ -470,19 +448,19 @@ class ServerManager:
                     except Exception as e:
                         print(f"Warning: Could not create eula.txt: {e}")
             
-            # Prepare startup command - bez zmian
+            # Prepare startup command
             self._update_progress(server.id, 'starting', 99, 'Uruchamianie procesu serwera...')
             time.sleep(1)
             
             if server.type == 'java':
                 cmd = ['java', '-Xmx2G', '-Xms1G', '-jar', 'server.jar', 'nogui']
             else:
-                if os.name == 'nt':  # Windows
+                if os.name == 'nt':
                     cmd = ['bedrock_server.exe']
-                else:  # Linux
+                else:
                     cmd = ['./bedrock_server']
             
-            # Start the process - bez zmian
+            # Start the process
             process = subprocess.Popen(
                 cmd,
                 cwd=server_path,
@@ -494,29 +472,62 @@ class ServerManager:
                 universal_newlines=True
             )
         
-            # Store process reference and update database
+            # Store process reference
             self.processes[server.id] = process
+            
+            # Update database with PID using application context
+            if app_context:
+                try:
+                    from .models import db, Server
+                    with app_context():
+                        server_obj = Server.query.get(server.id)
+                        if server_obj:
+                            server_obj.pid = process.pid
+                            server_obj.status = 'running'
+                            db.session.commit()
+                            print(f"Server {server.id} started with PID: {process.pid}")
+                except Exception as e:
+                    print(f"Error updating database with PID: {e}")
+            else:
+                print(f"Server {server.id} started with PID: {process.pid} (no database update)")
                     
-            # Start output listener thread - bez zmian
+            # Start output listener thread
             self.output_listeners[server.id] = True
-            thread = threading.Thread(target=self._capture_output, args=(server.id, process))
+            thread = threading.Thread(target=self._capture_output, args=(server.id, process, app_context))
             thread.daemon = True
             thread.start()
             
-            # Final success message - bez zmian
+            # Final success message
             self._update_progress(server.id, 'complete', 100, 'Serwer został pomyślnie uruchomiony!')
             
-            # Clean up thread reference - bez zmian
+            # Clean up thread reference
             with self.lock:
                 if server.id in self.download_threads:
                     del self.download_threads[server.id]
             
         except Exception as e:
-            self._update_progress(server.id, 'error', 0, f'Błąd uruchamiania serwera: {str(e)}')
-            # Clean up thread reference on error too
-            with self.lock:
-                if server.id in self.download_threads:
-                    del self.download_threads[server.id]
+            print(f"Error in _start_server_async: {e}")
+            # Update progress with error
+            error_message = f'Błąd uruchamiania serwera: {str(e)}'
+            self._update_progress(server.id, 'error', 0, error_message)
+            
+            # Update database status if app context is available
+            if app_context:
+                try:
+                    from .models import db, Server
+                    with app_context():
+                        server_obj = Server.query.get(server.id)
+                        if server_obj:
+                            server_obj.status = 'stopped'
+                            server_obj.pid = None
+                            db.session.commit()
+                except Exception as update_error:
+                    print(f"Error updating database status: {update_error}")
+                    
+        # Clean up thread reference on error too
+        with self.lock:
+            if server.id in self.download_threads:
+                del self.download_threads[server.id]
     
     def start_server(self, server, bedrock_url=None):
         """Start the server - returns immediately, actual work happens in thread"""
@@ -528,8 +539,12 @@ class ServerManager:
             if server.id in self.processes and self.processes[server.id].poll() is None:
                 return False, "Server is already running"
 
+            # Przekaż kontekst aplikacji do wątku
+            from flask import current_app
+            app_context = current_app.app_context
+
             # Start the server in a separate thread
-            thread = threading.Thread(target=self._start_server_async, args=(server, bedrock_url))
+            thread = threading.Thread(target=self._start_server_async, args=(server, bedrock_url, app_context))
             thread.daemon = True
             thread.start()
 
@@ -538,10 +553,8 @@ class ServerManager:
         return True, "Server starting process initiated"
     
     def stop_server(self, server_id):
-        # DODAJ current_app.context() WEWNĄTRZ METODY
         try:
             if server_id not in self.processes:
-                # Clear progress if exists
                 if server_id in self.download_progress:
                     del self.download_progress[server_id]
                 return False, "Server not running"
@@ -575,12 +588,14 @@ class ServerManager:
                 if server_id in self.download_progress:
                     del self.download_progress[server_id]
                 
-                # Update server status in database - UŻYJ current_app
+                # Update server status in database
+                from flask import current_app
                 from .models import db, Server
-                with current_app.app_context():  # DODAJ KONTEKST APLIKACJI
+                with current_app.app_context():
                     server_obj = Server.query.get(server_id)
                     if server_obj:
                         server_obj.status = 'stopped'
+                        server_obj.pid = None
                         db.session.commit()
 
                 return True, "Server stopped successfully"
@@ -599,11 +614,9 @@ class ServerManager:
     
         try:
             if process.stdin and not process.stdin.closed:
-                # Upewnij się, że komenda ma nową linię
                 if not command.endswith('\n'):
                     command += '\n'
             
-                # Sprawdź czy proces nadal działa
                 if process.poll() is not None:
                     return False, "Server process has terminated"
             
@@ -615,22 +628,36 @@ class ServerManager:
         except Exception as e:
            return False, f"Failed to send command: {str(e)}"
     
-    def _capture_output(self, server_id, process):
+    def _capture_output(self, server_id, process, app_context=None):
+        """Capture server output in real-time and store it"""
+        output_buffer = []
+    
         while server_id in self.output_listeners and self.output_listeners[server_id]:
             try:
                 line = process.stdout.readline()
                 if not line and process.poll() is not None:
                     break
             
-                # Here you would typically send the output to connected clients via WebSocket
+                # Store the output line with timestamp
+                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                formatted_line = f"[{timestamp}] {line.strip()}\n"
+                output_buffer.append(formatted_line)
+            
+                # Keep only last 1000 lines to prevent memory issues
+                if len(output_buffer) > 1000:
+                    output_buffer.pop(0)
+            
+                # Store in memory for real-time access
+                with self.lock:
+                    self.server_outputs[server_id] = output_buffer
+            
                 print(f"Server {server_id}: {line.strip()}")
             
                 # Write to server log file
                 try:
                     server_log_path = os.path.join(self.get_server_path_from_id(server_id), 'server.log')
                     with open(server_log_path, 'a', encoding='utf-8') as log_file:
-                        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                        log_file.write(f"[{timestamp}] {line}")
+                        log_file.write(formatted_line)
                 except Exception as e:
                     print(f"Error writing to log file: {e}")
             
@@ -638,33 +665,34 @@ class ServerManager:
                 print(f"Error reading output from server {server_id}: {e}")
                 break
     
-        # Clean up when done - DODAJ AKTUALIZACJĘ STATUSU W BAZIE DANYCH
-        try:
-            from .models import db, Server
-            from flask import current_app
-        
-            with current_app.app_context():
-                server_obj = Server.query.get(server_id)
-                if server_obj:
-                    server_obj.status = 'stopped'
-                    db.session.commit()
-                    print(f"Updated server {server_id} status to stopped in database")
-        except Exception as e:
-            print(f"Error updating server status in database: {e}")
-    
+        # Clean up when done
+        if app_context:
+            try:
+                from .models import db, Server
+                with app_context():
+                    server_obj = Server.query.get(server_id)
+                    if server_obj:
+                        server_obj.status = 'stopped'
+                        server_obj.pid = None
+                        db.session.commit()
+                        print(f"Updated server {server_id} status to stopped in database")
+            except Exception as e:
+                print(f"Error updating server status in database: {e}")
+        else:
+            print(f"Server {server_id} stopped (no database update)")
+
         # Clean up references
         if server_id in self.processes:
             del self.processes[server_id]
         if server_id in self.output_listeners:
             del self.output_listeners[server_id]
+        if server_id in self.server_outputs:
+            del self.server_outputs[server_id]
     
     def get_server_path_from_id(self, server_id):
-        # This method should query the database to get server name from ID
-        # For now, we'll use a placeholder - in real implementation, you'd import db and Server model
         try:
-            from .models import Server
             from flask import current_app
-            
+            from .models import Server
             with current_app.app_context():
                 server = Server.query.get(server_id)
                 if server:
@@ -672,8 +700,7 @@ class ServerManager:
         except:
             pass
     
-        # Fallback if database query fails
-        return os.path.join(self.server_base_path, f"server-{server_id}")
+        return os.path.join(self.server_base_path, f"{server.name}")
     
     def get_server_properties(self, server_name):
         server_path = self.get_server_path(server_name)
@@ -690,9 +717,7 @@ class ServerManager:
                                 key, value = line.split('=', 1)
                                 properties[key.strip()] = value.strip()
             else:
-                # Create default properties if file doesn't exist
                 self._create_default_properties(server_path, server_name)
-                # Read the newly created file
                 with open(properties_file, 'r', encoding='utf-8') as f:
                     for line in f:
                         line = line.strip()
@@ -780,7 +805,6 @@ class ServerManager:
         properties_file = os.path.join(server_path, 'server.properties')
         
         try:
-            # Read existing properties and comments
             existing_properties = {}
             comments_and_whitespace = []
             
@@ -798,21 +822,16 @@ class ServerManager:
                         else:
                             comments_and_whitespace.append(line + '\n')
             else:
-                # Create file if it doesn't exist
                 comments_and_whitespace = ["#Minecraft server properties\n", "#Generated by Minecraft Server Panel\n"]
             
-            # Update with new values
             for key, value in properties.items():
                 existing_properties[key] = value
             
-            # Write back to file
             with open(properties_file, 'w', encoding='utf-8') as f:
-                # Write comments and whitespace
                 for line in comments_and_whitespace:
                     if not line.strip() or line.strip().startswith('#'):
                         f.write(line)
                     else:
-                        # Check if this line is a property that we're updating
                         is_property = False
                         if '=' in line:
                             line_key = line.split('=')[0].strip()
@@ -822,7 +841,6 @@ class ServerManager:
                         if not is_property:
                             f.write(line)
                 
-                # Write all properties
                 for key, value in existing_properties.items():
                     f.write(f"{key}={value}\n")
             
@@ -834,15 +852,13 @@ class ServerManager:
     def get_server_logs(self, server_name, lines=100):
         """Get the last N lines of server logs"""
         server_path = self.get_server_path(server_name)
-        log_file = os.path.join(server_path, 'logs', 'latest.log')  # Standardowa ścieżka logów Minecraft
-    
-        # Sprawdź również starsze lokalizacje logów
+        log_file = os.path.join(server_path, 'logs', 'latest.log')
+
         if not os.path.exists(log_file):
-            log_file = os.path.join(server_path, 'server.log')  # Alternatywna lokalizacja
-    
+            log_file = os.path.join(server_path, 'server.log')
+
         try:
             if os.path.exists(log_file):
-                # Użyj tail do efektywnego odczytu ostatnich linii
                 try:
                     result = subprocess.run(
                         ['tail', '-n', str(lines), log_file],
@@ -851,10 +867,8 @@ class ServerManager:
                     if result.returncode == 0:
                         return result.stdout, None
                 except:
-                    # Fallback: czytaj cały plik jeśli tail nie działa
                     pass
             
-                # Czytaj cały plik i weź ostatnie linie
                 with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
                     all_lines = f.readlines()
                     last_lines = ''.join(all_lines[-lines:])
@@ -866,24 +880,34 @@ class ServerManager:
     
     def get_server_status(self, server_id):
         """Get detailed status of a server"""
+        from flask import current_app
+    
         if server_id in self.processes:
             process = self.processes[server_id]
             return_code = process.poll()
-        
-            # If process is still running
+    
             if return_code is None:
                 return {
                     'running': True,
                     'pid': process.pid,
                     'returncode': None
                 }
-            # If process has ended
             else:
-                # Clean up the process reference
                 if server_id in self.processes:
                     del self.processes[server_id]
                 if server_id in self.output_listeners:
                     self.output_listeners[server_id] = False
+            
+                try:
+                    from .models import db, Server
+                    with current_app.app_context():
+                        server_obj = Server.query.get(server_id)
+                        if server_obj:
+                            server_obj.pid = None
+                            server_obj.status = 'stopped'
+                            db.session.commit()
+                except Exception as e:
+                    print(f"Error updating database status: {e}")
             
                 return {
                     'running': False,
@@ -891,30 +915,28 @@ class ServerManager:
                     'returncode': return_code
                 }
         else:
-            # Check if process might be running outside our management
             try:
                 from .models import Server
-                from flask import current_app
-            
                 with current_app.app_context():
                     server = Server.query.get(server_id)
-                    if server:
-                        # Check if server port is in use (simple heuristic)
-                        import socket
-                        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                        result = sock.connect_ex(('127.0.0.1', server.port))
-                        sock.close()
-                    
-                        if result == 0:
-                            return {
-                                'running': True,
-                                'pid': None,
-                                'returncode': None,
-                                'port_in_use': True
-                            }
-            except:
-                pass
-        
+                    if server and server.pid:
+                        try:
+                            import psutil
+                            process = psutil.Process(server.pid)
+                            if process.is_running():
+                                return {
+                                    'running': True,
+                                    'pid': server.pid,
+                                    'returncode': None,
+                                    'port_in_use': True
+                                }
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            server.pid = None
+                            server.status = 'stopped'
+                            db.session.commit()
+            except Exception as e:
+                print(f"Error checking external process: {e}")
+    
             return {
                 'running': False,
                 'pid': None,
@@ -927,21 +949,17 @@ class ServerManager:
         backup_dir = os.path.join(self.server_base_path, 'backups', server_name)
         
         try:
-            # Create backup directory if it doesn't exist
             os.makedirs(backup_dir, exist_ok=True)
             
-            # Generate backup name if not provided
             if not backup_name:
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                 backup_name = f"backup_{timestamp}"
             
             backup_path = os.path.join(backup_dir, backup_name)
             
-            # Create zip archive of the server directory (excluding logs and cache)
             import zipfile
             with zipfile.ZipFile(backup_path + '.zip', 'w', zipfile.ZIP_DEFLATED) as zipf:
                 for root, dirs, files in os.walk(server_path):
-                    # Skip logs and cache directories
                     if 'logs' in dirs:
                         dirs.remove('logs')
                     if 'cache' in dirs:
@@ -959,58 +977,6 @@ class ServerManager:
         
         except Exception as e:
             return False, f"Failed to create backup: {str(e)}"
-            
-    def _capture_output(self, server_id, process):
-        """Capture server output in real-time and store it"""
-        output_buffer = []
-    
-        while server_id in self.output_listeners and self.output_listeners[server_id]:
-            try:
-                line = process.stdout.readline()
-                if not line and process.poll() is not None:
-                    break
-            
-                # Store the output line with timestamp
-                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                formatted_line = f"[{timestamp}] {line.strip()}\n"
-                output_buffer.append(formatted_line)
-            
-                # Keep only last 1000 lines to prevent memory issues
-                if len(output_buffer) > 1000:
-                    output_buffer.pop(0)
-            
-                # Store in memory for real-time access
-                with self.lock:
-                    self.server_outputs[server_id] = output_buffer
-            
-                # Here you would typically send the output to connected clients via WebSocket
-                print(f"Server {server_id}: {line.strip()}")
-            
-            except Exception as e:
-                print(f"Error reading output from server {server_id}: {e}")
-                break
-    
-        # Clean up when done
-        try:
-            from .models import db, Server
-            from flask import current_app
-        
-            with current_app.app_context():
-                server_obj = Server.query.get(server_id)
-                if server_obj:
-                    server_obj.status = 'stopped'
-                    db.session.commit()
-                    print(f"Updated server {server_id} status to stopped in database")
-        except Exception as e:
-            print(f"Error updating server status in database: {e}")
-    
-        # Clean up references
-        if server_id in self.processes:
-            del self.processes[server_id]
-        if server_id in self.output_listeners:
-            del self.output_listeners[server_id]
-        if server_id in self.server_outputs:
-            del self.server_outputs[server_id]
 
     def get_realtime_output(self, server_id, lines=100):
         """Get real-time output from server memory buffer"""

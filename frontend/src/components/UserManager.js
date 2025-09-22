@@ -491,15 +491,36 @@ function UserManager() {
   });
   const [playerPerms, setPlayerPerms] = useState({
     username: '',
-    level: 'member',
-    permissions: {}
+    permission: 'member', // Zmieniono z level na permission
+    xuid: '' // Dodano xuid
   });
+  const [fetchingXuid, setFetchingXuid] = useState(false);
+
 
   useEffect(() => {
     fetchServer();
     fetchData();
   }, [serverId, activeTab]);
 
+  const fetchXuidFromGamertag = async (gamertag) => {
+    try {
+      setFetchingXuid(true);
+      const response = await fetch(`https://api.geysermc.org/v2/xbox/xuid/${encodeURIComponent(gamertag)}`);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch XUID: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      return data.xuid;
+    } catch (error) {
+      console.error('Error fetching XUID:', error);
+      throw new Error(`Could not find XUID for gamertag: ${gamertag}`);
+    } finally {
+      setFetchingXuid(false);
+    }
+  };
+  
   const fetchServer = async () => {
     try {
       const response = await api.get(`/servers/${serverId}`);
@@ -512,11 +533,11 @@ function UserManager() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      if (activeTab === 'server_users') {
+      if (activeTabs === 'server_users') {
         await fetchServerUsers();
-      } else if (activeTab === 'whitelist') {
+      } else if (activeTabs === 'whitelist') {
         await fetchWhitelist();
-      } else if (activeTab === 'player_permissions') {
+      } else if (activeTabs === 'player_permissions') {
         await fetchPlayerPermissions();
       }
     } catch (error) {
@@ -557,7 +578,13 @@ function UserManager() {
       const response = await api.get(`/servers/${serverId}/files/read?path=permissions.json`);
       if (response.data.content) {
         const permissionsData = JSON.parse(response.data.content);
-        setPlayerPermissions(permissionsData || []);
+        // Konwertuj dane do formatu używanego w UI
+        const formattedPermissions = permissionsData.map(item => ({
+          name: item.xuid, // Używamy xuid jako name dla kompatybilności
+          permission: item.permission,
+          xuid: item.xuid
+        }));
+        setPlayerPermissions(formattedPermissions);
       } else {
         setPlayerPermissions([]);
       }
@@ -635,6 +662,10 @@ function UserManager() {
 
   const handleAddToWhitelist = async () => {
     try {
+      // Pobierz XUID z API GeyserMC
+      setFetchingXuid(true);
+      const xuid = await fetchXuidFromGamertag(newWhitelistUser.username);
+      
       // Pobierz aktualną whitelist
       const currentWhitelist = [...whitelist];
       
@@ -644,9 +675,9 @@ function UserManager() {
         return;
       }
       
-      // Dodaj nowego użytkownika do whitelist
+      // Dodaj nowego użytkownika do whitelist z pobranym XUID
       currentWhitelist.push({
-        uuid: "", // UUID zostanie wygenerowany przez serwer
+        uuid: xuid, // Użyj pobranego XUID jako UUID
         name: newWhitelistUser.username
       });
       
@@ -661,7 +692,9 @@ function UserManager() {
       fetchWhitelist();
     } catch (error) {
       console.error('Error adding to whitelist:', error);
-      alert('Failed to add user to whitelist');
+      alert(error.message || 'Failed to add user to whitelist');
+    } finally {
+      setFetchingXuid(false);
     }
   };
 
@@ -689,29 +722,36 @@ function UserManager() {
 
   const handleSavePlayerPermissions = async () => {
     try {
-      // Pobierz aktualne uprawnienia
-      const currentPermissions = [...playerPermissions];
+      // Pobierz XUID dla podanego gamertag
+      setFetchingXuid(true);
+      const xuid = await fetchXuidFromGamertag(playerPerms.username);
       
-      // Znajdź indeks użytkownika jeśli istnieje
-      const userIndex = currentPermissions.findIndex(p => p.name === playerPerms.username);
+      // Pobierz aktualne uprawnienia
+      const response = await api.get(`/servers/${serverId}/files/read?path=permissions.json`);
+      let currentPermissions = [];
+      
+      if (response.data.content) {
+        currentPermissions = JSON.parse(response.data.content);
+      }
+      
+      // Znajdź indeks użytkownika jeśli istnieje (po xuid)
+      const userIndex = currentPermissions.findIndex(p => p.xuid === xuid);
       
       if (userIndex !== -1) {
         // Aktualizuj istniejące uprawnienia
         currentPermissions[userIndex] = {
-          ...currentPermissions[userIndex],
-          level: playerPerms.level,
-          permissions: playerPerms.permissions
+          permission: playerPerms.permission,
+          xuid: xuid
         };
       } else {
         // Dodaj nowe uprawnienia
         currentPermissions.push({
-          name: playerPerms.username,
-          level: playerPerms.level,
-          permissions: playerPerms.permissions
+          permission: playerPerms.permission,
+          xuid: xuid
         });
       }
       
-      // Zapisz zaktualizowane uprawnienia
+      // Zapisz zaktualizowane uprawnienia w wymaganym formacie
       await api.post(`/servers/${serverId}/files/write`, {
         path: 'permissions.json',
         content: JSON.stringify(currentPermissions, null, 2)
@@ -720,24 +760,34 @@ function UserManager() {
       setShowPermissionsModal(false);
       setPlayerPerms({
         username: '',
-        level: 'member',
-        permissions: {}
+        permission: 'member',
+        xuid: ''
       });
       fetchPlayerPermissions();
     } catch (error) {
       console.error('Error saving player permissions:', error);
-      alert('Failed to save player permissions');
+      alert(error.message || 'Failed to save player permissions');
+    } finally {
+      setFetchingXuid(false);
     }
   };
 
-  const handleRemovePlayerPermissions = async (username) => {
-    if (!window.confirm(`Are you sure you want to remove permissions for ${username}?`)) {
+  const handleRemovePlayerPermissions = async (xuid) => {
+    if (!window.confirm(`Are you sure you want to remove permissions for this player?`)) {
       return;
     }
     
     try {
-      // Filtruj uprawnienia, usuwając użytkownika
-      const updatedPermissions = playerPermissions.filter(p => p.name !== username);
+      // Pobierz aktualne uprawnienia
+      const response = await api.get(`/servers/${serverId}/files/read?path=permissions.json`);
+      let currentPermissions = [];
+      
+      if (response.data.content) {
+        currentPermissions = JSON.parse(response.data.content);
+      }
+      
+      // Filtruj uprawnienia, usuwając użytkownika po xuid
+      const updatedPermissions = currentPermissions.filter(p => p.xuid !== xuid);
       
       // Zapisz zaktualizowane uprawnienia
       await api.post(`/servers/${serverId}/files/write`, {
@@ -765,15 +815,15 @@ function UserManager() {
   const openPermissionsModal = (player = null) => {
     if (player) {
       setPlayerPerms({
-        username: player.name,
-        level: player.level || 'member',
-        permissions: player.permissions || {}
+        username: player.xuid, // Używamy xuid jako username
+        permission: player.permission || 'member',
+        xuid: player.xuid
       });
     } else {
       setPlayerPerms({
         username: '',
-        level: 'member',
-        permissions: {}
+        permission: 'member',
+        xuid: ''
       });
     }
     setShowPermissionsModal(true);
@@ -788,7 +838,7 @@ function UserManager() {
   );
 
   const filteredPlayerPermissions = playerPermissions.filter(player => 
-    player.name.toLowerCase().includes(searchTerm.toLowerCase())
+    player.name
   );
 
   const renderServerUsers = () => (
@@ -971,7 +1021,7 @@ function UserManager() {
             <SearchIcon />
             <SearchInput
               type="text"
-              placeholder="Search players..."
+              placeholder="Search by XUID..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -991,7 +1041,7 @@ function UserManager() {
         <Table>
           <TableHeader>
             <tr>
-              <TableHeaderCell>Username</TableHeaderCell>
+              <TableHeaderCell>XUID</TableHeaderCell>
               <TableHeaderCell>Permission Level</TableHeaderCell>
               <TableHeaderCell style={{ textAlign: 'right' }}>Actions</TableHeaderCell>
             </tr>
@@ -999,11 +1049,11 @@ function UserManager() {
           
           <tbody>
             {filteredPlayerPermissions.map(player => (
-              <TableRow key={player.name}>
-                <TableCell>{player.name}</TableCell>
+              <TableRow key={player.xuid}>
+                <TableCell>{player.xuid}</TableCell>
                 <TableCell>
-                  <StatusBadge status={player.level}>
-                    {player.level}
+                  <StatusBadge status={player.permission}>
+                    {player.permission}
                   </StatusBadge>
                 </TableCell>
                 <ActionCell>
@@ -1015,7 +1065,7 @@ function UserManager() {
                   </ActionButton>
                   <ActionButton 
                     variant="delete" 
-                    onClick={() => handleRemovePlayerPermissions(player.name)}
+                    onClick={() => handleRemovePlayerPermissions(player.xuid)}
                   >
                     <FiTrash2 /> Remove
                   </ActionButton>
@@ -1321,85 +1371,101 @@ function UserManager() {
       )}
 
       {/* Add to Whitelist Modal */}
-      {showWhitelistModal && (
-        <ModalOverlay onClick={() => setShowWhitelistModal(false)}>
-          <Modal onClick={(e) => e.stopPropagation()}>
-            <ModalHeader>
-              <ModalTitle>Add to Whitelist</ModalTitle>
-              <ModalClose onClick={() => setShowWhitelistModal(false)}>×</ModalClose>
-            </ModalHeader>
-            
-            <FormGroup>
-              <Label>Username</Label>
-              <Input
-                type="text"
-                value={newWhitelistUser.username}
-                onChange={(e) => setNewWhitelistUser({ username: e.target.value })}
-                placeholder="Enter Minecraft username"
-              />
-            </FormGroup>
-            
-            <ModalActions>
-              <CancelButton onClick={() => setShowWhitelistModal(false)}>
-                Cancel
-              </CancelButton>
-              <SaveButton onClick={handleAddToWhitelist} disabled={!newWhitelistUser.username}>
-                Add to Whitelist
-              </SaveButton>
-            </ModalActions>
-          </Modal>
-        </ModalOverlay>
-      )}
+  {showWhitelistModal && (
+    <ModalOverlay onClick={() => setShowWhitelistModal(false)}>
+      <Modal onClick={(e) => e.stopPropagation()}>
+        <ModalHeader>
+          <ModalTitle>Add to Whitelist</ModalTitle>
+          <ModalClose onClick={() => setShowWhitelistModal(false)}>×</ModalClose>
+        </ModalHeader>
+        
+        <FormGroup>
+          <Label>Username (Gamertag)</Label>
+          <Input
+            type="text"
+            value={newWhitelistUser.username}
+            onChange={(e) => setNewWhitelistUser({ username: e.target.value })}
+            placeholder="Enter Minecraft username (gamertag)"
+            disabled={fetchingXuid}
+          />
+        </FormGroup>
+        
+        {fetchingXuid && (
+          <div style={{ textAlign: 'center', margin: '15px 0', color: '#3b82f6' }}>
+            Fetching XUID from GeyserMC API...
+          </div>
+        )}
+        
+        <ModalActions>
+          <CancelButton onClick={() => setShowWhitelistModal(false)} disabled={fetchingXuid}>
+            Cancel
+          </CancelButton>
+          <SaveButton 
+            onClick={handleAddToWhitelist} 
+            disabled={!newWhitelistUser.username || fetchingXuid}
+          >
+            {fetchingXuid ? 'Fetching XUID...' : 'Add to Whitelist'}
+          </SaveButton>
+        </ModalActions>
+      </Modal>
+    </ModalOverlay>
+  )}
 
       {/* Player Permissions Modal */}
-{showPermissionsModal && (
-  <ModalOverlay onClick={() => setShowPermissionsModal(false)}>
-    <Modal onClick={(e) => e.stopPropagation()}>
-      <ModalHeader>
-        <ModalTitle>
-          {playerPerms.username && playerPermissions.some(p => p.name === playerPerms.username) 
-            ? 'Edit Player Permissions' 
-            : 'Add Player Permissions'}
-        </ModalTitle>
-        <ModalClose onClick={() => setShowPermissionsModal(false)}>×</ModalClose>
-      </ModalHeader>
-      
-      <FormGroup>
-        <Label>Username</Label>
-        <Input
-          type="text"
-          value={playerPerms.username}
-          onChange={(e) => setPlayerPerms({ ...playerPerms, username: e.target.value })}
-          placeholder="Enter Minecraft username"
-          // Blokuj tylko jeśli edytujemy istniejącego gracza
-          disabled={!!playerPerms.username && playerPermissions.some(p => p.name === playerPerms.username)}
-        />
-      </FormGroup>
-      
-      <FormGroup>
-        <Label>Permission Level</Label>
-        <Select
-          value={playerPerms.level}
-          onChange={(e) => setPlayerPerms({ ...playerPerms, level: e.target.value })}
-        >
-          <option value="member">Member</option>
-          <option value="moderator">Moderator</option>
-          <option value="admin">Admin</option>
-          <option value="owner">Owner</option>
-        </Select>
-      </FormGroup>
-      
-      <ModalActions>
-        <CancelButton onClick={() => setShowPermissionsModal(false)}>
-          Cancel
-        </CancelButton>
-        <SaveButton onClick={handleSavePlayerPermissions} disabled={!playerPerms.username}>
-          Save Permissions
-        </SaveButton>
-      </ModalActions>
-    </Modal>
-  </ModalOverlay>
-)}
+  {showPermissionsModal && (
+    <ModalOverlay onClick={() => setShowPermissionsModal(false)}>
+      <Modal onClick={(e) => e.stopPropagation()}>
+        <ModalHeader>
+          <ModalTitle>
+            {playerPerms.xuid ? 'Edit Player Permissions' : 'Add Player Permissions'}
+          </ModalTitle>
+          <ModalClose onClick={() => setShowPermissionsModal(false)}>×</ModalClose>
+        </ModalHeader>
+        
+        <FormGroup>
+          <Label>Username (Gamertag)</Label>
+          <Input
+            type="text"
+            value={playerPerms.username}
+            onChange={(e) => setPlayerPerms({ ...playerPerms, username: e.target.value })}
+            placeholder="Enter Minecraft username (gamertag)"
+            disabled={fetchingXuid || !!playerPerms.xuid}
+          />
+        </FormGroup>
+        
+        <FormGroup>
+          <Label>Permission Level</Label>
+          <Select
+            value={playerPerms.permission}
+            onChange={(e) => setPlayerPerms({ ...playerPerms, permission: e.target.value })}
+            disabled={fetchingXuid}
+          >
+            <option value="member">Member</option>
+            <option value="operator">Operator</option>
+            <option value="admin">Admin</option>
+          </Select>
+        </FormGroup>
+        
+        {fetchingXuid && (
+          <div style={{ textAlign: 'center', margin: '15px 0', color: '#3b82f6' }}>
+            Fetching XUID from GeyserMC API...
+          </div>
+        )}
+        
+        <ModalActions>
+          <CancelButton onClick={() => setShowPermissionsModal(false)} disabled={fetchingXuid}>
+            Cancel
+          </CancelButton>
+          <SaveButton 
+            onClick={handleSavePlayerPermissions} 
+            disabled={!playerPerms.username || fetchingXuid}
+          >
+            {fetchingXuid ? 'Fetching XUID...' : 'Save Permissions'}
+          </SaveButton>
+        </ModalActions>
+      </Modal>
+    </ModalOverlay>
+  )}
     </Container>
   );
 }
