@@ -52,6 +52,9 @@ RUN apt-get update && apt-get install -y \
 # Utwórz katalog aplikacji
 WORKDIR $APP_HOME
 
+# Skopiuj Data
+COPY data/ ./data/
+
 # Skopiuj backend
 COPY backend/ ./backend/
 
