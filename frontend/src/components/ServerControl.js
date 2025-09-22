@@ -135,6 +135,76 @@ const StatusIndicator = styled.div`
   `}
 `;
 
+const ServerStatusIndicator = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  background: ${props => props.$online ? '#065f46' : '#4a5070'};
+  color: ${props => props.$online ? '#10b981' : '#a4aabc'};
+`;
+
+const StatusDot = styled.div`
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: ${props => props.$online ? '#10b981' : '#a4aabc'};
+`;
+
+const PlayerStatus = styled.div`
+  background: #2e3245;
+  border-radius: 8px;
+  padding: 15px 20px;
+  margin-bottom: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+`;
+
+const PlayerInfo = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+`;
+
+const PlayerIcon = styled.div`
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #3b82f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 18px;
+`;
+
+const PlayerDetails = styled.div`
+  display: flex;
+  flex-direction: column;
+`;
+
+const PlayerTitle = styled.div`
+  font-size: 14px;
+  color: #a4aabc;
+  margin-bottom: 2px;
+`;
+
+const PlayerCount = styled.div`
+  font-size: 24px;
+  font-weight: 700;
+  color: #fff;
+`;
+
+const PlayerMax = styled.span`
+  font-size: 16px;
+  color: #a4aabc;
+  font-weight: 500;
+`;
+
 const ServerDetails = styled.div`
   display: grid;
   grid-template-columns: 1fr;
@@ -610,6 +680,7 @@ function ServerControl() {
   const [consoleLogs, setConsoleLogs] = useState([]);
   const [activeTab, setActiveTab] = useState('overview');
   const [consoleFilter, setConsoleFilter] = useState('ALL');
+  const [playerStats, setPlayerStats] = useState(null);
 
 	useEffect(() => {
 	  fetchServer();
@@ -617,8 +688,9 @@ function ServerControl() {
 	  fetchBackups();
 	  
 	  let performanceInterval;
+	  let playerStatsInterval;
 	  
-	  if (server?.status === 'running') {
+	  if (server?.status == 'running') {
 		fetchPerformanceStats();
 		performanceInterval = setInterval(fetchPerformanceStats, 5000);
 	  }
@@ -626,8 +698,9 @@ function ServerControl() {
 	  return () => {
 		stopProgressPolling();
 		if (performanceInterval) clearInterval(performanceInterval);
+		if (playerStatsInterval) clearInterval(playerStatsInterval);
 	  };
-	}, [serverId]); 
+	}, [serverId], server?.status); 
 
   const fetchServer = async () => {
     try {
@@ -645,7 +718,7 @@ function ServerControl() {
   };
 
   const fetchPerformanceStats = async () => {
-    if (server?.status !== 'running') return;
+    //if (server?.status !== 'running') return;
     
     try {
       const response = await api.get(`/servers/${serverId}/performance`);
@@ -703,6 +776,62 @@ function ServerControl() {
       setConsoleLogs([]); // Ustaw pustą tablicę w przypadku błędu
     }
   };
+  
+	const parsePlayerCountFromLogs = (logs) => {
+	  if (!Array.isArray(logs)) return null;
+	  
+	  let playerCount = 0;
+	  const playerJoinRegex = /(?:Player connected:|\[.*?\]:\s*\w+\s*joined the game|\[.*?\]:\s*\w+\s*\[.*\] logged in)/i;
+	  const playerLeaveRegex = /(?:Player disconnected:|\[.*?\]:\s*\w+\s*left the game|\[.*?\]:\s*\w+\s*lost connection)/i;
+	  
+	  logs.forEach(log => {
+		const logLine = typeof log === 'string' ? log : String(log);
+		
+		if (playerJoinRegex.test(logLine)) {
+		  playerCount++;
+		} else if (playerLeaveRegex.test(logLine)) {
+		  playerCount = Math.max(0, playerCount - 1);
+		}
+	  });
+	  
+	  return playerCount;
+	};
+
+	// Alternatywna, bardziej zaawansowana wersja z śledzeniem konkretnych graczy
+	const trackPlayersFromLogs = (logs) => {
+	  if (!Array.isArray(logs)) return { count: 0, players: [] };
+	  
+	  const players = new Set();
+	  const joinRegex = /(?:Player connected:\s*(\w+)|\[.*?\]:\s*(\w+)\s*joined|\[.*?\]:\s*(\w+)\s*\[.*\] logged in)/i;
+	  const leaveRegex = /(?:Player disconnected:\s*(\w+)|\[.*?\]:\s*(\w+)\s*left|\[.*?\]:\s*(\w+)\s*lost connection)/i;
+	  
+	  logs.forEach(log => {
+		const logLine = typeof log === 'string' ? log : String(log);
+		
+		// Sprawdzanie dołączenia gracza
+		const joinMatch = logLine.match(joinRegex);
+		if (joinMatch) {
+		  const playerName = joinMatch[1] || joinMatch[2] || joinMatch[3];
+		  if (playerName) {
+		    players.add(playerName.toLowerCase());
+		  }
+		}
+		
+		// Sprawdzanie opuszczenia gracza
+		const leaveMatch = logLine.match(leaveRegex);
+		if (leaveMatch) {
+		  const playerName = leaveMatch[1] || leaveMatch[2] || leaveMatch[3];
+		  if (playerName) {
+		    players.delete(playerName.toLowerCase());
+		  }
+		}
+	  });
+	  
+	  return {
+		count: players.size,
+		players: Array.from(players)
+	  };
+	};
 
   const checkDownloadProgress = async () => {
     try {
@@ -910,16 +1039,33 @@ function ServerControl() {
   };
 
   // Fetch real-time output logs
-  useEffect(() => {
-    if (server?.status === 'running') {
-      fetchRealtimeOutput();
-      const logInterval = setInterval(fetchRealtimeOutput, 3000); // Update logs every 3 seconds
-      
-      return () => clearInterval(logInterval);
-    } else {
-      setConsoleLogs([]); // Wyczyść logi gdy serwer jest wyłączony
+	useEffect(() => {
+	  if (server?.status === 'running') {
+		fetchRealtimeOutput();
+		const logInterval = setInterval(fetchRealtimeOutput, 3000);
+		
+		return () => clearInterval(logInterval);
+	  } else {
+		setConsoleLogs([]);
+		setPlayerStats(null); // Resetuj liczbę graczy gdy serwer jest wyłączony
+	  }
+	}, [serverId, server?.status]);
+
+
+useEffect(() => {
+  if (server?.status === 'running' && consoleLogs.length > 0) {
+    const playerData = trackPlayersFromLogs(consoleLogs);
+    
+    // Aktualizuj stan tylko jeśli są zmiany
+    if (playerData.count !== (playerStats?.online || 0)) {
+      setPlayerStats({
+        online: playerData.count,
+        max: server.max_players || 20, // Użyj maksymalnej liczby graczy z serwera
+        list: playerData.players
+      });
     }
-  }, [serverId, server?.status]);
+  }
+}, [consoleLogs, server?.status]);
 
   // Funkcja do filtrowania logów
   const getFilteredLogs = () => {
@@ -974,6 +1120,29 @@ function ServerControl() {
 	  
 	  return messages[currentAction] || null;
 	};
+	
+	const getPlayerRegexPatterns = () => ({
+	  // Vanilla Minecraft
+	  vanilla: {
+		join: /\[.*?\]:\s*(\w+)\s*joined the game/,
+		leave: /\[.*?\]:\s*(\w+)\s*left the game/
+	  },
+	  // Bukkit/Spigot/Paper
+	  bukkit: {
+		join: /\[.*?\]:\s*(\w+)\s*\[.*\] logged in/,
+		leave: /\[.*?\]:\s*(\w+)\s*lost connection/
+	  },
+	  // Custom messages
+	  custom: {
+		join: /Player connected:\s*(\w+)/,
+		leave: /Player disconnected:\s*(\w+)/
+	  },
+	  // Bedrock Edition
+	  bedrock: {
+		join: /\[.*?\]:\s*Player connected:\s*(\w+)/,
+		leave: /\[.*?\]:\s*Player disconnected:\s*(\w+)/
+	  }
+	});
 
   return (
     <Container>
@@ -1014,7 +1183,40 @@ function ServerControl() {
         >
           <FiUser /> Users
         </NavTab>
+        <NavTab 
+          $active={activeTab === 'backups'} 
+          onClick={() => navigate(`/servers/${serverId}/backups`)}
+        >
+          <FiDownload /> Backups
+        </NavTab>
       </NavTabs>
+      
+      {/* Player Status Component */}
+      {server.status === 'running' && (
+<PlayerStatus>
+  <PlayerInfo>
+    <PlayerIcon>
+      <FiUsers />
+    </PlayerIcon>
+    <PlayerDetails>
+      <PlayerTitle>Gracze online</PlayerTitle>
+      <PlayerCount>
+        {playerStats ? playerStats.online : '0'}
+        <PlayerMax> / {server.max_players || 20}</PlayerMax>
+      </PlayerCount>
+      {playerStats?.list && playerStats.list.length > 0 && (
+        <div style={{ fontSize: '12px', color: '#a4aabc', marginTop: '5px' }}>
+          Online: {playerStats.list.join(', ')}
+        </div>
+      )}
+    </PlayerDetails>
+  </PlayerInfo>
+  <ServerStatusIndicator $online={playerStats && playerStats.online > 0}>
+    <StatusDot $online={playerStats && playerStats.online > 0} />
+    {playerStats && playerStats.online > 0 ? 'Aktywni gracze' : 'Brak graczy'}
+  </ServerStatusIndicator>
+</PlayerStatus>
+      )}
 
       {downloadProgress && downloadProgress.status !== 'idle' && (
         <ProgressBar
@@ -1056,7 +1258,7 @@ function ServerControl() {
           {actionLoading && currentAction === 'restart' ? <LoadingSpinner /> : <FiRefreshCw />}
           Restartuj Serwer
         </ActionButton>
-        <ActionButton $variant="secondary" onClick={() => navigate(`/servers/${serverId}/console`)}>
+        <ActionButton $variant="secondary" onClick={() => navigate(`/servers/${serverId}/console`)} disabled={server.status === 'stopped' || actionLoading}>
           <FiTerminal /> Konsola
         </ActionButton>
         <ActionButton 
@@ -1154,9 +1356,12 @@ function ServerControl() {
 			  <TaskButton onClick={handleCreateBackup} disabled={server.status === 'running'}>
 				<FiDownload /> Kopia zapasowa
 			  </TaskButton>
-			  <TaskButton onClick={() => toast.info('Funkcja "Prześlij świat" jest w trakcie tworzenia')}>
-				<FiUpload /> Prześlij świat
-			  </TaskButton>
+			  <TaskButton onClick={() => navigate(`/servers/${serverId}/backups`)}>
+                <FiDownload /> Backup Manager
+              </TaskButton>
+              <TaskButton onClick={() => navigate(`/servers/${serverId}/plugins`)}>
+                <FiBox /> Plugin Manager
+              </TaskButton>
 			  <TaskButton onClick={() => toast.info('Funkcja "Napraw serwer" jest w trakcie tworzenia')}>
 				<FaWrench /> Napraw serwer
 			  </TaskButton>

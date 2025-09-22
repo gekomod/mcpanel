@@ -17,6 +17,7 @@ import {
   FiTerminal,
   FiFolder,
   FiUser,
+  FiDownload,
   FiBox
 } from 'react-icons/fi';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -697,6 +698,13 @@ const updateWorldPacksFiles = async (worldName) => {
         >
           <FiUser /> Users
         </NavTab>
+        
+         <NavTab 
+          $active={activeTab === 'backups'} 
+          onClick={() => navigate(`/servers/${serverId}/backups`)}
+        >
+          <FiDownload /> Backups
+          </NavTab>
       </NavTabs>
 
       <Header>

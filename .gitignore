@@ -1,2 +1,7 @@
 servers/
 frontend/node_modules/
+frontend/build/
+data/backups
+backend/__pycache__
+backend/app/__pycache__
+backend/migrations/__pycache__

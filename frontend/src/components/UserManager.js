@@ -16,6 +16,7 @@ import {
   FiSettings,
   FiRefreshCw,
   FiBox,
+  FiDownload,
   FiList
 } from 'react-icons/fi';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -1208,6 +1209,13 @@ const renderPlayerPermissions = () => (
         >
           <FiUser /> Users
         </NavTab>
+        
+         <NavTab 
+          $active={activeTab === 'backups'} 
+          onClick={() => navigate(`/servers/${serverId}/backups`)}
+        >
+          <FiDownload /> Backups
+          </NavTab>
       </NavTabs>
       <TabsContainer>
         <Tab 

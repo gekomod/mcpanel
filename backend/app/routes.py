@@ -1220,9 +1220,8 @@ def get_server_backups(server_id):
     if not _check_permission(current_user_id, server_id, 'can_edit_files'):
         return jsonify({'error': 'Access denied'}), 403
     
-    # Symuluj listę backupów (w rzeczywistości sprawdź katalog backupów)
     backups = []
-    backup_dir = os.path.join(server.path, 'backups')
+    backup_dir = os.path.join(os.path.realpath('../data'), 'backups')
     
     if os.path.exists(backup_dir):
         for file_name in os.listdir(backup_dir):
@@ -1233,10 +1232,10 @@ def get_server_backups(server_id):
                     'name': file_name,
                     'size': os.path.getsize(file_path),
                     'created_at': created_at,
-                    'created_at_formatted': datetime.fromtimestamp(created_at).strftime('%Y-%m-%d %H:%M:%S')
+                    'created_at_formatted': datetime.fromtimestamp(created_at).strftime('%Y-%m-%d %H:%M:%S'),
+                    'status': 'completed'  # Dodaj status wymagany przez frontend
                 })
     
-    # Sortuj od najnowszego
     backups.sort(key=lambda x: x['created_at'], reverse=True)
     
     return jsonify({'backups': backups})
@@ -1261,7 +1260,7 @@ def create_server_backup(server_id):
         from datetime import datetime
         
         # Utwórz katalog backupów jeśli nie istnieje
-        backup_dir = os.path.join(server.path, 'backups')
+        backup_dir = os.path.join(os.path.realpath('../data'), 'backups')
         os.makedirs(backup_dir, exist_ok=True)
         
         # Nazwa pliku backupu
@@ -1269,33 +1268,114 @@ def create_server_backup(server_id):
         backup_name = f'backup_{server.name}_{timestamp}.zip'
         backup_path = os.path.join(backup_dir, backup_name)
         
+        print(f"Creating backup for server: {server.name}")
+        print(f"Server path: {server.path}")
+        print(f"Backup path: {backup_path}")
+        
+        # Sprawdź czy ścieżka serwera istnieje
+        if not os.path.exists(server.path):
+            return jsonify({'error': f'Server directory does not exist: {server.path}'}), 400
+        
         # Utwórz backup (skompresuj świat i ważne pliki)
         with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            # Dodaj świat
-            world_dir = os.path.join(server.path, 'world')
+            added_files = 0
+            
+            # Dodaj cały katalog świata
+            world_dir = os.path.join(server.path, 'worlds')
             if os.path.exists(world_dir):
+                print(f"Adding world directory: {world_dir}")
                 for root, dirs, files in os.walk(world_dir):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        # Użyj ścieżki względnej od server.path
+                        arcname = os.path.relpath(file_path, server.path)
+                        zipf.write(file_path, arcname)
+                        added_files += 1
+                        if added_files % 100 == 0:  # Log co 100 plików
+                            print(f"Added {added_files} files...")
+            
+            # Dodaj pojedyncze ważne pliki
+            important_files = [
+                'server.properties', 'whitelist.json', 'ops.json', 
+                'banned-players.json', 'banned-ips.json', 
+                'permissions.json', 'allowlist.json', 'eula.txt'
+            ]
+            
+            for file in important_files:
+                file_path = os.path.join(server.path, file)
+                if os.path.exists(file_path):
+                    print(f"Adding file: {file}")
+                    zipf.write(file_path, file)
+                    added_files += 1
+                    
+            # Dodaj katalog plugins jeśli istnieje (dla serwerów Bedrocks)
+            bh_dir = os.path.join(server.path, 'behavior_packs')
+            if os.path.exists(bh_dir):
+                print(f"Adding plugins directory: {bh_dir}")
+                for root, dirs, files in os.walk(bh_dir):
                     for file in files:
                         file_path = os.path.join(root, file)
                         arcname = os.path.relpath(file_path, server.path)
                         zipf.write(file_path, arcname)
+                        added_files += 1
             
-            # Dodaj server.properties
-            properties_file = os.path.join(server.path, 'server.properties')
-            if os.path.exists(properties_file):
-                zipf.write(properties_file, 'server.properties')
+            # Dodaj katalog plugins jeśli istnieje (dla serwerów Java)
+            plugins_dir = os.path.join(server.path, 'plugins')
+            if os.path.exists(plugins_dir):
+                print(f"Adding plugins directory: {plugins_dir}")
+                for root, dirs, files in os.walk(plugins_dir):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        arcname = os.path.relpath(file_path, server.path)
+                        zipf.write(file_path, arcname)
+                        added_files += 1
             
-            # Dodaj inne ważne pliki
-            important_files = ['whitelist.json', 'ops.json', 'banned-players.json', 'banned-ips.json']
-            for file in important_files:
-                file_path = os.path.join(server.path, file)
-                if os.path.exists(file_path):
-                    zipf.write(file_path, file)
+            print(f"Backup completed. Total files added: {added_files}")
         
-        return jsonify({'message': f'Backup created: {backup_name}'})
+        # Sprawdź rozmiar stworzonego backupu
+        backup_size = os.path.getsize(backup_path) if os.path.exists(backup_path) else 0
+        print(f"Backup size: {backup_size} bytes")
+        
+        if backup_size == 0:
+            return jsonify({'error': 'Backup file is empty. No files were added.'}), 500
+        
+        return jsonify({
+            'message': f'Backup created: {backup_name}',
+            'backup_name': backup_name,
+            'file_count': added_files,
+            'size': backup_size
+        })
         
     except Exception as e:
+        print(f"Backup error: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': f'Failed to create backup: {str(e)}'}), 500
+        
+@main.route('/servers/<int:server_id>/backups/<backup_name>', methods=['DELETE'])
+@jwt_required()
+def delete_server_backup(server_id, backup_name):
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    try:
+        backup_dir = os.path.join(os.path.realpath('../data'), 'backups')
+        backup_path = os.path.join(backup_dir, backup_name)
+        
+        if not os.path.exists(backup_path):
+            return jsonify({'error': 'Backup not found'}), 404
+        
+        # Usuń plik backupu
+        os.remove(backup_path)
+        
+        return jsonify({'message': f'Backup {backup_name} deleted successfully'})
+        
+    except Exception as e:
+        return jsonify({'error': f'Failed to delete backup: {str(e)}'}), 500
 
 @main.route('/servers/<int:server_id>/backups/<backup_name>/restore', methods=['POST'])
 @jwt_required()
@@ -1315,7 +1395,7 @@ def restore_server_backup(server_id, backup_name):
         import zipfile
         import shutil
         
-        backup_dir = os.path.join(server.path, 'backups')
+        backup_dir = os.path.join(os.path.realpath('../data'), 'backups')
         backup_path = os.path.join(backup_dir, backup_name)
         
         if not os.path.exists(backup_path):

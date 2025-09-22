@@ -739,6 +739,13 @@ function PluginManager() {
         >
           <FiUser /> Users
         </NavTab>
+        
+          <NavTab 
+          $active={activeTab === 'backups'} 
+          onClick={() => navigate(`/servers/${serverId}/backups`)}
+        >
+          <FiDownload /> Backups
+          </NavTab>
       </NavTabs>
 
       <Header>

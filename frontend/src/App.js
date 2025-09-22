@@ -15,6 +15,7 @@ import Servers from './components/Servers';
 import UserAdminManager from './components/UserAdminManager';
 import Support from './components/Support';
 import SettingsAdmin from './components/SettingsAdmin';
+import BackupServer from './components/BackupServer';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -56,6 +57,7 @@ function App() {
 					<Route path="/servers/:serverId/users" element={<UserManager />} />
 					<Route path="/servers/:serverId/plugins" element={<PluginManager />} />
 					<Route path="/servers/:serverId/settings" element={<Settings />} />
+					<Route path="/servers/:serverId/backups" element={<BackupServer />} />
 					<Route path="/servers" element={<Servers />} />
 					<Route path="/support" element={<Support />} />
                     {/* Admin routes */}

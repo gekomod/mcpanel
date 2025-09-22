@@ -10,6 +10,7 @@ import {
   FiFolder,
   FiSettings,
   FiUser,
+  FiDownload,
   FiBox
 } from 'react-icons/fi';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -427,6 +428,12 @@ function Console() {
           onClick={() => navigate(`/servers/${serverId}/users`)}
         >
           <FiUser /> Users
+        </NavTab>
+        
+        <NavTab 
+          onClick={() => navigate(`/servers/${serverId}/backups`)}
+        >
+          <FiDownload /> Backups
         </NavTab>
       </NavTabs>
 

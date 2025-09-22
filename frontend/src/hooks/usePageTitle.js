@@ -10,6 +10,7 @@ import {
   FiGrid,
   FiUser,
   FiUsers,
+  FiDownload,
   FiBox
 } from 'react-icons/fi';
 import { ImQuestion } from "react-icons/im";
@@ -46,6 +47,10 @@ const routeConfig = {
   '/servers/:id/users': {
     title: 'Użytkownicy',
     icon: FiUsers
+  },
+  '/servers/:id/backups': {
+    title: 'Backup Manager',
+    icon: FiDownload
   },
   '/dashboard': {
     title: 'Panel Sterowania',

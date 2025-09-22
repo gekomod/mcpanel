@@ -698,6 +698,7 @@ function FileEditor() {
         >
           <FiUser /> Users
           </NavTab>
+          
         </NavTabs>
         
         <Header>
@@ -749,6 +750,13 @@ function FileEditor() {
         >
           <FiUser /> Users
         </NavTab>
+        
+          <NavTab 
+          $active={activeTab === 'backups'} 
+          onClick={() => navigate(`/servers/${serverId}/backups`)}
+        >
+          <FiDownload /> Backups
+          </NavTab>
       </NavTabs>
 
       <Header>
