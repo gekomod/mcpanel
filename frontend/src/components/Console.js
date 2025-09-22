@@ -1,13 +1,54 @@
 import React, { useState, useEffect, useRef } from 'react';
 import styled from 'styled-components';
-import { FiTerminal, FiSend, FiTrash2, FiRefreshCw, FiAlertCircle } from 'react-icons/fi';
-import { useParams } from 'react-router-dom';
+import { 
+  FiTerminal, 
+  FiSend, 
+  FiTrash2, 
+  FiRefreshCw, 
+  FiAlertCircle,
+  FiActivity,
+  FiFolder,
+  FiSettings,
+  FiUser,
+  FiBox
+} from 'react-icons/fi';
+import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 
 const Container = styled.div`
-  padding: 20px;
-  max-width: 1200px;
-  margin: 0 auto;
+  padding: 15px 20px;
+  color: #a4aabc;
+`;
+
+const NavTabs = styled.div`
+  display: flex;
+  background: #2e3245;
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 15px;
+  gap: 4px;
+`;
+
+const NavTab = styled.div`
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 0.9rem;
+  color: #a4aabc;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  
+  ${props => props.$active && `
+    background: #3b82f6;
+    color: white;
+  `}
+  
+  &:hover {
+    background: #35394e;
+  }
 `;
 
 const Header = styled.div`
@@ -15,7 +56,7 @@ const Header = styled.div`
   align-items: center;
   margin-bottom: 20px;
   padding-bottom: 15px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid #3a3f57;
 `;
 
 const Title = styled.h1`
@@ -24,9 +65,9 @@ const Title = styled.h1`
   display: flex;
   align-items: center;
   gap: 10px;
+  color: #fff;
 `;
 
-// Changed 'status' to '$status' to make it a transient prop
 const StatusBadge = styled.span`
   padding: 6px 12px;
   border-radius: 20px;
@@ -35,16 +76,16 @@ const StatusBadge = styled.span`
   margin-left: 15px;
   
   ${props => props.$status === 'running' ? `
-    background-color: #dcfce7;
-    color: #16a34a;
+    background-color: #065f46;
+    color: #10b981;
   ` : `
-    background-color: #fee2e2;
-    color: #dc2626;
+    background-color: #991b1b;
+    color: #ef4444;
   `}
 `;
 
 const ConsoleContainer = styled.div`
-  background: #1a1a1a;
+  background: #2e3245;
   border-radius: 8px;
   overflow: hidden;
   margin-bottom: 20px;
@@ -54,16 +95,18 @@ const ConsoleContainer = styled.div`
 `;
 
 const ConsoleHeader = styled.div`
-  background: #2d2d2d;
-  padding: 10px 15px;
+  background: #35394e;
+  padding: 15px 20px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  border-bottom: 1px solid #3a3f57;
 `;
 
 const ConsoleTitle = styled.div`
   color: #fff;
-  font-weight: 500;
+  font-weight: 600;
+  font-size: 18px;
 `;
 
 const ConsoleActions = styled.div`
@@ -72,23 +115,25 @@ const ConsoleActions = styled.div`
 `;
 
 const ConsoleButton = styled.button`
-  background: #404040;
+  background: #4a5070;
   border: none;
-  color: #fff;
-  padding: 5px 10px;
-  border-radius: 4px;
+  color: #cbd5e1;
+  padding: 8px 12px;
+  border-radius: 6px;
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 5px;
   font-size: 0.85rem;
+  transition: all 0.2s ease;
   
-  &:hover {
-    background: #4a4a4a;
+  &:hover:not(:disabled) {
+    background: #565d81;
+    color: white;
   }
   
   &:disabled {
-    background: #666;
+    background: #3a3f57;
     cursor: not-allowed;
   }
 `;
@@ -100,7 +145,8 @@ const ConsoleContent = styled.div`
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   font-size: 14px;
   line-height: 1.4;
-  color: #e0e0e0;
+  color: #a4aabc;
+  background: #35394e;
 `;
 
 const ConsoleLine = styled.div`
@@ -122,19 +168,20 @@ const InputContainer = styled.div`
 const CommandInput = styled.input`
   flex: 1;
   padding: 12px 15px;
-  border: 1px solid #d1d5db;
+  background: #35394e;
+  border: 1px solid #3a3f57;
   border-radius: 6px;
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   font-size: 14px;
+  color: #fff;
   
   &:focus {
     outline: none;
     border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
   }
   
   &:disabled {
-    background: #f3f4f6;
+    background: #2e3245;
     cursor: not-allowed;
   }
 `;
@@ -149,26 +196,28 @@ const SendButton = styled.button`
   display: flex;
   align-items: center;
   gap: 8px;
+  transition: all 0.2s ease;
   
-  &:hover {
+  &:hover:not(:disabled) {
     background: #2563eb;
   }
   
   &:disabled {
-    background: #9ca3af;
+    background: #4a5070;
     cursor: not-allowed;
   }
 `;
 
 const ErrorMessage = styled.div`
-  background: #fee2e2;
-  color: #dc2626;
+  background: #991b1b;
+  color: #ef4444;
   padding: 15px;
   border-radius: 6px;
   margin-bottom: 20px;
   display: flex;
   align-items: center;
   gap: 10px;
+  border-left: 4px solid #ef4444;
 `;
 
 const RetryButton = styled.button`
@@ -181,6 +230,7 @@ const RetryButton = styled.button`
   display: flex;
   align-items: center;
   gap: 5px;
+  transition: all 0.2s ease;
   
   &:hover {
     background: #2563eb;
@@ -189,6 +239,7 @@ const RetryButton = styled.button`
 
 function Console() {
   const { serverId } = useParams();
+  const navigate = useNavigate();
   const [server, setServer] = useState(null);
   const [loading, setLoading] = useState(true);
   const [command, setCommand] = useState('');
@@ -346,11 +397,43 @@ function Console() {
 
   return (
     <Container>
+      <NavTabs>
+        <NavTab 
+          onClick={() => navigate(`/servers/${serverId}`)}
+        >
+          <FiActivity /> Overview
+        </NavTab>
+        <NavTab 
+          $active={true}
+        >
+          <FiTerminal /> Console
+        </NavTab>
+        <NavTab 
+          onClick={() => navigate(`/servers/${serverId}/files`)}
+        >
+          <FiFolder /> Files
+        </NavTab>
+        <NavTab 
+          onClick={() => navigate(`/servers/${serverId}/settings`)}
+        >
+          <FiSettings /> Config
+        </NavTab>
+        <NavTab 
+          onClick={() => navigate(`/servers/${serverId}/plugins`)}
+        >
+          <FiBox /> Plugins
+        </NavTab>
+        <NavTab 
+          onClick={() => navigate(`/servers/${serverId}/users`)}
+        >
+          <FiUser /> Users
+        </NavTab>
+      </NavTabs>
+
       <Header>
         <Title>
           <FiTerminal /> Console - {server.name} ({server.type.toUpperCase()})
         </Title>
-        {/* Changed status to $status to use the transient prop */}
         <StatusBadge $status={server.status}>
           {server.status.toUpperCase()}
         </StatusBadge>
@@ -379,7 +462,7 @@ function Console() {
             </ConsoleButton>
             <ConsoleButton 
               onClick={() => setAutoRefresh(!autoRefresh)}
-              style={{ background: autoRefresh ? '#4a4a4a' : '#404040' }}
+              style={{ background: autoRefresh ? '#3b82f6' : '#4a5070', color: 'white' }}
               title={autoRefresh ? 'Auto-refresh enabled' : 'Auto-refresh disabled'}
             >
               Auto: {autoRefresh ? 'ON' : 'OFF'}

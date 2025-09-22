@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
-import { 
+import {
   FiPackage, 
   FiPlus, 
   FiEdit, 
@@ -10,174 +10,228 @@ import {
   FiFilter,
   FiX,
   FiCheck,
-  FiExternalLink
+  FiExternalLink,
+  FiGrid,
+  FiList,
+  FiUser
 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import api from '../services/api';
 
+// Styled components matching the HTML style
 const Container = styled.div`
-  padding: 20px;
-  max-width: 1400px;
-  margin: 0 auto;
+  padding: 20px 30px;
+  flex: 1;
+  overflow-y: auto;
 `;
 
 const Header = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
-  padding-bottom: 15px;
-  border-bottom: 1px solid #e5e7eb;
+  padding: 15px 0;
+  margin-bottom: 25px;
 `;
 
-const Title = styled.h1`
+const PageTitle = styled.h2`
+  font-size: 24px;
+  font-weight: 700;
+  color: #fff;
   margin: 0;
-  font-size: 1.8rem;
+`;
+
+const HeaderActions = styled.div`
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 15px;
 `;
 
-const Actions = styled.div`
+const UserInfo = styled.div`
   display: flex;
-  gap: 10px;
+  align-items: center;
+  gap: 15px;
+  color: #a4aabc;
 `;
 
-const Button = styled.button`
+const UserAvatar = styled.div`
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background-color: #3b82f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  color: white;
+`;
+
+const AddButton = styled.button`
+  background: #3b82f6;
+  color: white;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  font-size: 14px;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 16px;
-  background: ${props => props.primary ? '#3b82f6' : props.danger ? '#ef4444' : '#f3f4f6'};
-  color: ${props => props.primary || props.danger ? 'white' : '#374151'};
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 500;
   
-  &:hover:not(:disabled) {
-    background: ${props => props.primary ? '#2563eb' : props.danger ? '#dc2626' : '#e5e7eb'};
-  }
-  
-  &:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+  &:hover {
+    background: #2563eb;
   }
 `;
 
 const Filters = styled.div`
   display: flex;
-  gap: 15px;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 20px;
   flex-wrap: wrap;
+  gap: 15px;
+`;
+
+const SearchBox = styled.div`
+  position: relative;
+  flex: 1;
+  min-width: 250px;
+`;
+
+const SearchInput = styled.input`
+  width: 100%;
+  background: #2e3245;
+  border: 1px solid #3a3f57;
+  border-radius: 6px;
+  padding: 10px 15px 10px 40px;
+  color: #fff;
+  font-size: 14px;
+  
+  &:focus {
+    outline: none;
+    border-color: #3b82f6;
+  }
+  
+  &::placeholder {
+    color: #6b7293;
+  }
+`;
+
+const SearchIcon = styled.div`
+  position: absolute;
+  left: 15px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #a4aabc;
 `;
 
 const FilterGroup = styled.div`
   display: flex;
-  flex-direction: column;
-  gap: 5px;
+  gap: 10px;
+  flex-wrap: wrap;
 `;
 
-const FilterLabel = styled.label`
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: #374151;
-`;
-
-const Select = styled.select`
-  padding: 8px 12px;
-  border: 1px solid #d1d5db;
+const FilterSelect = styled.select`
+  background: #2e3245;
+  border: 1px solid #3a3f57;
   border-radius: 6px;
-  background: white;
+  padding: 10px 15px;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
   
   &:focus {
     outline: none;
     border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
   }
 `;
 
-const Input = styled.input`
-  padding: 8px 12px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  
-  &:focus {
-    outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
-  }
-`;
-
-const Grid = styled.div`
+const AddonsGrid = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 20px;
-  margin-bottom: 20px;
+  margin-bottom: 40px;
 `;
 
 const AddonCard = styled.div`
-  background: white;
-  border-radius: 12px;
+  background: #2e3245;
+  border-radius: 10px;
   padding: 20px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  cursor: pointer;
+  border: 1px solid #3a3f57;
+  display: flex;
+  flex-direction: column;
   
   &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 15px rgba(0, 0, 0, 0.15);
+    transform: translateY(-5px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
   }
 `;
 
-const AddonImage = styled.img`
-  width: 100%;
-  height: 200px;
-  object-fit: cover;
-  border-radius: 8px;
-  margin-bottom: 15px;
-  background: #f3f4f6;
-`;
-
-const AddonHeader = styled.div`
+const AddonCardHeader = styled.div`
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 10px;
+  align-items: center;
+  margin-bottom: 15px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #3a3f57;
 `;
 
-const AddonName = styled.h3`
+const AddonCardTitle = styled.h3`
+  font-size: 18px;
+  font-weight: 600;
+  color: #fff;
   margin: 0;
-  font-size: 1.2rem;
-  color: #1f2937;
 `;
 
-const AddonType = styled.span`
-  background: ${props => 
-    props.type === 'plugin' ? '#e0e7ff' : 
-    props.type === 'script' ? '#fce7f3' : 
-    '#dcfce7'
-  };
-  color: ${props => 
-    props.type === 'plugin' ? '#3730a3' : 
-    props.type === 'script' ? '#be185d' : 
-    '#166534'
-  };
-  padding: 4px 8px;
-  border-radius: 20px;
-  font-size: 0.8rem;
+const AddonStatus = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background-color: ${props => props.active ? '#065f46' : '#7c2d2d'};
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: ${props => props.active ? '#10b981' : '#f87171'};
+`;
+
+const StatusIndicator = styled.div`
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: ${props => props.active ? '#10b981' : '#f87171'};
+`;
+
+const AddonCardDetails = styled.div`
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-bottom: 15px;
+`;
+
+const AddonDetail = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+`;
+
+const AddonDetailLabel = styled.span`
+  font-size: 12px;
+  color: #a4aabc;
   font-weight: 500;
 `;
 
-const AddonMeta = styled.div`
-  display: flex;
-  gap: 15px;
-  margin-bottom: 10px;
-  font-size: 0.9rem;
-  color: #6b7280;
+const AddonDetailValue = styled.span`
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
 `;
 
 const AddonDescription = styled.p`
-  color: #4b5563;
+  color: #a4aabc;
   line-height: 1.5;
   margin-bottom: 15px;
   display: -webkit-box;
@@ -186,33 +240,111 @@ const AddonDescription = styled.p`
   overflow: hidden;
 `;
 
-const AddonActions = styled.div`
+const AddonCardFooter = styled.div`
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid #3a3f57;
   display: flex;
-  gap: 10px;
   justify-content: space-between;
+  align-items: center;
+`;
+
+const AddonAuthor = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 14px;
+  color: #a4aabc;
+`;
+
+const ManageAddonBtn = styled.button`
+  background: #3b82f6;
+  color: white;
+  border: none;
+  padding: 8px 15px;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  
+  &:hover {
+    background: #2563eb;
+  }
+`;
+
+const InstallAddonCard = styled.div`
+  background: #2e3245;
+  border-radius: 10px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 15px;
+  cursor: pointer;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  border: 2px dashed #3a3f57;
+  min-height: 200px;
+  
+  &:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+    border-color: #3b82f6;
+  }
+`;
+
+const InstallAddonIcon = styled.div`
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background-color: #3b82f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 24px;
+`;
+
+const InstallAddonText = styled.h3`
+  font-size: 18px;
+  font-weight: 600;
+  color: #fff;
+  text-align: center;
+  margin: 0;
+`;
+
+const InstallAddonDescription = styled.p`
+  font-size: 14px;
+  color: #a4aabc;
+  text-align: center;
+  margin: 0;
 `;
 
 const ModalOverlay = styled.div`
   position: fixed;
   top: 0;
   left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.7);
   z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
 `;
 
-const Modal = styled.div`
-  background: white;
-  border-radius: 12px;
+const ModalContent = styled.div`
+  background: #2e3245;
+  border-radius: 10px;
   padding: 30px;
   width: 90%;
   max-width: 500px;
-  max-height: 90vh;
-  overflow-y: auto;
+  box-shadow: 0 15px 30px rgba(0, 0, 0, 0.3);
 `;
 
 const ModalHeader = styled.div`
@@ -221,12 +353,22 @@ const ModalHeader = styled.div`
   align-items: center;
   margin-bottom: 20px;
   padding-bottom: 15px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid #3a3f57;
 `;
 
-const ModalTitle = styled.h2`
+const ModalTitle = styled.h3`
+  font-size: 20px;
+  font-weight: 600;
+  color: #fff;
   margin: 0;
-  font-size: 1.5rem;
+`;
+
+const CloseModal = styled.button`
+  background: none;
+  border: none;
+  color: #a4aabc;
+  font-size: 24px;
+  cursor: pointer;
 `;
 
 const FormGroup = styled.div`
@@ -235,36 +377,56 @@ const FormGroup = styled.div`
 
 const FormLabel = styled.label`
   display: block;
-  margin-bottom: 5px;
+  margin-bottom: 8px;
   font-weight: 500;
-  color: #374151;
+  color: #fff;
 `;
 
 const FormInput = styled.input`
   width: 100%;
-  padding: 10px;
-  border: 1px solid #d1d5db;
+  background: #35394e;
+  border: 1px solid #3a3f57;
   border-radius: 6px;
+  padding: 12px 15px;
+  color: #fff;
+  font-size: 14px;
   
   &:focus {
     outline: none;
     border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+  }
+`;
+
+const FormSelect = styled.select`
+  width: 100%;
+  background: #35394e;
+  border: 1px solid #3a3f57;
+  border-radius: 6px;
+  padding: 12px 15px;
+  color: #fff;
+  font-size: 14px;
+  appearance: none;
+  
+  &:focus {
+    outline: none;
+    border-color: #3b82f6;
   }
 `;
 
 const FormTextarea = styled.textarea`
   width: 100%;
-  padding: 10px;
-  border: 1px solid #d1d5db;
+  background: #35394e;
+  border: 1px solid #3a3f57;
   border-radius: 6px;
+  padding: 12px 15px;
+  color: #fff;
+  font-size: 14px;
   resize: vertical;
   min-height: 80px;
   
   &:focus {
     outline: none;
     border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
   }
 `;
 
@@ -275,50 +437,42 @@ const FormActions = styled.div`
   margin-top: 20px;
 `;
 
-const StatusBadge = styled.span`
-  padding: 4px 8px;
-  border-radius: 20px;
-  font-size: 0.8rem;
-  font-weight: 500;
-  
-  ${props => props.active ? `
-    background: #dcfce7;
-    color: #166534;
-  ` : `
-    background: #fee2e2;
-    color: #dc2626;
-  `}
-`;
-
-const VersionGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 10px;
-  max-height: 200px;
-  overflow-y: auto;
-  padding: 10px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  margin-top: 8px;
-`;
-
-const VersionButton = styled.button.attrs(props => ({
-  style: {
-    borderColor: props['data-selected'] ? '#3b82f6' : '#d1d5db',
-    background: props['data-selected'] ? '#e0e7ff' : 'white',
-    color: props['data-selected'] ? '#3730a3' : '#374151'
-  }
-}))`
-  padding: 8px 12px;
-  border: 1px solid;
+const Btn = styled.button`
+  padding: 10px 20px;
   border-radius: 6px;
+  font-weight: 500;
   cursor: pointer;
-  font-size: 0.9rem;
-  text-align: center;
+  transition: background 0.2s ease;
+  border: none;
+  font-size: 14px;
+`;
+
+const BtnPrimary = styled(Btn)`
+  background: #3b82f6;
+  color: white;
   
   &:hover {
-    border-color: #3b82f6;
-    background: #e0e7ff;
+    background: #2563eb;
+  }
+`;
+
+const BtnSecondary = styled(Btn)`
+  background: #4a5070;
+  color: #cbd5e1;
+  
+  &:hover {
+    background: #565d81;
+  }
+`;
+
+const EmptyState = styled.div`
+  text-align: center;
+  padding: 60px 20px;
+  color: #a4aabc;
+  
+  h3 {
+    color: #fff;
+    margin-bottom: 10px;
   }
 `;
 
@@ -343,13 +497,13 @@ function AddonManager() {
     version: '',
     minecraft_version: '',
     download_url: '',
-    behavior_pack_url: '',  // Nowe pole
-    resource_pack_url: '',  // Nowe pole
+    behavior_pack_url: '',
+    resource_pack_url: '',
     image_url: '',
     description: '',
     author: '',
     is_active: true,
-    is_installed: false  // Nowe pole
+    is_installed: false
   });
 
   useEffect(() => {
@@ -387,23 +541,22 @@ function AddonManager() {
   const loadMinecraftVersions = async () => {
     setLoadingVersions(true);
     try {
-      // Pobierz wersje Minecrafta z Mojang API (dla Java)
+      // Pobierz wersje Minecrafta z Mojang API
       const response = await fetch('https://launchermeta.mojang.com/mc/game/version_manifest.json');
       const data = await response.json();
       
       const javaVersions = data.versions
         .filter(v => v.type === 'release')
         .map(v => v.id)
-        .slice(0, 20); // Ostatnie 20 wersji
+        .slice(0, 20);
 
-      // Pobierz wersje Bedrock z backendu lub użyj domyślnych
+      // Pobierz wersje Bedrock
       let bedrockVersions = [];
       try {
         const bedrockResponse = await api.get('/bedrock-versions');
         bedrockVersions = bedrockResponse.data.map(v => v.version);
       } catch (error) {
         console.error('Error loading bedrock versions:', error);
-        // Fallback do przykładowych wersji Bedrock
         bedrockVersions = ['1.20.15', '1.20.10', '1.20.1', '1.19.83', '1.19.70'];
       }
 
@@ -415,7 +568,7 @@ function AddonManager() {
         for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
           const aVal = aParts[i] || 0;
           const bVal = bParts[i] || 0;
-          if (aVal !== bVal) return bVal - aVal; // Sortuj malejąco
+          if (aVal !== bVal) return bVal - aVal;
         }
         return 0;
       });
@@ -423,7 +576,6 @@ function AddonManager() {
       setMinecraftVersions(allVersions);
     } catch (error) {
       console.error('Error loading Minecraft versions:', error);
-      // Fallback do podstawowych wersji
       setMinecraftVersions([
         '1.20.4', '1.20.1', '1.19.4', '1.18.2', '1.17.1', 
         '1.16.5', '1.15.2', '1.14.4', '1.13.2', '1.12.2'
@@ -458,19 +610,15 @@ function AddonManager() {
     e.preventDefault();
     
     try {
-      // Przygotuj dane do wysłania w zależności od typu
       const submitData = { ...formData };
       
       if (formData.type === 'addon') {
-        // Dla Bedrock addon, download_url nie jest wymagane
         delete submitData.download_url;
-        // Sprawdź czy przynajmniej jeden pack URL jest podany
         if (!formData.behavior_pack_url && !formData.resource_pack_url) {
           toast.error('Bedrock addon requires at least one pack URL');
           return;
         }
       } else {
-        // Dla plugin/script, pack URLs nie są wymagane
         delete submitData.behavior_pack_url;
         delete submitData.resource_pack_url;
         if (!formData.download_url) {
@@ -583,46 +731,30 @@ function AddonManager() {
   if (loading) {
     return (
       <Container>
-        <Header>
-          <Title>
-            <FiPackage /> Addon Manager
-          </Title>
-        </Header>
-        <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
-          Loading addons...
-        </div>
+        <EmptyState>
+          <h3>Loading addons...</h3>
+          <p>Please wait while we load your addons</p>
+        </EmptyState>
       </Container>
     );
   }
 
   return (
     <Container>
-      <Header>
-        <Title>
-          <FiPackage /> Addon Manager
-        </Title>
-        <Actions>
-          <Button primary onClick={openModal}>
-            <FiPlus /> Add New
-          </Button>
-        </Actions>
-      </Header>
-
       <Filters>
-        <FilterGroup>
-          <FilterLabel>Search</FilterLabel>
-          <Input
+        <SearchBox>
+          <SearchIcon>
+            <FiSearch />
+          </SearchIcon>
+          <SearchInput
             type="text"
             placeholder="Search addons..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ width: '250px' }}
           />
-        </FilterGroup>
-
+        </SearchBox>
         <FilterGroup>
-          <FilterLabel>Type</FilterLabel>
-          <Select
+          <FilterSelect
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
           >
@@ -632,12 +764,8 @@ function AddonManager() {
                 {type.charAt(0).toUpperCase() + type.slice(1)}
               </option>
             ))}
-          </Select>
-        </FilterGroup>
-
-        <FilterGroup>
-          <FilterLabel>Minecraft Version</FilterLabel>
-          <Select
+          </FilterSelect>
+          <FilterSelect
             value={versionFilter}
             onChange={(e) => setVersionFilter(e.target.value)}
           >
@@ -647,128 +775,116 @@ function AddonManager() {
                 {version}
               </option>
             ))}
-          </Select>
+          </FilterSelect>
+                    <AddButton onClick={openModal}>
+            <FiPlus /> Add New
+          </AddButton>
         </FilterGroup>
       </Filters>
 
-      <Grid>
+      <AddonsGrid>
         {filteredAddons.map(addon => (
           <AddonCard key={addon.id}>
-            {addon.image_url && (
-              <AddonImage 
-                src={addon.image_url} 
-                alt={addon.name}
-                onError={(e) => {
-                  e.target.style.display = 'none';
-                }}
-              />
-            )}
+            <AddonCardHeader>
+              <AddonCardTitle>{addon.name}</AddonCardTitle>
+              <AddonStatus active={addon.is_active}>
+                <StatusIndicator active={addon.is_active} />
+                <span>{addon.is_active ? 'Active' : 'Inactive'}</span>
+              </AddonStatus>
+            </AddonCardHeader>
             
-            <AddonHeader>
-              <AddonName>{addon.name}</AddonName>
-              <AddonType type={addon.type}>
-                {addon.type}
-              </AddonType>
-            </AddonHeader>
-
-            <AddonMeta>
-              <span>v{addon.version}</span>
-              <span>MC {addon.minecraft_version}</span>
-              <StatusBadge active={addon.is_active}>
-                {addon.is_active ? 'Active' : 'Inactive'}
-              </StatusBadge>
-            </AddonMeta>
-
+            <AddonCardDetails>
+              <AddonDetail>
+                <AddonDetailLabel>Type:</AddonDetailLabel>
+                <AddonDetailValue>{addon.type}</AddonDetailValue>
+              </AddonDetail>
+              <AddonDetail>
+                <AddonDetailLabel>Version:</AddonDetailLabel>
+                <AddonDetailValue>v{addon.version}</AddonDetailValue>
+              </AddonDetail>
+              <AddonDetail>
+                <AddonDetailLabel>MC Version:</AddonDetailLabel>
+                <AddonDetailValue>{addon.minecraft_version}</AddonDetailValue>
+              </AddonDetail>
+            </AddonCardDetails>
+            
             {addon.description && (
               <AddonDescription>{addon.description}</AddonDescription>
             )}
-
-            {addon.author && (
-              <div style={{ color: '#6b7280', fontSize: '0.9rem', marginBottom: '15px' }}>
-                By: {addon.author}
-              </div>
-            )}
-
-            <AddonActions>
-<Button 
-  as="a" 
-  href={addon.type === 'addon' ? (addon.behavior_pack_url || addon.resource_pack_url || '#') : addon.download_url}
-  target="_blank" 
-  rel="noopener noreferrer"
-  title={addon.type === 'addon' ? `Behavior: ${addon.behavior_pack_url ? 'Available' : 'Not available'}\nResource: ${addon.resource_pack_url ? 'Available' : 'Not available'}` : 'Download plugin/script' }
-  onClick={(e) => {
-    if (addon.type === 'addon' && !addon.behavior_pack_url && !addon.resource_pack_url) {
-      e.preventDefault();
-      toast.error('No download links available for this addon');
-    }
-  }}
-  style={{
-    opacity: (addon.type === 'addon' && !addon.behavior_pack_url && !addon.resource_pack_url) ? 0.5 : 1
-  }}
->
-  <FiExternalLink /> Download
-</Button>
-              
+            
+            <AddonCardFooter>
+              <AddonAuthor>
+                <FiUser size={14} />
+                <span>{addon.author || 'Unknown'}</span>
+              </AddonAuthor>
               <div style={{ display: 'flex', gap: '5px' }}>
-                <Button onClick={() => handleEdit(addon)}>
-                  <FiEdit />
-                </Button>
-                <Button onClick={() => handleToggleStatus(addon)}>
-                  {addon.is_active ? <FiX /> : <FiCheck />}
-                </Button>
-                <Button danger onClick={() => handleDelete(addon)}>
-                  <FiTrash2 />
-                </Button>
+                <ManageAddonBtn onClick={(e) => {
+                  e.stopPropagation();
+                  handleEdit(addon);
+                }}>
+                  <FiEdit /> Edit
+                </ManageAddonBtn>
               </div>
-            </AddonActions>
+            </AddonCardFooter>
           </AddonCard>
         ))}
-      </Grid>
+        
+        <InstallAddonCard onClick={openModal}>
+          <InstallAddonIcon>
+            <FiPlus />
+          </InstallAddonIcon>
+          <InstallAddonText>Add New Addon</InstallAddonText>
+          <InstallAddonDescription>
+            Click here to add a new addon to your server
+          </InstallAddonDescription>
+        </InstallAddonCard>
+      </AddonsGrid>
 
-      {filteredAddons.length === 0 && !loading && (
-        <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
-          No addons found. {addons.length === 0 ? 'Create your first addon!' : 'Try changing your filters.'}
-        </div>
+      {filteredAddons.length === 0 && addons.length > 0 && (
+        <EmptyState>
+          <h3>No addons found</h3>
+          <p>Try changing your search or filters</p>
+        </EmptyState>
       )}
 
       {showModal && (
         <ModalOverlay onClick={closeModal}>
-          <Modal onClick={(e) => e.stopPropagation()}>
+          <ModalContent onClick={(e) => e.stopPropagation()}>
             <ModalHeader>
               <ModalTitle>
                 {editingAddon ? 'Edit Addon' : 'Add New Addon'}
               </ModalTitle>
-              <Button onClick={closeModal}>
-                <FiX />
-              </Button>
+              <CloseModal onClick={closeModal}>&times;</CloseModal>
             </ModalHeader>
-
+            
             <form onSubmit={handleSubmit}>
               <FormGroup>
-                <FormLabel>Name *</FormLabel>
+                <FormLabel>Addon Name *</FormLabel>
                 <FormInput
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({...formData, name: e.target.value})}
+                  placeholder="Name of your addon"
                   required
                 />
               </FormGroup>
-
+              
               <FormGroup>
                 <FormLabel>Type *</FormLabel>
-                <Select
+                <FormSelect
                   value={formData.type}
                   onChange={(e) => setFormData({...formData, type: e.target.value})}
                   required
                 >
+                  <option value="">Select Type</option>
                   {types.map(type => (
                     <option key={type} value={type}>
                       {type.charAt(0).toUpperCase() + type.slice(1)}
                     </option>
                   ))}
-                </Select>
+                </FormSelect>
               </FormGroup>
-
+              
               <FormGroup>
                 <FormLabel>Version *</FormLabel>
                 <FormInput
@@ -779,34 +895,23 @@ function AddonManager() {
                   required
                 />
               </FormGroup>
-
+              
               <FormGroup>
                 <FormLabel>Minecraft Version *</FormLabel>
-                {loadingVersions ? (
-                  <div style={{ padding: '10px', textAlign: 'center', color: '#6b7280' }}>
-                    Loading versions...
-                  </div>
-                ) : (
-                  <>
-                    <VersionGrid>
-                      {minecraftVersions.map(version => (
-                        <VersionButton
-                          key={version}
-                          type="button"
-                          data-selected={formData.minecraft_version === version}
-                          onClick={() => setFormData({...formData, minecraft_version: version})}
-                        >
-                          {version}
-                        </VersionButton>
-                      ))}
-                    </VersionGrid>
-                    <div style={{ fontSize: '0.8rem', color: '#6b7280', marginTop: '5px' }}>
-                      Selected: {formData.minecraft_version || 'None'}
-                    </div>
-                  </>
-                )}
+                <FormSelect
+                  value={formData.minecraft_version}
+                  onChange={(e) => setFormData({...formData, minecraft_version: e.target.value})}
+                  required
+                >
+                  <option value="">Select Version</option>
+                  {minecraftVersions.map(version => (
+                    <option key={version} value={version}>
+                      {version}
+                    </option>
+                  ))}
+                </FormSelect>
               </FormGroup>
-
+              
               {formData.type !== 'addon' && (
                 <FormGroup>
                   <FormLabel>Download URL *</FormLabel>
@@ -819,7 +924,7 @@ function AddonManager() {
                   />
                 </FormGroup>
               )}
-
+              
               {formData.type === 'addon' && (
                 <>
                   <FormGroup>
@@ -831,7 +936,7 @@ function AddonManager() {
                       placeholder="https://example.com/behavior_pack.mcpack"
                     />
                   </FormGroup>
-
+                  
                   <FormGroup>
                     <FormLabel>Resource Pack URL</FormLabel>
                     <FormInput
@@ -841,23 +946,9 @@ function AddonManager() {
                       placeholder="https://example.com/resource_pack.mcpack"
                     />
                   </FormGroup>
-
-                  <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '20px' }}>
-                    Note: At least one pack URL is required for Bedrock addons
-                  </div>
                 </>
               )}
-
-              <FormGroup>
-                <FormLabel>Image URL</FormLabel>
-                <FormInput
-                  type="url"
-                  value={formData.image_url}
-                  onChange={(e) => setFormData({...formData, image_url: e.target.value})}
-                  placeholder="https://example.com/image.jpg"
-                />
-              </FormGroup>
-
+              
               <FormGroup>
                 <FormLabel>Author</FormLabel>
                 <FormInput
@@ -867,7 +958,7 @@ function AddonManager() {
                   placeholder="Author Name"
                 />
               </FormGroup>
-
+              
               <FormGroup>
                 <FormLabel>Description</FormLabel>
                 <FormTextarea
@@ -876,42 +967,29 @@ function AddonManager() {
                   placeholder="Describe what this addon does..."
                 />
               </FormGroup>
-
+              
               <FormGroup>
                 <FormLabel>
                   <input
                     type="checkbox"
                     checked={formData.is_active}
                     onChange={(e) => setFormData({...formData, is_active: e.target.checked})}
+                    style={{ marginRight: '8px' }}
                   />
-                  <span style={{ marginLeft: '8px' }}>Active</span>
+                  Active
                 </FormLabel>
               </FormGroup>
               
-              {editingAddon && (
-                <FormGroup>
-                  <FormLabel>
-                    Installation Status
-                  </FormLabel>
-                  <div style={{ padding: '8px', background: '#f3f4f6', borderRadius: '6px' }}>
-                    {formData.is_installed ? 'Installed' : 'Not Installed'}
-                  </div>
-                  <div style={{ fontSize: '0.8rem', color: '#6b7280', marginTop: '5px' }}>
-                    Installation status can be changed in the server plugin manager
-                  </div>
-                </FormGroup>
-              )}
-
               <FormActions>
-                <Button type="button" onClick={closeModal}>
+                <BtnSecondary type="button" onClick={closeModal}>
                   Cancel
-                </Button>
-                <Button type="submit" primary>
+                </BtnSecondary>
+                <BtnPrimary type="submit">
                   {editingAddon ? 'Update' : 'Create'} Addon
-                </Button>
+                </BtnPrimary>
               </FormActions>
             </form>
-          </Modal>
+          </ModalContent>
         </ModalOverlay>
       )}
     </Container>

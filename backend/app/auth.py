@@ -102,6 +102,72 @@ def get_all_users():
     
     users = User.query.all()
     return jsonify([user.to_dict() for user in users])
+    
+@main.route('/users/<int:user_id>', methods=['PUT'])
+@jwt_required()
+def update_user(user_id):
+    current_user_id = get_jwt_identity()
+    current_user = User.query.get(current_user_id)
+
+    if current_user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    user = User.query.get_or_404(user_id)
+    data = request.get_json()
+    
+    if 'username' in data:
+        existing = User.query.filter(
+            User.username == data['username'],
+            User.id != user_id
+        ).first()
+        if existing:
+            return jsonify({'error': 'Username already taken'}), 400
+        user.username = data['username']
+    
+    if 'email' in data:
+        existing = User.query.filter(
+            User.email == data['email'],
+            User.id != user_id
+        ).first()
+        if existing:
+            return jsonify({'error': 'Email already taken'}), 400
+        user.email = data['email']
+    
+    if 'role' in data:
+        if data['role'] not in ['admin', 'moderator', 'user']:
+            return jsonify({'error': 'Invalid role'}), 400
+        user.role = data['role']
+    
+    db.session.commit()
+    
+    return jsonify({
+        'id': user.id,
+        'username': user.username,
+        'email': user.email,
+        'role': user.role,
+        'created_at': user.created_at.isoformat() if user.created_at else None
+    })
+
+@main.route('/users/<int:user_id>', methods=['DELETE'])
+@jwt_required()
+def delete_user(user_id):
+    current_user_id = get_jwt_identity()
+    current_user = User.query.get(current_user_id)
+
+    if current_user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+
+    if user_id == current_user_id:
+        return jsonify({'error': 'Cannot delete your own account'}), 400
+    
+    user = User.query.get_or_404(user_id)
+
+    Permission.query.filter_by(user_id=user_id).delete()
+
+    db.session.delete(user)
+    db.session.commit()
+    
+    return jsonify({'message': 'User deleted successfully'})
 
 @auth.route('/debug-token', methods=['GET'])
 @jwt_required()

@@ -41,27 +41,41 @@ def create_server():
     name = data.get('name')
     server_type = data.get('type')
     version = data.get('version')
-    port = data.get('port', 25565)
+    port = data.get('port')
     
     if not name or not server_type or not version:
         return jsonify({'error': 'Missing required fields'}), 400
-    
-    # Check if server name already exists
+
+    if not port:
+        if server_type == 'java':
+            port = 25565
+        elif server_type == 'bedrock':
+            port = 19132
+        else:
+            port = 25565
+
     if Server.query.filter_by(name=name).first():
         return jsonify({'error': 'Server with this name already exists'}), 400
     
-    # Check if port is already in use
     if Server.query.filter_by(port=port).first():
-        return jsonify({'error': 'Port is already in use'}), 400
+        return jsonify({'error': 'Port is already in use by another server'}), 400
     
-    # Create server directory
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(1)
+            result = s.connect_ex(('127.0.0.1', port))
+            if result == 0:
+                return jsonify({'error': 'Port is already in use by another process'}), 400
+    except Exception as e:
+        return jsonify({'error': f'Error checking port: {str(e)}'}), 500
+
     server_path = os.path.join(current_app.config['SERVER_BASE_PATH'], name)
     try:
         os.makedirs(server_path, exist_ok=True)
     except Exception as e:
         return jsonify({'error': f'Failed to create server directory: {str(e)}'}), 500
-    
-    # Create server
+
     server = Server(
         name=name,
         type=server_type,
@@ -73,8 +87,7 @@ def create_server():
     
     db.session.add(server)
     db.session.commit()
-    
-    # Create default server.properties for Java servers
+
     if server_type == 'java':
         try:
             properties_file = os.path.join(server_path, 'server.properties')
@@ -1382,6 +1395,50 @@ def get_server_size(server_id):
             
     except Exception as e:
         return jsonify({'error': f'Error calculating size: {str(e)}'}), 500
+        
+@main.route('/check-port', methods=['POST'])
+@jwt_required()
+def check_port():
+    """
+    Sprawdza dostępność portu
+    """
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    # Only admins can check ports
+    if user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    data = request.get_json()
+    port = data.get('port')
+    server_type = data.get('type', 'java')
+    
+    if not port:
+        return jsonify({'error': 'Port is required'}), 400
+    
+    try:
+        port = int(port)
+        if port < 1 or port > 65535:
+            return jsonify({'error': 'Invalid port number'}), 400
+    except ValueError:
+        return jsonify({'error': 'Port must be a number'}), 400
+    
+    # Sprawdź czy port jest już używany przez inny serwer
+    existing_server = Server.query.filter_by(port=port).first()
+    if existing_server:
+        return jsonify({'available': False, 'reason': 'Port already used by another server'})
+    
+    # Sprawdź czy port jest wolny w systemie
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(1)
+            result = s.connect_ex(('127.0.0.1', port))
+            available = result != 0
+    except Exception as e:
+        return jsonify({'error': f'Error checking port: {str(e)}'}), 500
+    
+    return jsonify({'available': available})
 
 def _check_permission(user_id, server_id, permission):
     user = User.query.get(user_id)

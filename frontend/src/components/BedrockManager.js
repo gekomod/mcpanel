@@ -5,45 +5,76 @@ import {
   FiPlus, 
   FiEdit, 
   FiTrash2, 
-  FiDownload,
   FiCheckCircle,
-  FiXCircle
+  FiXCircle,
+  FiSearch
 } from 'react-icons/fi';
 import api from '../services/api';
 
 const Container = styled.div`
-  padding: 20px;
-  max-width: 1000px;
-  margin: 0 auto;
+  padding: 20px 30px;
+  flex: 1;
+  overflow-y: auto;
 `;
 
 const Header = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 30px;
+  padding: 15px 0;
+  margin-bottom: 25px;
 `;
 
-const Title = styled.h1`
-  margin: 0;
-  font-size: 2rem;
-  color: #374151;
+const Title = styled.h2`
+  font-size: 24px;
+  font-weight: 700;
+  color: #fff;
   display: flex;
   align-items: center;
   gap: 10px;
 `;
 
-const AddButton = styled.button`
+const AdminControls = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding: 15px;
+  background: #2e3245;
+  border-radius: 8px;
+  border: 1px solid #3a3f57;
+`;
+
+const SearchBox = styled.div`
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 20px;
+  background: #35394e;
+  border-radius: 6px;
+  padding: 8px 12px;
+  width: 300px;
+  
+  input {
+    background: transparent;
+    border: none;
+    color: #fff;
+    padding: 5px;
+    width: 100%;
+    outline: none;
+  }
+`;
+
+const AddButton = styled.button`
   background: #10b981;
   color: white;
   border: none;
-  border-radius: 8px;
-  cursor: pointer;
+  padding: 10px 20px;
+  border-radius: 6px;
   font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   
   &:hover {
     background: #059669;
@@ -51,9 +82,9 @@ const AddButton = styled.button`
 `;
 
 const Content = styled.div`
-  background: white;
-  border-radius: 12px;
-  padding: 25px;
+  background: #2e3245;
+  border-radius: 10px;
+  border: 1px solid #3a3f57;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 `;
 
@@ -63,36 +94,37 @@ const Table = styled.table`
 `;
 
 const TableHeader = styled.thead`
-  background: #f9fafb;
+  background: #222b43;
 `;
 
 const TableHeaderCell = styled.th`
-  padding: 12px 15px;
+
   text-align: left;
-  font-weight: 500;
-  color: #374151;
-  border-bottom: 1px solid #e5e7eb;
+  font-weight: 600;
+  color: #fff;
+  border-bottom: 1px solid #3a3f57;
 `;
 
 const TableRow = styled.tr`
   &:hover {
-    background: #f9fafb;
+    background: #35394e;
   }
 `;
 
 const TableCell = styled.td`
-  padding: 12px 15px;
-  border-bottom: 1px solid #f3f4f6;
+  padding: 15px;
+  border-bottom: 1px solid #3a3f57;
+  color: #a4aabc;
 `;
 
 const ActionCell = styled.td`
-  padding: 12px 15px;
-  border-bottom: 1px solid #f3f4f6;
+  padding: 15px;
+  border-bottom: 1px solid #3a3f57;
   text-align: right;
 `;
 
 const ActionButton = styled.button`
-  padding: 6px 10px;
+  padding: 8px 12px;
   border: none;
   border-radius: 4px;
   cursor: pointer;
@@ -101,6 +133,7 @@ const ActionButton = styled.button`
   align-items: center;
   gap: 4px;
   font-size: 0.85rem;
+  font-weight: 500;
   
   ${props => props.$variant === 'edit' ? `
     background: #3b82f6;
@@ -129,18 +162,18 @@ const ActionButton = styled.button`
 const StatusBadge = styled.span`
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
+  gap: 6px;
+  padding: 5px 10px;
   border-radius: 4px;
-  font-size: 0.8rem;
+  font-size: 12px;
   font-weight: 500;
   
   ${props => props.$active ? `
-    background: #dcfce7;
-    color: #16a34a;
+    background-color: #065f46;
+    color: #10b981;
   ` : `
-    background: #fef3c7;
-    color: #d97706;
+    background-color: #7c2d2d;
+    color: #f87171;
   `}
 `;
 
@@ -154,7 +187,7 @@ const ModalOverlay = styled.div.attrs(props => ({
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.7);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -163,12 +196,13 @@ const ModalOverlay = styled.div.attrs(props => ({
 `;
 
 const Modal = styled.div`
-  background: white;
-  border-radius: 12px;
+  background: #2e3245;
+  border-radius: 10px;
   padding: 30px;
   width: 500px;
   max-width: 100%;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 15px 30px rgba(0, 0, 0, 0.3);
+  border: 1px solid #3a3f57;
 `;
 
 const ModalHeader = styled.div`
@@ -177,24 +211,22 @@ const ModalHeader = styled.div`
   align-items: center;
   margin-bottom: 20px;
   padding-bottom: 15px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid #3a3f57;
 `;
 
-const ModalTitle = styled.h2`
+const ModalTitle = styled.h3`
   margin: 0;
-  font-size: 1.5rem;
+  font-size: 20px;
+  font-weight: 600;
+  color: #fff;
 `;
 
 const ModalClose = styled.button`
   background: none;
   border: none;
-  font-size: 1.5rem;
+  color: #a4aabc;
+  font-size: 24px;
   cursor: pointer;
-  color: #6b7280;
-  
-  &:hover {
-    color: #374151;
-  }
 `;
 
 const FormGroup = styled.div`
@@ -205,43 +237,42 @@ const Label = styled.label`
   display: block;
   margin-bottom: 8px;
   font-weight: 500;
-  color: #374151;
+  color: #fff;
 `;
 
 const Input = styled.input`
   width: 100%;
-  padding: 10px 15px;
-  border: 1px solid #d1d5db;
+  background: #35394e;
+  border: 1px solid #3a3f57;
   border-radius: 6px;
-  font-size: 1rem;
+  padding: 12px 15px;
+  color: #fff;
+  font-size: 14px;
   
   &:focus {
     outline: none;
     border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
   }
 `;
 
 const ModalActions = styled.div`
   display: flex;
   justify-content: flex-end;
-  gap: 15px;
-  margin-top: 25px;
-  padding-top: 20px;
-  border-top: 1px solid #e5e7eb;
+  gap: 10px;
+  margin-top: 20px;
 `;
 
 const CancelButton = styled.button`
   padding: 10px 20px;
-  background: #f3f4f6;
-  color: #374151;
+  background: #4a5070;
+  color: #cbd5e1;
   border: none;
   border-radius: 6px;
   cursor: pointer;
   font-weight: 500;
   
   &:hover {
-    background: #e5e7eb;
+    background: #565d81;
   }
 `;
 
@@ -265,12 +296,18 @@ const SaveButton = styled.button`
 `;
 
 const ErrorMessage = styled.div`
-  background: #fee2e2;
-  color: #dc2626;
+  background: #7c2d2d;
+  color: #f87171;
   padding: 12px;
   border-radius: 6px;
   font-size: 0.9rem;
   margin-bottom: 20px;
+`;
+
+const EmptyState = styled.div`
+  text-align: center;
+  padding: 40px;
+  color: #a4aabc;
 `;
 
 function BedrockManager() {
@@ -279,9 +316,12 @@ function BedrockManager() {
   const [showModal, setShowModal] = useState(false);
   const [editingVersion, setEditingVersion] = useState(null);
   const [error, setError] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
   const [formData, setFormData] = useState({
     version: '',
-    download_url: ''
+    download_url: '',
+    release_date: new Date().toISOString().split('T')[0],
+    is_active: true
   });
 
   useEffect(() => {
@@ -302,7 +342,12 @@ function BedrockManager() {
 
   const handleAddVersion = () => {
     setEditingVersion(null);
-    setFormData({ version: '', download_url: '' });
+    setFormData({ 
+      version: '', 
+      download_url: '',
+      release_date: new Date().toISOString().split('T')[0],
+      is_active: true
+    });
     setShowModal(true);
     setError('');
   };
@@ -311,7 +356,9 @@ function BedrockManager() {
     setEditingVersion(version);
     setFormData({
       version: version.version,
-      download_url: version.download_url
+      download_url: version.download_url,
+      release_date: version.release_date,
+      is_active: version.is_active
     });
     setShowModal(true);
     setError('');
@@ -319,7 +366,7 @@ function BedrockManager() {
 
   const handleSaveVersion = async () => {
     if (!formData.version || !formData.download_url) {
-      setError('Please fill in all fields');
+      setError('Please fill in all required fields');
       return;
     }
 
@@ -361,43 +408,65 @@ function BedrockManager() {
     }
   };
 
+  const filteredVersions = versions.filter(version => 
+    version.version.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    version.download_url.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   if (loading) {
-    return <Container>Loading versions...</Container>;
+    return (
+      <Container>
+        <Header>
+          <Title>
+            <FiPackage /> Zarządzanie Wersjami Bedrock
+          </Title>
+        </Header>
+        <Content>
+          <EmptyState>Loading versions...</EmptyState>
+        </Content>
+      </Container>
+    );
   }
 
   return (
     <Container>
-      <Header>
-        <Title>
-          <FiPackage /> Bedrock Versions Management
-        </Title>
+      <AdminControls>
+        <SearchBox>
+          <FiSearch style={{ color: '#a4aabc', marginRight: '8px' }} />
+          <input
+            type="text"
+            placeholder="Szukaj wersji..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </SearchBox>
         <AddButton onClick={handleAddVersion}>
-          <FiPlus /> Add Version
+          <FiPlus /> Dodaj nową wersję
         </AddButton>
-      </Header>
+      </AdminControls>
 
       <Content>
         {versions.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
+          <EmptyState>
             No Bedrock versions found. Add your first version!
-          </div>
+          </EmptyState>
         ) : (
           <Table>
             <TableHeader>
               <tr>
-                <TableHeaderCell>Version</TableHeaderCell>
-                <TableHeaderCell>Download URL</TableHeaderCell>
+                <TableHeaderCell>Wersja</TableHeaderCell>
+                <TableHeaderCell>URL do pobrania</TableHeaderCell>
                 <TableHeaderCell>Status</TableHeaderCell>
-                <TableHeaderCell>Release Date</TableHeaderCell>
-                <TableHeaderCell style={{ textAlign: 'right' }}>Actions</TableHeaderCell>
+                <TableHeaderCell>Data wydania</TableHeaderCell>
+                <TableHeaderCell style={{ textAlign: 'right' }}>Akcje</TableHeaderCell>
               </tr>
             </TableHeader>
             
             <tbody>
-              {versions.map(version => (
+              {filteredVersions.map(version => (
                 <TableRow key={version.id}>
                   <TableCell>
-                    <strong>{version.version}</strong>
+                    <strong style={{ color: '#fff' }}>{version.version}</strong>
                   </TableCell>
                   <TableCell>
                     <div style={{ 
@@ -412,7 +481,7 @@ function BedrockManager() {
                   <TableCell>
                     <StatusBadge $active={version.is_active}>
                       {version.is_active ? <FiCheckCircle /> : <FiXCircle />}
-                      {version.is_active ? 'Active' : 'Inactive'}
+                      {version.is_active ? 'Aktywna' : 'Nieaktywna'}
                     </StatusBadge>
                   </TableCell>
                   <TableCell>
@@ -425,21 +494,21 @@ function BedrockManager() {
                       onClick={() => handleToggleVersion(version)}
                     >
                       {version.is_active ? <FiXCircle /> : <FiCheckCircle />}
-                      {version.is_active ? 'Deactivate' : 'Activate'}
+                      {version.is_active ? 'Deaktywuj' : 'Aktywuj'}
                     </ActionButton>
                     
                     <ActionButton
                       $variant="edit"
                       onClick={() => handleEditVersion(version)}
                     >
-                      <FiEdit /> Edit
+                      <FiEdit /> Edytuj
                     </ActionButton>
                     
                     <ActionButton
                       $variant="delete"
                       onClick={() => handleDeleteVersion(version)}
                     >
-                      <FiTrash2 /> Delete
+                      <FiTrash2 /> Usuń
                     </ActionButton>
                   </ActionCell>
                 </TableRow>
@@ -454,7 +523,7 @@ function BedrockManager() {
         <Modal onClick={(e) => e.stopPropagation()}>
           <ModalHeader>
             <ModalTitle>
-              {editingVersion ? 'Edit Version' : 'Add New Version'}
+              {editingVersion ? 'Edytuj Wersję' : 'Dodaj Nową Wersję'}
             </ModalTitle>
             <ModalClose onClick={() => setShowModal(false)}>×</ModalClose>
           </ModalHeader>
@@ -462,17 +531,17 @@ function BedrockManager() {
           {error && <ErrorMessage>{error}</ErrorMessage>}
           
           <FormGroup>
-            <Label>Version Number *</Label>
+            <Label>Numer Wersji *</Label>
             <Input
               type="text"
               value={formData.version}
               onChange={(e) => setFormData({ ...formData, version: e.target.value })}
-              placeholder="e.g., 1.20.15"
+              placeholder="np. 1.20.15"
             />
           </FormGroup>
           
           <FormGroup>
-            <Label>Download URL *</Label>
+            <Label>URL do pobrania *</Label>
             <Input
               type="url"
               value={formData.download_url}
@@ -481,12 +550,33 @@ function BedrockManager() {
             />
           </FormGroup>
           
+          <FormGroup>
+            <Label>Data wydania</Label>
+            <Input
+              type="date"
+              value={formData.release_date}
+              onChange={(e) => setFormData({ ...formData, release_date: e.target.value })}
+            />
+          </FormGroup>
+          
+          <FormGroup>
+            <Label>
+              <input
+                type="checkbox"
+                checked={formData.is_active}
+                onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                style={{ marginRight: '8px' }}
+              />
+              Aktywna wersja
+            </Label>
+          </FormGroup>
+          
           <ModalActions>
             <CancelButton onClick={() => setShowModal(false)}>
-              Cancel
+              Anuluj
             </CancelButton>
             <SaveButton onClick={handleSaveVersion}>
-              {editingVersion ? 'Update' : 'Add'} Version
+              {editingVersion ? 'Zapisz' : 'Dodaj'} Wersję
             </SaveButton>
           </ModalActions>
         </Modal>

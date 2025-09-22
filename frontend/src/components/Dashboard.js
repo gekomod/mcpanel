@@ -5,7 +5,6 @@ import {
   FiPlay, 
   FiStopCircle, 
   FiRefreshCw, 
-  FiActivity,
   FiCpu,
   FiHardDrive,
   FiPlus,
@@ -14,8 +13,11 @@ import {
   FiAlertCircle,
   FiDownload,
   FiXCircle,
-  FiUserPlus
+  FiUserPlus,
+  FiCheckCircle,
+  FiUsers
 } from 'react-icons/fi';
+import { FaTimesCircle } from "react-icons/fa";
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import AddServer from './AddServer';
@@ -23,19 +25,31 @@ import AddUserDialog from './AddUserDialog';
 
 const DashboardContainer = styled.div`
   padding: 20px;
+  color: #a4aabc;
+  background: transparent;
+  min-height: 100vh;
+  position: relative;
+
 `;
 
 const Header = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 30px;
+  margin-bottom: 25px;
+  padding: 15px 0;
 `;
 
-const Title = styled.h1`
+const Title = styled.h2`
+  font-size: 24px;
+  font-weight: 700;
+  color: #fff;
   margin: 0;
-  font-size: 2rem;
-  color: #374151;
+`;
+
+const ButtonGroup = styled.div`
+  display: flex;
+  gap: 10px;
 `;
 
 const AddButton = styled.button`
@@ -43,7 +57,7 @@ const AddButton = styled.button`
   align-items: center;
   gap: 8px;
   padding: 12px 20px;
-  background: #10b981;
+  background: #3b82f6;
   color: white;
   border: none;
   border-radius: 8px;
@@ -51,7 +65,7 @@ const AddButton = styled.button`
   font-weight: 500;
   
   &:hover {
-    background: #059669;
+    background: #2563eb;
   }
 `;
 
@@ -63,47 +77,58 @@ const StatsGrid = styled.div`
 `;
 
 const StatCard = styled.div`
-  background: white;
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  background: #2e3245;
+  border-radius: 10px;
+  padding: 20px;
+  border: 1px solid #3a3f57;
   display: flex;
+  flex-direction: column;
+`;
+
+const StatHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
   align-items: center;
-  transition: transform 0.2s;
-  
-  &:hover {
-    transform: translateY(-2px);
-  }
+  margin-bottom: 15px;
+`;
+
+const StatTitle = styled.div`
+  font-size: 16px;
+  font-weight: 600;
+  color: #a4aabc;
 `;
 
 const StatIcon = styled.div`
-  font-size: 2.5rem;
-  margin-right: 20px;
-  color: #3b82f6;
-`;
-
-const StatContent = styled.div`
-  flex: 1;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  background-color: ${props => props.$bgColor};
+  color: ${props => props.$color};
 `;
 
 const StatValue = styled.div`
-  font-size: 2rem;
+  font-size: 28px;
   font-weight: bold;
   margin-bottom: 5px;
-  color: #374151;
+  color: #fff;
 `;
 
 const StatLabel = styled.div`
-  color: #6b7280;
-  font-size: 0.9rem;
+  color: #a4aabc;
+  font-size: 14px;
 `;
 
 const ServerList = styled.div`
-  background: white;
-  border-radius: 12px;
+  background: #2e3245;
+  border-radius: 10px;
   padding: 0;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  border: 1px solid #3a3f57;
   overflow: hidden;
+  margin-bottom: 30px;
 `;
 
 const ServerItem = styled.div`
@@ -111,12 +136,12 @@ const ServerItem = styled.div`
   justify-content: space-between;
   align-items: center;
   padding: 20px;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid #3a3f57;
   transition: background-color 0.2s;
   cursor: pointer;
   
   &:hover {
-    background: #f9fafb;
+    background: #222b43;
   }
   
   &:last-child {
@@ -131,27 +156,23 @@ const ServerInfo = styled.div`
 const ServerName = styled.h3`
   margin: 0 0 8px 0;
   font-size: 1.2rem;
-  color: #374151;
+  color: #fff;
   display: flex;
   align-items: center;
   gap: 8px;
+  font-weight: 600;
 `;
 
 const ServerDetails = styled.div`
   display: flex;
   gap: 15px;
-  color: #6b7280;
+  color: #a4aabc;
   font-size: 0.9rem;
   align-items: center;
   flex-wrap: wrap;
 `;
 
-const ServerStatus = styled.span.attrs(props => ({
-  style: {
-    backgroundColor: props['data-status'] === 'running' ? '#dcfce7' : '#fee2e2',
-    color: props['data-status'] === 'running' ? '#16a34a' : '#dc2626'
-  }
-}))`
+const ServerStatus = styled.span`
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -159,6 +180,8 @@ const ServerStatus = styled.span.attrs(props => ({
   border-radius: 20px;
   font-size: 0.8rem;
   font-weight: 500;
+  background-color: ${props => props.$status === 'running' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(248, 113, 113, 0.2)'};
+  color: ${props => props.$status === 'running' ? '#10b981' : '#f87171'};
 `;
 
 const ServerActions = styled.div`
@@ -177,46 +200,37 @@ const ActionButton = styled.button`
   gap: 5px;
   font-size: 0.9rem;
   transition: all 0.2s;
+  background: #35394e;
+  border: 1px solid #3a3f57;
+  color: #a4aabc;
   
-  ${props => props.$variant === 'start' ? `
-    background-color: #10b981;
+  &:hover:not(:disabled) {
+    background: ${props => {
+      switch(props.$variant) {
+        case 'start': return '#10b981';
+        case 'stop': return '#ef4444';
+        case 'restart': return '#f59e0b';
+        case 'settings': return '#3b82f6';
+        case 'delete': return '#6b7280';
+        default: return '#3b82f6';
+      }
+    }};
+    border-color: ${props => {
+      switch(props.$variant) {
+        case 'start': return '#10b981';
+        case 'stop': return '#ef4444';
+        case 'restart': return '#f59e0b';
+        case 'settings': return '#3b82f6';
+        case 'delete': return '#6b7280';
+        default: return '#3b82f6';
+      }
+    }};
     color: white;
-    
-    &:hover:not(:disabled) {
-      background-color: #059669;
-    }
-  ` : props.$variant === 'stop' ? `
-    background-color: #ef4444;
-    color: white;
-    
-    &:hover:not(:disabled) {
-      background-color: #dc2626;
-    }
-  ` : props.$variant === 'restart' ? `
-    background-color: #f59e0b;
-    color: white;
-    
-    &:hover:not(:disabled) {
-      background-color: #d97706;
-    }
-  ` : props.$variant === 'settings' ? `
-    background-color: #3b82f6;
-    color: white;
-    
-    &:hover:not(:disabled) {
-      background-color: #2563eb;
-    }
-  ` : props.$variant === 'delete' ? `
-    background-color: #6b7280;
-    color: white;
-    
-    &:hover:not(:disabled) {
-      background-color: #4b5563;
-    }
-  ` : ''}
+  }
   
   &:disabled {
-    background-color: #d1d5db;
+    background: #4b5563;
+    color: #9ca3af;
     cursor: not-allowed;
   }
 `;
@@ -224,12 +238,12 @@ const ActionButton = styled.button`
 const EmptyState = styled.div`
   text-align: center;
   padding: 60px 20px;
-  color: #6b7280;
+  color: #a4aabc;
 `;
 
 const EmptyStateIcon = styled.div`
   font-size: 4rem;
-  color: #d1d5db;
+  color: #6b7293;
   margin-bottom: 20px;
 `;
 
@@ -248,8 +262,8 @@ const StatusMismatchIndicator = styled.span`
 `;
 
 const ErrorMessage = styled.div`
-  background: #fee2e2;
-  color: #dc2626;
+  background: rgba(220, 38, 38, 0.2);
+  color: #f87171;
   padding: 10px 15px;
   border-radius: 6px;
   margin: 10px 0;
@@ -257,14 +271,154 @@ const ErrorMessage = styled.div`
   align-items: center;
   gap: 8px;
   font-size: 0.9rem;
+  border: 1px solid rgba(220, 38, 38, 0.3);
 `;
 
-const AddUserButton = styled(AddButton)`
-  background: #3b82f6;
+const RecentActivity = styled.div`
+  background: #2e3245;
+  border-radius: 10px;
+  padding: 20px;
+  border: 1px solid #3a3f57;
+  margin-bottom: 30px;
+`;
+
+const ActivityHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+`;
+
+const ActivityTitle = styled.h3`
+  font-size: 18px;
+  font-weight: 600;
+  color: #fff;
+  margin: 0;
+`;
+
+const ActivityList = styled.ul`
+  list-style: none;
+  padding: 0;
+  margin: 0;
+`;
+
+const ActivityItem = styled.li`
+  display: flex;
+  align-items: center;
+  padding: 15px 0;
+  border-bottom: 1px solid #3a3f57;
+  
+  &:last-child {
+    border-bottom: none;
+  }
+`;
+
+const ActivityIcon = styled.div`
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 15px;
+  font-size: 16px;
+  background-color: ${props => props.$bgColor};
+  color: ${props => props.$color};
+`;
+
+const ActivityContent = styled.div`
+  flex: 1;
+`;
+
+const ActivityServer = styled.div`
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 3px;
+`;
+
+const ActivityDescription = styled.div`
+  font-size: 14px;
+  color: #a4aabc;
+`;
+
+const ActivityTime = styled.div`
+  font-size: 12px;
+  color: #6b7293;
+`;
+
+const QuickActions = styled.div`
+  background: #2e3245;
+  border-radius: 10px;
+  padding: 20px;
+  border: 1px solid #3a3f57;
+`;
+
+const ActionsHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+`;
+
+const ActionsTitle = styled.h3`
+  font-size: 18px;
+  font-weight: 600;
+  color: #fff;
+  margin: 0;
+`;
+
+const ActionsGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 15px;
+`;
+
+const ActionButtonCard = styled.div`
+  background: #35394e;
+  border: 1px solid #3a3f57;
+  border-radius: 8px;
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
   
   &:hover {
-    background: #2563eb;
+    background: #3b82f6;
+    border-color: #3b82f6;
+    
+    .action-icon {
+      background: rgba(255, 255, 255, 0.2);
+      color: #fff;
+    }
+    
+    .action-text {
+      color: #fff;
+    }
   }
+`;
+
+const ActionIcon = styled.div`
+  width: 50px;
+  height: 50px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 10px;
+  font-size: 20px;
+  background: rgba(59, 130, 246, 0.2);
+  color: #3b82f6;
+  transition: all 0.2s ease;
+`;
+
+const ActionText = styled.div`
+  font-weight: 500;
+  color: #a4aabc;
+  text-align: center;
+  transition: all 0.2s ease;
 `;
 
 function Dashboard() {
@@ -280,7 +434,6 @@ function Dashboard() {
   useEffect(() => {
     fetchServers();
     
-    // Set up interval to check real server status every 10 seconds
     const interval = setInterval(checkRealStatus, 10000);
     return () => clearInterval(interval);
   }, []);
@@ -291,12 +444,10 @@ function Dashboard() {
       const serversData = response.data;
       setServers(serversData);
       
-      // Check real status for each server
       serversData.forEach(server => {
         checkServerRealStatus(server.id);
       });
       
-      // Fetch sizes for all servers
       fetchServerSizes(serversData);
     } catch (error) {
       console.error('Error fetching servers:', error);
@@ -331,12 +482,10 @@ function Dashboard() {
         [serverId]: statusData
       }));
       
-      // If real status differs from database, update the server list
       const serverIndex = servers.findIndex(s => s.id === serverId);
       if (serverIndex !== -1) {
         const realStatus = statusData.real_status.running ? 'running' : 'stopped';
         if (servers[serverIndex].status !== realStatus) {
-          // Update the server status in local state
           const updatedServers = [...servers];
           updatedServers[serverIndex] = {
             ...updatedServers[serverIndex],
@@ -357,13 +506,11 @@ function Dashboard() {
   };
 
   const handleServerAction = async (serverId, action) => {
-    // Clear any previous error for this server
     setActionErrors(prev => ({ ...prev, [serverId]: null }));
     
     try {
       await api.post(`/servers/${serverId}/${action}`);
       
-      // Update local state immediately for better UX
       const serverIndex = servers.findIndex(s => s.id === serverId);
       if (serverIndex !== -1) {
         const updatedServers = [...servers];
@@ -386,7 +533,6 @@ function Dashboard() {
         setServers(updatedServers);
       }
       
-      // Wait a bit and check real status
       setTimeout(() => {
         checkServerRealStatus(serverId);
         fetchServers();
@@ -395,10 +541,8 @@ function Dashboard() {
       console.error(`Error ${action} server:`, error);
       const errorMessage = error.response?.data?.error || error.message;
       
-      // Store error for this server
       setActionErrors(prev => ({ ...prev, [serverId]: errorMessage }));
       
-      // If action failed, refresh server status
       setTimeout(() => {
         checkServerRealStatus(serverId);
         fetchServers();
@@ -427,7 +571,6 @@ function Dashboard() {
   const getServerStatus = (server) => {
     const statusCheck = statusChecks[server.id];
     
-    // If we have real status check and it differs from database
     if (statusCheck && statusCheck.database_status !== (statusCheck.real_status.running ? 'running' : 'stopped')) {
       return statusCheck.real_status.running ? 'running' : 'stopped';
     }
@@ -467,7 +610,6 @@ function Dashboard() {
     console.log('User added - refresh users list if needed');
   };
 
-  // Calculate total storage used
   const totalStorageUsed = Object.values(serverSizes).reduce((total, size) => total + size, 0);
 
   if (loading) {
@@ -477,56 +619,60 @@ function Dashboard() {
   return (
     <DashboardContainer>
       <Header>
-        <Title>Server Dashboard</Title>
-		    <div style={{ display: 'flex', gap: '10px' }}>
-		    <AddButton onClick={() => setShowAddUser(true)} style={{ backgroundColor: '#3b82f6' }}>
-		      <FiUserPlus /> Add User
-		    </AddButton>
-		    <AddButton onClick={() => setShowAddServer(true)}>
-		      <FiPlus /> Add Server
-		    </AddButton>
-        </div>
+        <Title>Dashboard</Title>
+        <ButtonGroup>
+          <AddButton onClick={() => setShowAddUser(true)}>
+            <FiUserPlus /> Add User
+          </AddButton>
+          <AddButton onClick={() => setShowAddServer(true)}>
+            <FiPlus /> Add Server
+          </AddButton>
+        </ButtonGroup>
       </Header>
       
       <StatsGrid>
         <StatCard>
-          <StatIcon>
-            <FiServer />
-          </StatIcon>
-          <StatContent>
-            <StatValue>{servers.length}</StatValue>
-            <StatLabel>Total Servers</StatLabel>
-          </StatContent>
+          <StatHeader>
+            <StatTitle>Total Servers</StatTitle>
+            <StatIcon $bgColor="rgba(59, 130, 246, 0.2)" $color="#3b82f6">
+              <FiServer />
+            </StatIcon>
+          </StatHeader>
+          <StatValue>{servers.length}</StatValue>
+          <StatLabel>All your servers</StatLabel>
         </StatCard>
         
         <StatCard>
-          <StatIcon>
-            <FiActivity />
-          </StatIcon>
-          <StatContent>
-            <StatValue>{runningServers}</StatValue>
-            <StatLabel>Running Servers</StatLabel>
-          </StatContent>
+          <StatHeader>
+            <StatTitle>Running Servers</StatTitle>
+            <StatIcon $bgColor="rgba(16, 185, 129, 0.2)" $color="#10b981">
+              <FiCheckCircle />
+            </StatIcon>
+          </StatHeader>
+          <StatValue>{runningServers}</StatValue>
+          <StatLabel>Active servers</StatLabel>
         </StatCard>
         
         <StatCard>
-          <StatIcon>
-            <FiCpu />
-          </StatIcon>
-          <StatContent>
-            <StatValue>{servers.length - runningServers}</StatValue>
-            <StatLabel>Stopped Servers</StatLabel>
-          </StatContent>
+          <StatHeader>
+            <StatTitle>Stopped Servers</StatTitle>
+            <StatIcon $bgColor="rgba(248, 113, 113, 0.2)" $color="#f87171">
+              <FaTimesCircle />
+            </StatIcon>
+          </StatHeader>
+          <StatValue>{servers.length - runningServers}</StatValue>
+          <StatLabel>Inactive servers</StatLabel>
         </StatCard>
         
         <StatCard>
-          <StatIcon>
-            <FiHardDrive />
-          </StatIcon>
-          <StatContent>
-            <StatValue>{totalStorageUsed.toFixed(1)}GB</StatValue>
-            <StatLabel>Total Storage Used</StatLabel>
-          </StatContent>
+          <StatHeader>
+            <StatTitle>Players Online</StatTitle>
+            <StatIcon $bgColor="rgba(139, 92, 246, 0.2)" $color="#8b5cf6">
+              <FiUsers />
+            </StatIcon>
+          </StatHeader>
+          <StatValue>24</StatValue>
+          <StatLabel>Across all servers</StatLabel>
         </StatCard>
       </StatsGrid>
       
@@ -564,7 +710,8 @@ function Dashboard() {
                     <span>{server.type.toUpperCase()} {server.version}</span>
                     <span>Port: {server.port}</span>
                     <span>Size: {serverSize.toFixed(1)}GB</span>
-                    <ServerStatus data-status={realStatus}>
+                    <ServerStatus $status={realStatus}>
+                      {realStatus === 'running' ? <FiCheckCircle /> : <FaTimesCircle />}
                       {realStatus.toUpperCase()}
                       {statusMismatch && ' *'}
                       {inTransition && '...'}
@@ -643,6 +790,50 @@ function Dashboard() {
           </EmptyState>
         )}
       </ServerList>
+
+      <QuickActions>
+        <ActionsHeader>
+          <ActionsTitle>Quick Actions</ActionsTitle>
+        </ActionsHeader>
+        <ActionsGrid>
+          <ActionButtonCard onClick={() => setShowAddServer(true)}>
+            <ActionIcon className="action-icon">
+              <FiPlus />
+            </ActionIcon>
+            <ActionText className="action-text">Add Server</ActionText>
+          </ActionButtonCard>
+          <ActionButtonCard onClick={() => {
+            servers.forEach(server => {
+              if (isServerReallyRunning(server)) {
+                handleServerAction(server.id, 'restart');
+              }
+            });
+          }}>
+            <ActionIcon className="action-icon">
+              <FiRefreshCw />
+            </ActionIcon>
+            <ActionText className="action-text">Restart All</ActionText>
+          </ActionButtonCard>
+          <ActionButtonCard onClick={() => {
+            servers.forEach(server => {
+              if (!isServerReallyRunning(server)) {
+                handleServerAction(server.id, 'start');
+              }
+            });
+          }}>
+            <ActionIcon className="action-icon">
+              <FiPlay />
+            </ActionIcon>
+            <ActionText className="action-text">Start All</ActionText>
+          </ActionButtonCard>
+          <ActionButtonCard onClick={() => alert('Backup functionality coming soon!')}>
+            <ActionIcon className="action-icon">
+              <FiDownload />
+            </ActionIcon>
+            <ActionText className="action-text">Backup</ActionText>
+          </ActionButtonCard>
+        </ActionsGrid>
+      </QuickActions>
 
       <AddServer
         isOpen={showAddServer}

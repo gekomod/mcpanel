@@ -5,361 +5,423 @@ import {
   FiStopCircle, 
   FiRefreshCw, 
   FiSettings,
-  FiArrowLeft,
-  FiXCircle,
-  FiUsers,
-  FiCpu,
-  FiHardDrive,
-  FiActivity,
-  FiBarChart2,
+  FiCopy,
+  FiPower,
+  FiTerminal,
+  FiKey,
   FiDownload,
   FiUpload,
+  FiCpu,
+  FiHardDrive,
+  FiServer,
+  FiUsers,
+  FiActivity,
+  FiBarChart2,
   FiClock,
-  FiAlertTriangle,
-  FiCheckCircle,
-  FiServer
+  FiFolder,
+  FiShield,
+  FiBox,
+  FiUser
 } from 'react-icons/fi';
+import { FaWrench } from "react-icons/fa";
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import ProgressBar from './ProgressBar';
 import { toast } from 'react-toastify';
 
 const Container = styled.div`
-  padding: 20px;
-  max-width: 1400px;
-  margin: 0 auto;
+  padding: 15px 20px;
+  color: #a4aabc;
 `;
 
-const Header = styled.div`
+const NavTabs = styled.div`
   display: flex;
+  background: #2e3245;
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 15px;
+  gap: 4px;
+`;
+
+const NavTab = styled.div`
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 0.9rem;
+  color: #a4aabc;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  
+  ${props => props.$active && `
+    background: #3b82f6;
+    color: white;
+  `}
+  
+  &:hover {
+    background: #35394e;
+  }
+`;
+
+const ContentLayout = styled.div`
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 25px;
+  
+  @media (max-width: 1200px) {
+    grid-template-columns: 1fr;
+  }
+`;
+
+const Column = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+`;
+
+const ServerInfo = styled.div`
+  background: #2e3245;
+  border-radius: 8px;
+  padding: 20px;
+`;
+
+const ServerHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
   padding-bottom: 15px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid #3a3f57;
 `;
 
-const BackButton = styled.button`
+const ServerTitle = styled.h2`
+  font-size: 20px;
+  font-weight: 600;
+  color: #fff;
+`;
+
+const ServerStatus = styled.div`
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  
+  ${props => props.$status === 'running' ? `
+    background-color: #065f46;
+    color: #10b981;
+  ` : `
+    background-color: #991b1b;
+    color: #ef4444;
+  `}
+`;
+
+const StatusIndicator = styled.div`
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  ${props => props.$status === 'running' ? `
+    background-color: #10b981;
+  ` : `
+    background-color: #ef4444;
+  `}
+`;
+
+const ServerDetails = styled.div`
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 15px;
+`;
+
+const DetailCard = styled.div`
+  background-color: #35394e;
+  border-radius: 8px;
+  padding: 15px;
+`;
+
+const DetailTitle = styled.div`
+  font-size: 12px;
+  color: #a4aabc;
+  margin-bottom: 5px;
+  font-weight: 500;
+`;
+
+const DetailValue = styled.div`
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+`;
+
+const CopyButton = styled.button`
   background: none;
   border: none;
   color: #3b82f6;
   cursor: pointer;
-  font-size: 1rem;
-  margin-right: 15px;
-  
-  &:hover {
-    color: #2563eb;
-  }
+  font-size: 14px;
 `;
 
-const Title = styled.h1`
-  margin: 0;
-  font-size: 1.8rem;
-`;
-
-const ServerInfo = styled.div`
-  display: flex;
-  gap: 15px;
-  margin-left: auto;
-  align-items: center;
-`;
-
-const StatusBadge = styled.span`
-  padding: 6px 12px;
-  border-radius: 20px;
-  font-size: 0.85rem;
-  font-weight: 500;
-  
-  ${props => props.$status === 'running' ? `
-    background-color: #dcfce7;
-    color: #16a34a;
-  ` : `
-    background-color: #fee2e2;
-    color: #dc2626;
-  `}
-`;
-
-const Content = styled.div`
+const ServerActions = styled.div`
   display: grid;
-  grid-template-columns: 1fr 350px;
-  gap: 20px;
-`;
-
-const MainSection = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-`;
-
-const Sidebar = styled.div`
-  background: white;
-  border-radius: 10px;
-  padding: 20px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-`;
-
-const Section = styled.div`
-  background: white;
-  border-radius: 10px;
-  padding: 20px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-`;
-
-const SectionTitle = styled.h2`
-  margin-top: 0;
-  margin-bottom: 20px;
-  font-size: 1.3rem;
-  color: #374151;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-`;
-
-const ActionButtons = styled.div`
-  display: flex;
-  flex-direction: column;
+  grid-template-columns: 1fr;
   gap: 12px;
 `;
 
 const ActionButton = styled.button`
+  background: #3b82f6;
+  color: white;
+  border: none;
+  padding: 10px 15px;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  padding: 12px 15px;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 1rem;
-  font-weight: 500;
-  transition: all 0.2s;
+  gap: 8px;
+  font-size: 14px;
   
-  ${props => props.$variant === 'start' ? `
-    background-color: #10b981;
-    color: white;
-    
-    &:hover:not(:disabled) {
-      background-color: #059669;
-    }
-  ` : props.$variant === 'stop' ? `
-    background-color: #ef4444;
-    color: white;
-    
-    &:hover:not(:disabled) {
-      background-color: #dc2626;
-    }
-  ` : props.$variant === 'restart' ? `
-    background-color: #f59e0b;
-    color: white;
-    
-    &:hover:not(:disabled) {
-      background-color: #d97706;
-    }
-  ` : `
-    background-color: #3b82f6;
-    color: white;
-    
-    &:hover:not(:disabled) {
-      background-color: #2563eb;
-    }
-  `}
+  &:hover:not(:disabled) {
+    background: #2563eb;
+  }
   
   &:disabled {
-    background-color: #d1d5db;
+    background: #4a5070;
     cursor: not-allowed;
   }
-`;
-
-const StatsGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 15px;
-  margin-bottom: 25px;
-`;
-
-const StatCard = styled.div`
-  background: #f9fafb;
-  border-radius: 8px;
-  padding: 15px;
-  border-left: 4px solid #3b82f6;
-`;
-
-const StatLabel = styled.div`
-  font-size: 0.85rem;
-  color: #6b7280;
-  margin-bottom: 5px;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-`;
-
-const StatValue = styled.div`
-  font-size: 1.2rem;
-  font-weight: bold;
-  color: #374151;
-`;
-
-const InfoList = styled.div`
-  margin-top: 20px;
-`;
-
-const InfoItem = styled.div`
-  display: flex;
-  justify-content: space-between;
-  padding: 10px 0;
-  border-bottom: 1px solid #f3f4f6;
   
-  &:last-child {
-    border-bottom: none;
-  }
-`;
-
-const InfoLabel = styled.span`
-  color: #6b7280;
-`;
-
-const InfoValue = styled.span`
-  font-weight: 500;
-`;
-
-const CancelButton = styled.button`
-  margin-top: 15px;
-  padding: 10px 16px;
-  background: #ef4444;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.9rem;
-  display: flex;
-  align-items: center;
-  gap: 5px;
+  ${props => props.$variant === 'secondary' && `
+    background: #4a5070;
+    color: #cbd5e1;
+    
+    &:hover:not(:disabled) {
+      background: #565d81;
+    }
+  `}
   
-  &:hover {
+  ${props => props.$variant === 'danger' && `
     background: #dc2626;
-  }
-`;
-
-const PerformanceGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 15px;
-  margin-bottom: 20px;
-`;
-
-const PerformanceCard = styled.div`
-  background: #f9fafb;
-  border-radius: 8px;
-  padding: 15px;
-  text-align: center;
-`;
-
-const PerformanceValue = styled.div`
-  font-size: 1.5rem;
-  font-weight: bold;
-  color: ${props => {
-    if (props.$type === 'cpu') return props.$value > 80 ? '#ef4444' : props.$value > 60 ? '#f59e0b' : '#10b981';
-    if (props.$type === 'memory') return props.$value > 85 ? '#ef4444' : props.$value > 70 ? '#f59e0b' : '#10b981';
-    if (props.$type === 'tps') return props.$value < 15 ? '#ef4444' : props.$value < 18 ? '#f59e0b' : '#10b981';
-    return '#374151';
-  }};
-  margin: 10px 0;
-`;
-
-const LogsContainer = styled.div`
-  background: #1f2937;
-  color: #e5e7eb;
-  border-radius: 8px;
-  padding: 15px;
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-  font-size: 0.85rem;
-  max-height: 200px;
-  overflow-y: auto;
-  margin-top: 15px;
-`;
-
-const LogLine = styled.div`
-  margin-bottom: 4px;
-  line-height: 1.4;
-  color: ${props => {
-    if (props.$level === 'ERROR') return '#ef4444';
-    if (props.$level === 'WARN') return '#f59e0b';
-    if (props.$level === 'INFO') return '#3b82f6';
-    return '#e5e7eb';
-  }};
-`;
-
-const QuickSettingsGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 15px;
-  margin-top: 15px;
-`;
-
-const QuickSettingButton = styled.button`
-  padding: 10px;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  background: white;
-  cursor: pointer;
-  text-align: center;
-  transition: all 0.2s;
-  
-  &:hover {
-    background: #f9fafb;
-    border-color: #3b82f6;
-  }
-  
-  ${props => props.$active && `
-    background: #e0e7ff;
-    border-color: #3b82f6;
-    color: #3730a3;
+    
+    &:hover:not(:disabled) {
+      background: #b91c1c;
+    }
   `}
 `;
 
-const BackupList = styled.div`
-  margin-top: 15px;
+const InstanceContainer = styled.div`
+  background: #2e3245;
+  border-radius: 8px;
+  padding: 20px;
 `;
 
-const BackupItem = styled.div`
+const InstanceHeader = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  margin-bottom: 10px;
-  background: #f9fafb;
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #3a3f57;
 `;
 
-const BackupActions = styled.div`
+const InstanceTitle = styled.h3`
+  font-size: 18px;
+  font-weight: 600;
+  color: #fff;
+`;
+
+const InstanceDetails = styled.div`
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+`;
+
+const QuickTasks = styled.div`
+  background: #2e3245;
+  border-radius: 8px;
+  padding: 20px;
+`;
+
+const TasksHeader = styled.div`
   display: flex;
-  gap: 5px;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #3a3f57;
 `;
 
-const SmallButton = styled.button`
-  padding: 5px 10px;
-  border: 1px solid #d1d5db;
-  border-radius: 4px;
-  background: white;
+const TasksTitle = styled.h3`
+  font-size: 18px;
+  font-weight: 600;
+  color: #fff;
+`;
+
+const TaskButtons = styled.div`
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+`;
+
+const TaskButton = styled.button`
+  background: #35394e;
+  border: 1px solid #3a3f57;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-weight: 500;
   cursor: pointer;
-  font-size: 0.8rem;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: #cbd5e1;
   
   &:hover {
-    background: #f3f4f6;
-  }
-  
-  ${props => props.$variant === 'primary' && `
     background: #3b82f6;
     color: white;
     border-color: #3b82f6;
-    
-    &:hover {
-      background: #2563eb;
-    }
-  `}
+  }
+`;
+
+const ConsoleContainer = styled.div`
+  background: #2e3245;
+  border-radius: 8px;
+  padding: 20px;
+`;
+
+const ConsoleHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #3a3f57;
+`;
+
+const ConsoleTitle = styled.h3`
+  font-size: 18px;
+  font-weight: 600;
+  color: #fff;
+`;
+
+const ConsoleContent = styled.div`
+  background: #35394e;
+  border-radius: 6px;
+  padding: 15px;
+  height: 200px;
+  overflow-y: auto;
+  margin-bottom: 15px;
+  font-family: monospace;
+  font-size: 14px;
+  color: #a4aabc;
+`;
+
+const ConsoleInput = styled.div`
+  display: flex;
+  gap: 10px;
+  
+  input {
+    flex: 1;
+    background: #35394e;
+    border: 1px solid #3a3f57;
+    border-radius: 6px;
+    padding: 10px 15px;
+    color: #fff;
+    font-family: monospace;
+  }
+  
+  button {
+    background: #3b82f6;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 15px;
+    cursor: pointer;
+  }
+`;
+
+const UsageContainer = styled.div`
+  background: #2e3245;
+  border-radius: 8px;
+  padding: 20px;
+`;
+
+const UsageHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #3a3f57;
+`;
+
+const UsageTitle = styled.h3`
+  font-size: 18px;
+  font-weight: 600;
+  color: #fff;
+`;
+
+const UsageMetrics = styled.div`
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 15px;
+`;
+
+const MetricCard = styled.div`
+  background: #35394e;
+  border-radius: 8px;
+  padding: 15px;
+`;
+
+const MetricHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+`;
+
+const MetricName = styled.div`
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+`;
+
+const MetricValue = styled.div`
+  font-size: 16px;
+  font-weight: 700;
+  color: #3b82f6;
+`;
+
+const ProgressBarContainer = styled.div`
+  height: 6px;
+  background-color: #3a3f57;
+  border-radius: 3px;
+  overflow: hidden;
+`;
+
+const Progress = styled.div`
+  height: 100%;
+  background: #3b82f6;
+  border-radius: 3px;
+  width: ${props => props.$width || '0%'};
+`;
+
+const Footer = styled.footer`
+  text-align: center;
+  padding: 20px 0;
+  margin-top: 30px;
+  border-top: 1px solid #3a3f57;
+  color: #a4aabc;
+  font-size: 14px;
 `;
 
 function ServerControl() {
@@ -374,17 +436,14 @@ function ServerControl() {
   const [performanceStats, setPerformanceStats] = useState(null);
   const [logs, setLogs] = useState([]);
   const [backups, setBackups] = useState([]);
-  const [quickSettings, setQuickSettings] = useState({
-    difficulty: 'easy',
-    gamemode: 'survival',
-    whitelist: false
-  });
+  const [consoleInput, setConsoleInput] = useState('');
+  const [consoleLogs, setConsoleLogs] = useState([]);
+  const [activeTab, setActiveTab] = useState('overview');
 
   useEffect(() => {
     fetchServer();
     fetchPerformanceStats();
     fetchBackups();
-    fetchQuickSettings();
     
     // Set up interval for performance stats if server is running
     let performanceInterval;
@@ -430,15 +489,6 @@ function ServerControl() {
       setBackups(response.data.backups || []);
     } catch (error) {
       console.error('Error fetching backups:', error);
-    }
-  };
-
-  const fetchQuickSettings = async () => {
-    try {
-      const response = await api.get(`/servers/${serverId}/quick-settings`);
-      setQuickSettings(response.data);
-    } catch (error) {
-      console.error('Error fetching quick settings:', error);
     }
   };
 
@@ -572,18 +622,56 @@ function ServerControl() {
     }
   };
 
-  const handleQuickSettingChange = async (setting, value) => {
-    try {
-      await api.post(`/servers/${serverId}/quick-settings`, {
-        [setting]: value
-      });
-      setQuickSettings(prev => ({ ...prev, [setting]: value }));
-      toast.success('Setting updated successfully');
-    } catch (error) {
-      console.error('Error updating setting:', error);
-      toast.error('Failed to update setting');
+  const handleConsoleSubmit = () => {
+    if (consoleInput.trim() !== '') {
+      // Send command to server
+      api.post(`/servers/${serverId}/console`, { command: consoleInput })
+        .then(response => {
+          setConsoleLogs([...consoleLogs, `> ${consoleInput}`, ...response.data.output.split('\n')]);
+        })
+        .catch(error => {
+          console.error('Error sending command:', error);
+          setConsoleLogs([...consoleLogs, `> ${consoleInput}`, `Error: ${error.response?.data?.error || error.message}`]);
+        });
+      
+      setConsoleInput('');
+      
+      // Scroll to bottom of console
+      const consoleElement = document.querySelector('.console-content');
+      if (consoleElement) {
+        setTimeout(() => {
+          consoleElement.scrollTop = consoleElement.scrollHeight;
+        }, 100);
+      }
     }
   };
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text).then(() => {
+      alert('Skopiowano do schowka: ' + text);
+    }).catch(err => {
+      console.error('Błąd podczas kopiowania: ', err);
+    });
+  };
+
+  // Fetch console logs
+  useEffect(() => {
+    if (server?.status === 'running') {
+      const fetchLogs = async () => {
+        try {
+          const response = await api.get(`/servers/${serverId}/logs`);
+          setConsoleLogs(response.data.logs || []);
+        } catch (error) {
+          console.error('Error fetching logs:', error);
+        }
+      };
+      
+      fetchLogs();
+      const logInterval = setInterval(fetchLogs, 10000); // Update logs every 10 seconds
+      
+      return () => clearInterval(logInterval);
+    }
+  }, [serverId, server?.status]);
 
   if (loading) {
     return <Container>Loading server details...</Container>;
@@ -593,25 +681,48 @@ function ServerControl() {
     return <Container>Server not found</Container>;
   }
 
-  const showProgress = downloadProgress && downloadProgress.status !== 'idle';
-  const showCancelButton = showProgress && ['downloading', 'extracting', 'starting', 'preparing'].includes(downloadProgress.status);
-
   return (
     <Container>
-      <Header>
-        <BackButton onClick={() => navigate('/dashboard')}>
-          <FiArrowLeft /> Back to Dashboard
-        </BackButton>
-        <Title>{server.name} Control Panel</Title>
-        <ServerInfo>
-          <StatusBadge $status={server.status}>
-            {server.status.toUpperCase()}
-          </StatusBadge>
-          <span>{server.type.toUpperCase()} {server.version}</span>
-        </ServerInfo>
-      </Header>
+      <NavTabs>
+        <NavTab 
+          $active={activeTab === 'overview'} 
+          onClick={() => setActiveTab('overview')}
+        >
+          <FiActivity /> Overview
+        </NavTab>
+        <NavTab 
+          $active={activeTab === 'console'} 
+          onClick={() => navigate(`/servers/${serverId}/console`)}
+        >
+          <FiTerminal /> Console
+        </NavTab>
+        <NavTab 
+          $active={activeTab === 'files'} 
+          onClick={() => navigate(`/servers/${serverId}/files`)}
+        >
+          <FiFolder /> Files
+        </NavTab>
+        <NavTab 
+          $active={activeTab === 'config'} 
+          onClick={() => navigate(`/servers/${serverId}/settings`)}
+        >
+          <FiSettings /> Config
+        </NavTab>
+        <NavTab 
+          $active={activeTab === 'plugins'} 
+          onClick={() => navigate(`/servers/${serverId}/plugins`)}
+        >
+          <FiBox /> Plugins
+        </NavTab>
+        <NavTab 
+          $active={activeTab === 'users'} 
+          onClick={() => navigate(`/servers/${serverId}/users`)}
+        >
+          <FiUser /> Users
+        </NavTab>
+      </NavTabs>
 
-      {showProgress && (
+      {downloadProgress && downloadProgress.status !== 'idle' && (
         <ProgressBar
           progress={downloadProgress.progress}
           status={downloadProgress.status}
@@ -622,276 +733,178 @@ function ServerControl() {
         />
       )}
 
-      <Content>
-        <MainSection>
-          {/* Server Information Section */}
-          <Section>
-            <SectionTitle>
-              <FiServer /> Server Information
-            </SectionTitle>
-            
-            <StatsGrid>
-              <StatCard>
-                <StatLabel><FiServer /> Server Type</StatLabel>
-                <StatValue>{server.type.toUpperCase()}</StatValue>
-              </StatCard>
-              
-              <StatCard>
-                <StatLabel><FiActivity /> Version</StatLabel>
-                <StatValue>{server.version}</StatValue>
-              </StatCard>
-              
-              <StatCard>
-                <StatLabel><FiBarChart2 /> Port</StatLabel>
-                <StatValue>{server.port}</StatValue>
-              </StatCard>
-              
-              <StatCard>
-                <StatLabel><FiActivity /> Status</StatLabel>
-                <StatValue>
-                  <StatusBadge $status={server.status}>
-                    {server.status.toUpperCase()}
-                  </StatusBadge>
-                </StatValue>
-              </StatCard>
-            </StatsGrid>
-
-            <InfoList>
-              <InfoItem>
-                <InfoLabel>Created</InfoLabel>
-                <InfoValue>{new Date(server.created_at).toLocaleDateString()}</InfoValue>
-              </InfoItem>
-              
-              <InfoItem>
-                <InfoLabel>Last Started</InfoLabel>
-                <InfoValue>
+      <ContentLayout>
+        <Column>
+          <ServerInfo>
+            <ServerHeader>
+              <ServerTitle>{server.name}</ServerTitle>
+              <ServerStatus $status={server.status}>
+                <StatusIndicator $status={server.status} />
+                <span>{server.status === 'running' ? 'Online' : 'Offline'}</span>
+              </ServerStatus>
+            </ServerHeader>
+            <ServerDetails>
+              <DetailCard>
+                <DetailTitle>ADRES IP</DetailTitle>
+                <DetailValue>
+                  <span>{server.ip || 'mc.shockbyte.com'}:{server.port}</span>
+                  <CopyButton onClick={() => copyToClipboard(`${server.ip || 'mc.shockbyte.com'}:${server.port}`)}>
+                    <FiCopy />
+                  </CopyButton>
+                </DetailValue>
+              </DetailCard>
+              <DetailCard>
+                <DetailTitle>WERSJA</DetailTitle>
+                <DetailValue>{server.version}</DetailValue>
+              </DetailCard>
+              <DetailCard>
+                <DetailTitle>OSTATNIA AKTYWNOŚĆ</DetailTitle>
+                <DetailValue>
                   {server.last_started 
                     ? new Date(server.last_started).toLocaleString() 
-                    : 'Never'
+                    : 'Nigdy'
                   }
-                </InfoValue>
-              </InfoItem>
-              
-              <InfoItem>
-                <InfoLabel>Process ID</InfoLabel>
-                <InfoValue>{server.pid || 'N/A'}</InfoValue>
-              </InfoItem>
-              
-              <InfoItem>
-                <InfoLabel>Server Path</InfoLabel>
-                <InfoValue>{server.path}</InfoValue>
-              </InfoItem>
-            </InfoList>
-          </Section>
+                </DetailValue>
+              </DetailCard>
+              <DetailCard>
+                <DetailTitle>LOKALIZACJA</DetailTitle>
+                <DetailValue>{server.location || 'Europa (Frankfurt)'}</DetailValue>
+              </DetailCard>
+            </ServerDetails>
+          </ServerInfo>
 
-          {/* Performance Stats Section */}
-          {server.status === 'running' && performanceStats && (
-            <Section>
-              <SectionTitle>
-                <FiCpu /> Performance Stats
-              </SectionTitle>
-              
-              <PerformanceGrid>
-                <PerformanceCard>
-                  <StatLabel><FiCpu /> CPU Usage</StatLabel>
-                  <PerformanceValue $type="cpu" $value={performanceStats.cpu_percent}>
-                    {performanceStats.cpu_percent}%
-                  </PerformanceValue>
-                </PerformanceCard>
-                
-                <PerformanceCard>
-                  <StatLabel><FiHardDrive /> Memory Usage</StatLabel>
-                  <PerformanceValue $type="memory" $value={performanceStats.memory_percent}>
-                    {performanceStats.memory_percent}%
-                  </PerformanceValue>
-                </PerformanceCard>
-                
-                <PerformanceCard>
-                  <StatLabel><FiActivity /> TPS</StatLabel>
-                  <PerformanceValue $type="tps" $value={performanceStats.tps}>
-                    {performanceStats.tps}
-                  </PerformanceValue>
-                </PerformanceCard>
-              </PerformanceGrid>
-
-              <StatsGrid>
-                <StatCard>
-                  <StatLabel><FiUsers /> Players Online</StatLabel>
-                  <StatValue>{performanceStats.players_online || 0}</StatValue>
-                </StatCard>
-                
-                <StatCard>
-                  <StatLabel><FiDownload /> Network Down</StatLabel>
-                  <StatValue>{performanceStats.network_down || '0'} KB/s</StatValue>
-                </StatCard>
-                
-                <StatCard>
-                  <StatLabel><FiUpload /> Network Up</StatLabel>
-                  <StatValue>{performanceStats.network_up || '0'} KB/s</StatValue>
-                </StatCard>
-                
-                <StatCard>
-                  <StatLabel><FiClock /> Uptime</StatLabel>
-                  <StatValue>{performanceStats.uptime || '0'}s</StatValue>
-                </StatCard>
-              </StatsGrid>
-            </Section>
-          )}
-
-          {/* Backups Section */}
-          <Section>
-            <SectionTitle>
-              <FiHardDrive /> Backups
-            </SectionTitle>
-            
-            <ActionButton onClick={handleCreateBackup} disabled={server.status === 'running'}>
-              <FiDownload /> Create Backup
-            </ActionButton>
-            
-            <BackupList>
-              {backups.slice(0, 3).map(backup => (
-                <BackupItem key={backup.name}>
-                  <div>
-                    <div>{backup.name}</div>
-                    <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>
-                      {new Date(backup.created_at).toLocaleString()}
-                    </div>
-                  </div>
-                  <BackupActions>
-                    <SmallButton 
-                      $variant="primary" 
-                      onClick={() => handleRestoreBackup(backup.name)}
-                      disabled={server.status === 'running'}
-                    >
-                      Restore
-                    </SmallButton>
-                  </BackupActions>
-                </BackupItem>
-              ))}
-              
-              {backups.length === 0 && (
-                <div style={{ textAlign: 'center', color: '#6b7280', padding: '20px' }}>
-                  No backups available
-                </div>
-              )}
-            </BackupList>
-          </Section>
-        </MainSection>
-
-        <Sidebar>
-          {/* Server Actions */}
-          <SectionTitle>Server Actions</SectionTitle>
-          
-          <ActionButtons>
-            <ActionButton
-              $variant="start"
-              onClick={() => handleServerAction('start')}
+          <ServerActions>
+            <ActionButton 
+              onClick={() => handleServerAction('start')} 
               disabled={server.status === 'running' || actionLoading || (downloadProgress && downloadProgress.status !== 'complete')}
             >
-              <FiPlay /> Start Server
+              <FiPower /> Uruchom Serwer
             </ActionButton>
-            
-            <ActionButton
-              $variant="stop"
-              onClick={() => handleServerAction('stop')}
+            <ActionButton 
+              $variant="secondary" 
+              onClick={() => handleServerAction('restart')} 
               disabled={server.status === 'stopped' || actionLoading}
             >
-              <FiStopCircle /> Stop Server
+              <FiRefreshCw /> Restartuj Serwer
             </ActionButton>
-            
-            <ActionButton
-              $variant="restart"
-              onClick={() => handleServerAction('restart')}
+            <ActionButton $variant="secondary" onClick={() => navigate(`/servers/${serverId}/console`)}>
+              <FiTerminal /> Konsola
+            </ActionButton>
+            <ActionButton 
+              $variant="danger" 
+              onClick={() => handleServerAction('stop')} 
               disabled={server.status === 'stopped' || actionLoading}
             >
-              <FiRefreshCw /> Restart Server
+              <FiStopCircle /> Zatrzymaj Serwer
             </ActionButton>
-            
-            <ActionButton
-              onClick={() => navigate(`/servers/${serverId}/settings`)}
-              disabled={actionLoading}
-            >
-              <FiSettings /> Server Settings
-            </ActionButton>
-          </ActionButtons>
+          </ServerActions>
 
-          {/* Quick Settings */}
-          {server.status === 'running' && (
-            <>
-              <SectionTitle style={{ marginTop: '30px' }}>Quick Settings</SectionTitle>
-              
-              <QuickSettingsGrid>
-                <QuickSettingButton
-                  $active={quickSettings.difficulty === 'peaceful'}
-                  onClick={() => handleQuickSettingChange('difficulty', 'peaceful')}
-                >
-                  Peaceful
-                </QuickSettingButton>
-                <QuickSettingButton
-                  $active={quickSettings.difficulty === 'easy'}
-                  onClick={() => handleQuickSettingChange('difficulty', 'easy')}
-                >
-                  Easy
-                </QuickSettingButton>
-                <QuickSettingButton
-                  $active={quickSettings.difficulty === 'normal'}
-                  onClick={() => handleQuickSettingChange('difficulty', 'normal')}
-                >
-                  Normal
-                </QuickSettingButton>
-                <QuickSettingButton
-                  $active={quickSettings.difficulty === 'hard'}
-                  onClick={() => handleQuickSettingChange('difficulty', 'hard')}
-                >
-                  Hard
-                </QuickSettingButton>
-              </QuickSettingsGrid>
+          <InstanceContainer>
+            <InstanceHeader>
+              <InstanceTitle>Aktywna Instancja</InstanceTitle>
+            </InstanceHeader>
+            <InstanceDetails>
+              <DetailCard>
+                <DetailTitle>NAZWA</DetailTitle>
+                <DetailValue>{server.name}</DetailValue>
+              </DetailCard>
+              <DetailCard>
+                <DetailTitle>TYP</DetailTitle>
+                <DetailValue>{server.type.toUpperCase()}</DetailValue>
+              </DetailCard>
+              <DetailCard>
+                <DetailTitle>WERSJA</DetailTitle>
+                <DetailValue>{server.version}</DetailValue>
+              </DetailCard>
+            </InstanceDetails>
+          </InstanceContainer>
 
-              <QuickSettingsGrid style={{ marginTop: '10px' }}>
-                <QuickSettingButton
-                  $active={quickSettings.gamemode === 'survival'}
-                  onClick={() => handleQuickSettingChange('gamemode', 'survival')}
-                >
-                  Survival
-                </QuickSettingButton>
-                <QuickSettingButton
-                  $active={quickSettings.gamemode === 'creative'}
-                  onClick={() => handleQuickSettingChange('gamemode', 'creative')}
-                >
-                  Creative
-                </QuickSettingButton>
-                <QuickSettingButton
-                  $active={quickSettings.whitelist}
-                  onClick={() => handleQuickSettingChange('whitelist', !quickSettings.whitelist)}
-                >
-                  {quickSettings.whitelist ? 'Whitelist ✓' : 'Whitelist'}
-                </QuickSettingButton>
-              </QuickSettingsGrid>
-            </>
-          )}
+          <QuickTasks>
+            <TasksHeader>
+              <TasksTitle>Szybkie Zadania</TasksTitle>
+            </TasksHeader>
+            <TaskButtons>
+              <TaskButton onClick={handleCreateBackup} disabled={server.status === 'running'}>
+                <FiDownload /> Kopia zapasowa
+              </TaskButton>
+              <TaskButton>
+                <FiUpload /> Prześlij świat
+              </TaskButton>
+              <TaskButton>
+                <FaWrench /> Napraw serwer
+              </TaskButton>
+              <TaskButton onClick={() => navigate(`/servers/${serverId}/users`)}>
+                <FiUsers /> Uprawnienia
+              </TaskButton>
+            </TaskButtons>
+          </QuickTasks>
+        </Column>
 
-          {/* Quick Navigation */}
-          <SectionTitle style={{ marginTop: '30px' }}>Quick Navigation</SectionTitle>
-          
-          <ActionButtons>
-            <ActionButton onClick={() => navigate(`/servers/${serverId}/console`)}>
-              Console
-            </ActionButton>
-            
-            <ActionButton onClick={() => navigate(`/servers/${serverId}/files`)}>
-              File Manager
-            </ActionButton>
-            
-            <ActionButton onClick={() => navigate(`/servers/${serverId}/users`)}>
-              User Management
-            </ActionButton>
-            
-            <ActionButton onClick={() => navigate(`/servers/${serverId}/plugins`)}>
-              Plugin Manager
-            </ActionButton>
-          </ActionButtons>
-        </Sidebar>
-      </Content>
+        <Column>
+          <ConsoleContainer>
+            <ConsoleHeader>
+              <ConsoleTitle>Konsola Serwera</ConsoleTitle>
+            </ConsoleHeader>
+            <ConsoleContent className="console-content">
+              {consoleLogs.map((log, index) => (
+                <div key={index}>{log}</div>
+              ))}
+            </ConsoleContent>
+            <ConsoleInput>
+              <input 
+                type="text" 
+                placeholder="Wpisz komendę..." 
+                value={consoleInput}
+                onChange={(e) => setConsoleInput(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleConsoleSubmit()}
+                disabled={server.status !== 'running'}
+              />
+              <button onClick={handleConsoleSubmit} disabled={server.status !== 'running'}>Wyślij</button>
+            </ConsoleInput>
+          </ConsoleContainer>
+
+          <UsageContainer>
+            <UsageHeader>
+              <UsageTitle>Zasoby</UsageTitle>
+            </UsageHeader>
+            <UsageMetrics>
+              <MetricCard>
+                <MetricHeader>
+                  <MetricName>CPU</MetricName>
+                  <MetricValue>
+                    {performanceStats ? `${performanceStats.cpu_percent}%` : '0%'}
+                  </MetricValue>
+                </MetricHeader>
+                <ProgressBarContainer>
+                  <Progress $width={performanceStats ? `${performanceStats.cpu_percent}%` : '0%'} />
+                </ProgressBarContainer>
+              </MetricCard>
+              <MetricCard>
+                <MetricHeader>
+                  <MetricName>Pamięć RAM</MetricName>
+                  <MetricValue>
+                    {performanceStats ? `${performanceStats.memory_used} / ${performanceStats.memory_max}` : '0GB / 0GB'}
+                  </MetricValue>
+                </MetricHeader>
+                <ProgressBarContainer>
+                  <Progress $width={performanceStats ? `${performanceStats.memory_percent}%` : '0%'} />
+                </ProgressBarContainer>
+              </MetricCard>
+              <MetricCard>
+                <MetricHeader>
+                  <MetricName>Dysk</MetricName>
+                  <MetricValue>
+                    {server.disk_usage ? `${server.disk_usage.used} / ${server.disk_usage.total}` : '0GB / 0GB'}
+                  </MetricValue>
+                </MetricHeader>
+                <ProgressBarContainer>
+                  <Progress $width={server.disk_usage ? `${server.disk_usage.percent}%` : '0%'} />
+                </ProgressBarContainer>
+              </MetricCard>
+            </UsageMetrics>
+          </UsageContainer>
+        </Column>
+      </ContentLayout>
     </Container>
   );
 }

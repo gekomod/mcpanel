@@ -10,17 +10,35 @@ const LoginContainer = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #1a1f35 0%, #2d3748 100%);
   padding: 20px;
+  position: relative;
+  
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: url(https://4kwallpapers.com/images/wallpapers/minecraft-spring-to-3840x2160-21999.jpg);
+    background-size: cover;
+    background-position: center;
+    opacity: 0.2;
+    z-index: 0;
+  }
 `;
 
 const LoginCard = styled.div`
-  background: white;
+  background: #2e3245;
   border-radius: 12px;
   padding: 40px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
   width: 100%;
   max-width: 400px;
+  border: 1px solid #3a3f57;
+  position: relative;
+  z-index: 1;
 `;
 
 const Logo = styled.div`
@@ -36,12 +54,13 @@ const LogoIcon = styled.div`
 
 const Title = styled.h1`
   font-size: 1.8rem;
-  color: #374151;
+  color: #fff;
   margin-bottom: 5px;
+  font-weight: 700;
 `;
 
 const Subtitle = styled.p`
-  color: #6b7280;
+  color: #a4aabc;
   font-size: 0.9rem;
 `;
 
@@ -59,21 +78,27 @@ const FormGroup = styled.div`
 
 const Label = styled.label`
   font-weight: 500;
-  color: #374151;
+  color: #a4aabc;
   font-size: 0.9rem;
 `;
 
 const Input = styled.input`
   padding: 12px 16px;
-  border: 1px solid #d1d5db;
+  background: #35394e;
+  border: 1px solid #3a3f57;
   border-radius: 8px;
   font-size: 1rem;
   transition: border-color 0.2s;
+  color: #fff;
 
   &:focus {
     outline: none;
     border-color: #3b82f6;
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+  }
+
+  &::placeholder {
+    color: #6b7293;
   }
 `;
 
@@ -103,12 +128,24 @@ const Button = styled.button`
 `;
 
 const ErrorMessage = styled.div`
-  background: #fee2e2;
-  color: #dc2626;
+  background: rgba(220, 38, 38, 0.2);
+  color: #f87171;
   padding: 12px;
   border-radius: 6px;
   font-size: 0.9rem;
   margin-top: 10px;
+  border: 1px solid rgba(220, 38, 38, 0.3);
+`;
+
+const CredentialsNote = styled.div`
+  margin-top: 20px;
+  text-align: center;
+  color: #6b7293;
+  font-size: 0.9rem;
+  padding: 10px;
+  background: rgba(59, 130, 246, 0.1);
+  border-radius: 6px;
+  border: 1px solid rgba(59, 130, 246, 0.2);
 `;
 
 function Login() {
@@ -181,9 +218,9 @@ function Login() {
           </Button>
         </Form>
 
-        <div style={{ marginTop: '20px', textAlign: 'center', color: '#6b7280', fontSize: '0.9rem' }}>
+        <CredentialsNote>
           Default credentials: admin / admin
-        </div>
+        </CredentialsNote>
       </LoginCard>
     </LoginContainer>
   );

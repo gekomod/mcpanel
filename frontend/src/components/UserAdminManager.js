@@ -1,0 +1,634 @@
+import React, { useState, useEffect } from 'react';
+import styled from 'styled-components';
+import { 
+  FiUsers, 
+  FiPlus, 
+  FiEdit, 
+  FiTrash2, 
+  FiSearch
+} from 'react-icons/fi';
+import api from '../services/api';
+
+const UsersTableContainer = styled.div`
+  background: #2e3245;
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 30px;
+  border: 1px solid #3a3f57;
+`;
+
+const TableHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+`;
+
+const TableTitle = styled.h3`
+  font-size: 18px;
+  font-weight: 600;
+  color: #fff;
+`;
+
+const SearchBox = styled.div`
+  display: flex;
+  align-items: center;
+  background: #35394e;
+  border: 1px solid #3a3f57;
+  border-radius: 6px;
+  padding: 8px 12px;
+  width: 250px;
+  
+  input {
+    background: transparent;
+    border: none;
+    color: #fff;
+    padding: 0 10px;
+    width: 100%;
+    outline: none;
+    
+    &::placeholder {
+      color: #6b7280;
+    }
+  }
+`;
+
+const UsersTable = styled.table`
+  width: 100%;
+  border-collapse: collapse;
+`;
+
+const TableHeaderCell = styled.th`
+  text-align: left;
+  padding: 12px 15px;
+  font-weight: 600;
+  color: #a4aabc;
+  border-bottom: 1px solid #3a3f57;
+`;
+
+const TableRow = styled.tr`
+  &:hover {
+    background-color: #222b43;
+  }
+`;
+
+const TableCell = styled.td`
+  padding: 12px 15px;
+  border-bottom: 1px solid #3a3f57;
+  color: #fff;
+`;
+
+const UsernameCell = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+`;
+
+const UserAvatarSmall = styled.div`
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background-color: #3b82f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  color: white;
+  font-size: 12px;
+`;
+
+const RoleBadge = styled.span`
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  
+  ${props => props.$role === 'admin' && `
+    background-color: #7c2d2d;
+    color: #f87171;
+  `}
+  
+  ${props => props.$role === 'moderator' && `
+    background-color: #713f12;
+    color: #fbbf24;
+  `}
+  
+  ${props => props.$role === 'user' && `
+    backgroundColor: #065f46;
+    color: #10b981;
+  `}
+`;
+
+const ActionButtons = styled.div`
+  display: flex;
+  gap: 8px;
+`;
+
+const ActionButton = styled.button`
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  border: none;
+  transition: background 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  
+  ${props => props.$variant === 'edit' && `
+    background: #3b82f6;
+    color: white;
+    
+    &:hover {
+      background: #2563eb;
+    }
+  `}
+  
+  ${props => props.$variant === 'delete' && `
+    background: #7c2d2d;
+    color: #f87171;
+    
+    &:hover {
+      background: #9a3a3a;
+    }
+  `}
+`;
+
+const AddUserButton = styled.button`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  margin-left: auto;
+  
+  &:hover {
+    background: #2563eb;
+  }
+`;
+
+const EmptyState = styled.div`
+  text-align: center;
+  padding: 40px 20px;
+  color: #a4aabc;
+`;
+
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: #3b82f6;
+`;
+
+const ModalOverlay = styled.div`
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+`;
+
+const Modal = styled.div`
+  background: #2e3245;
+  border-radius: 10px;
+  padding: 25px;
+  width: 500px;
+  max-width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+`;
+
+const ModalHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #3a3f57;
+`;
+
+const ModalTitle = styled.h2`
+  margin: 0;
+  font-size: 1.5rem;
+  color: #fff;
+`;
+
+const ModalClose = styled.button`
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #a4aabc;
+  
+  &:hover {
+    color: #fff;
+  }
+`;
+
+const FormGroup = styled.div`
+  margin-bottom: 20px;
+`;
+
+const Label = styled.label`
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 500;
+  color: #fff;
+`;
+
+const Input = styled.input`
+  width: 100%;
+  padding: 12px 15px;
+  border: 1px solid #3a3f57;
+  border-radius: 6px;
+  font-size: 14px;
+  background: #35394e;
+  color: #fff;
+  
+  &:focus {
+    outline: none;
+    border-color: #3b82f6;
+  }
+`;
+
+const Select = styled.select`
+  width: 100%;
+  padding: 12px 15px;
+  border: 1px solid #3a3f57;
+  border-radius: 6px;
+  font-size: 14px;
+  background: #35394e;
+  color: #fff;
+  appearance: none;
+  
+  &:focus {
+    outline: none;
+    border-color: #3b82f6;
+  }
+`;
+
+const ModalActions = styled.div`
+  display: flex;
+  justify-content: flex-end;
+  gap: 15px;
+  margin-top: 25px;
+  padding-top: 20px;
+  border-top: 1px solid #3a3f57;
+`;
+
+const CancelButton = styled.button`
+  padding: 10px 20px;
+  background: #4a5070;
+  color: #cbd5e1;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  
+  &:hover {
+    background: #565d81;
+  }
+`;
+
+const SaveButton = styled.button`
+  padding: 10px 20px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  
+  &:hover {
+    background: #2563eb;
+  }
+  
+  &:disabled {
+    background: #3a3f57;
+    color: #6b7280;
+    cursor: not-allowed;
+  }
+`;
+
+function UserAdminManager() {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [newUser, setNewUser] = useState({
+    username: '',
+    email: '',
+    password: '',
+    role: 'user'
+  });
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  const fetchUsers = async () => {
+    setLoading(true);
+    try {
+      const response = await api.get('/auth/users');
+      setUsers(response.data);
+    } catch (error) {
+      console.error('Error fetching users:', error);
+      alert('Failed to fetch users');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddUser = async () => {
+    try {
+      await api.post('/auth/register', {
+        username: newUser.username,
+        email: newUser.email,
+        password: newUser.password,
+        role: newUser.role
+      });
+      
+      setShowAddModal(false);
+      setNewUser({
+        username: '',
+        email: '',
+        password: '',
+        role: 'user'
+      });
+      
+      fetchUsers();
+    } catch (error) {
+      console.error('Error adding user:', error);
+      alert('Failed to add user');
+    }
+  };
+
+  const handleUpdateUser = async () => {
+    try {
+      await api.put(`/auth/users/${selectedUser.id}`, {
+        username: selectedUser.username,
+        email: selectedUser.email,
+        role: selectedUser.role
+      });
+      
+      setShowEditModal(false);
+      setSelectedUser(null);
+      fetchUsers();
+    } catch (error) {
+      console.error('Error updating user:', error);
+      alert('Failed to update user');
+    }
+  };
+
+  const handleDeleteUser = async (userId) => {
+    if (!window.confirm('Are you sure you want to delete this user?')) {
+      return;
+    }
+    
+    try {
+      await api.delete(`/auth/users/${userId}`);
+      fetchUsers();
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      alert('Failed to delete user');
+    }
+  };
+
+  const openEditModal = (user) => {
+    setSelectedUser({ ...user });
+    setShowEditModal(true);
+  };
+
+  const filteredUsers = users.filter(user => 
+    user.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    user.email.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <>
+      <UsersTableContainer>
+        <TableHeader>
+          <TableTitle>Lista użytkowników</TableTitle>
+          <SearchBox>
+            <FiSearch />
+            <input
+              type="text"
+              placeholder="Szukaj użytkowników..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </SearchBox>
+        </TableHeader>
+
+        {loading ? (
+          <LoadingSpinner>
+            <div>Ładowanie użytkowników...</div>
+          </LoadingSpinner>
+        ) : (
+          <UsersTable>
+            <thead>
+              <tr>
+                <TableHeaderCell>Użytkownik</TableHeaderCell>
+                <TableHeaderCell>Email</TableHeaderCell>
+                <TableHeaderCell>Rola</TableHeaderCell>
+                <TableHeaderCell>Data utworzenia</TableHeaderCell>
+                <TableHeaderCell style={{ textAlign: 'right' }}>Akcje</TableHeaderCell>
+              </tr>
+            </thead>
+            
+            <tbody>
+              {filteredUsers.map(user => (
+                <TableRow key={user.id}>
+                  <TableCell>
+                    <UsernameCell>
+                      <UserAvatarSmall>
+                        {user.username.charAt(0).toUpperCase()}
+                      </UserAvatarSmall>
+                      <span>{user.username}</span>
+                    </UsernameCell>
+                  </TableCell>
+                  <TableCell>{user.email}</TableCell>
+                  <TableCell>
+                    <RoleBadge $role={user.role}>
+                      {user.role === 'admin' ? 'Administrator' : 
+                       user.role === 'moderator' ? 'Moderator' : 'Użytkownik'}
+                    </RoleBadge>
+                  </TableCell>
+                  <TableCell>
+                    {user.created_at ? new Date(user.created_at).toLocaleDateString('pl-PL') : 'Brak danych'}
+                  </TableCell>
+                  <TableCell>
+                    <ActionButtons>
+                      <ActionButton 
+                        $variant="edit" 
+                        onClick={() => openEditModal(user)}
+                      >
+                        <FiEdit /> Edytuj
+                      </ActionButton>
+                      <ActionButton 
+                        $variant="delete" 
+                        onClick={() => handleDeleteUser(user.id)}
+                      >
+                        <FiTrash2 /> Usuń
+                      </ActionButton>
+                    </ActionButtons>
+                  </TableCell>
+                </TableRow>
+              ))}
+              
+              {filteredUsers.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan="5">
+                    <EmptyState>
+                      {searchTerm ? 'Brak użytkowników spełniających kryteria wyszukiwania' : 'Brak użytkowników w systemie'}
+                    </EmptyState>
+                  </TableCell>
+                </TableRow>
+              )}
+            </tbody>
+          </UsersTable>
+        )}
+      </UsersTableContainer>
+
+      <AddUserButton onClick={() => setShowAddModal(true)}>
+        <FiPlus /> Dodaj użytkownika
+      </AddUserButton>
+
+      {/* Add User Modal */}
+      {showAddModal && (
+        <ModalOverlay onClick={() => setShowAddModal(false)}>
+          <Modal onClick={(e) => e.stopPropagation()}>
+            <ModalHeader>
+              <ModalTitle>Dodaj nowego użytkownika</ModalTitle>
+              <ModalClose onClick={() => setShowAddModal(false)}>×</ModalClose>
+            </ModalHeader>
+            
+            <FormGroup>
+              <Label>Nazwa użytkownika</Label>
+              <Input
+                type="text"
+                value={newUser.username}
+                onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
+                placeholder="Nazwa użytkownika"
+              />
+            </FormGroup>
+            
+            <FormGroup>
+              <Label>Email</Label>
+              <Input
+                type="email"
+                value={newUser.email}
+                onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                placeholder="Adres email"
+              />
+            </FormGroup>
+            
+            <FormGroup>
+              <Label>Hasło</Label>
+              <Input
+                type="password"
+                value={newUser.password}
+                onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                placeholder="Hasło"
+              />
+            </FormGroup>
+            
+            <FormGroup>
+              <Label>Rola</Label>
+              <Select
+                value={newUser.role}
+                onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
+              >
+                <option value="user">Użytkownik</option>
+                <option value="moderator">Moderator</option>
+                <option value="admin">Administrator</option>
+              </Select>
+            </FormGroup>
+            
+            <ModalActions>
+              <CancelButton onClick={() => setShowAddModal(false)}>
+                Anuluj
+              </CancelButton>
+              <SaveButton 
+                onClick={handleAddUser} 
+                disabled={!newUser.username || !newUser.email || !newUser.password}
+              >
+                Dodaj użytkownika
+              </SaveButton>
+            </ModalActions>
+          </Modal>
+        </ModalOverlay>
+      )}
+
+      {/* Edit User Modal */}
+      {showEditModal && selectedUser && (
+        <ModalOverlay onClick={() => setShowEditModal(false)}>
+          <Modal onClick={(e) => e.stopPropagation()}>
+            <ModalHeader>
+              <ModalTitle>Edytuj użytkownika</ModalTitle>
+              <ModalClose onClick={() => setShowEditModal(false)}>×</ModalClose>
+            </ModalHeader>
+            
+            <FormGroup>
+              <Label>Nazwa użytkownika</Label>
+              <Input
+                type="text"
+                value={selectedUser.username}
+                onChange={(e) => setSelectedUser({ ...selectedUser, username: e.target.value })}
+                placeholder="Nazwa użytkownika"
+              />
+            </FormGroup>
+            
+            <FormGroup>
+              <Label>Email</Label>
+              <Input
+                type="email"
+                value={selectedUser.email}
+                onChange={(e) => setSelectedUser({ ...selectedUser, email: e.target.value })}
+                placeholder="Adres email"
+              />
+            </FormGroup>
+            
+            <FormGroup>
+              <Label>Rola</Label>
+              <Select
+                value={selectedUser.role}
+                onChange={(e) => setSelectedUser({ ...selectedUser, role: e.target.value })}
+              >
+                <option value="user">Użytkownik</option>
+                <option value="moderator">Moderator</option>
+                <option value="admin">Administrator</option>
+              </Select>
+            </FormGroup>
+            
+            <ModalActions>
+              <CancelButton onClick={() => setShowEditModal(false)}>
+                Anuluj
+              </CancelButton>
+              <SaveButton onClick={handleUpdateUser}>
+                Zapisz zmiany
+              </SaveButton>
+            </ModalActions>
+          </Modal>
+        </ModalOverlay>
+      )}
+    </>
+  );
+}
+
+export default UserAdminManager;

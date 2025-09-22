@@ -11,6 +11,10 @@ import Login from './components/Login';
 import Layout from './components/Layout';
 import BedrockManager from './components/BedrockManager';
 import AddonManager from './components/AddonManager';
+import Servers from './components/Servers';
+import UserAdminManager from './components/UserAdminManager';
+import Support from './components/Support';
+import SettingsAdmin from './components/SettingsAdmin';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -52,9 +56,13 @@ function App() {
 					<Route path="/servers/:serverId/users" element={<UserManager />} />
 					<Route path="/servers/:serverId/plugins" element={<PluginManager />} />
 					<Route path="/servers/:serverId/settings" element={<Settings />} />
+					<Route path="/servers" element={<Servers />} />
+					<Route path="/support" element={<Support />} />
                     {/* Admin routes */}
                     <Route path="/admin/bedrock-versions" element={<BedrockManager />} />
                     <Route path="/admin/addons" element={<AddonManager />} />
+                    <Route path="/admin/users" element={<UserAdminManager />} />
+                    <Route path="/admin/settings" element={<SettingsAdmin />} />
                     {/* Fallback route */}
                     <Route path="*" element={<Navigate to="/dashboard" />} />
                   </Routes>

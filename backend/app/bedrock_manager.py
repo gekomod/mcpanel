@@ -54,33 +54,77 @@ class BedrockAddonManager:
             return False, f"Error processing {pack_type} pack: {str(e)}"
             
     def _extract_and_fix_nested(self, zip_path, target_path):
-        """Extract zip and fix nested directory structure"""
+        """Extract zip and fix nested directory structure with deep checking"""
         try:
             # Create temporary extraction directory
             temp_extract = f"{target_path}_temp"
             os.makedirs(temp_extract, exist_ok=True)
-            
+        
             # Extract zip
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(temp_extract)
+        
+            # Funkcja do sprawdzania czy katalog zawiera pliki Minecraft
+            def is_minecraft_directory(path):
+                minecraft_files = ['manifest.json', 'pack_icon.png', 'behavior_pack', 'resource_pack']
+                for item in os.listdir(path):
+                    if any(mc_file in item.lower() for mc_file in minecraft_files):
+                        return True
+                    item_path = os.path.join(path, item)
+                    if os.path.isdir(item_path) and is_minecraft_directory(item_path):
+                        return True
+                return False
+        
+            # Funkcja do znajdowania najbardziej zagnieżdżonego katalogu z plikami Minecraft
+            def find_minecraft_root(path, current_depth=0, max_depth=3):
+                if current_depth >= max_depth:
+                    return path
+                
+                items = os.listdir(path)
+                if len(items) == 1:
+                    single_item = os.path.join(path, items[0])
+                    if os.path.isdir(single_item) and is_minecraft_directory(single_item):
+                        return find_minecraft_root(single_item, current_depth + 1, max_depth)
             
-            # Check for nested directory with same name as addon
-            nested_path = os.path.join(temp_extract, os.path.basename(target_path))
-            
-            if os.path.exists(nested_path) and os.path.isdir(nested_path):
-                # Move contents from nested directory to target
-                self._move_contents(nested_path, target_path)
+                return path
+        
+            # Znajdź właściwy katalog z plikami Minecraft
+            minecraft_root = find_minecraft_root(temp_extract)
+        
+            # Jeśli znaleźliśmy głębiej zagnieżdżony katalog, przenieś jego zawartość
+            if minecraft_root != temp_extract:
+                print(f"Found Minecraft files at: {minecraft_root}")
+                self._move_contents(minecraft_root, target_path)
             else:
-                # Move all contents directly to target
+                # Przenieś wszystko z tymczasowego katalogu
                 self._move_contents(temp_extract, target_path)
-            
+        
             # Clean up
             shutil.rmtree(temp_extract)
             return True
-            
+        
         except Exception as e:
             print(f"Extraction error: {e}")
             return False
+
+
+    def _move_contents(self, source_dir, target_dir):
+        """Move all contents from source to target directory"""
+        os.makedirs(target_dir, exist_ok=True)
+    
+        for item in os.listdir(source_dir):
+            source_item = os.path.join(source_dir, item)
+            target_item = os.path.join(target_dir, item)
+        
+            # Usuń istniejący element jeśli istnieje
+            if os.path.exists(target_item):
+                if os.path.isdir(target_item):
+                    shutil.rmtree(target_item)
+                else:
+                    os.remove(target_item)
+        
+            # Przenieś nowy element
+            shutil.move(source_item, target_dir)
             
     def _move_contents(self, source_dir, target_dir):
         """Move all contents from source to target directory"""

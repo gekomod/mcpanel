@@ -12,49 +12,86 @@ import {
   FiXCircle,
   FiInfo,
   FiGlobe,
-  FiRefreshCw
+  FiRefreshCw,
+  FiActivity,
+  FiTerminal,
+  FiFolder,
+  FiUser,
+  FiBox
 } from 'react-icons/fi';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
 
 const Container = styled.div`
-  padding: 20px;
-  max-width: 1000px;
-  margin: 0 auto;
+  padding: 15px 20px;
+  color: #a4aabc;
+`;
+
+const NavTabs = styled.div`
+  display: flex;
+  background: #2e3245;
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 15px;
+  gap: 4px;
+`;
+
+const NavTab = styled.div`
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 0.9rem;
+  color: #a4aabc;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  
+  ${props => props.$active && `
+    background: #3b82f6;
+    color: white;
+  `}
+  
+  &:hover {
+    background: #35394e;
+  }
 `;
 
 const Header = styled.div`
   display: flex;
   align-items: center;
-  margin-bottom: 20px;
-  padding-bottom: 15px;
-  border-bottom: 1px solid #e5e7eb;
+  justify-content: space-between;
+  margin-bottom: 15px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #3a3f57;
 `;
 
 const Title = styled.h1`
   margin: 0;
-  font-size: 1.8rem;
+  font-size: 1.5rem;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  color: #fff;
 `;
 
 const Tabs = styled.div`
   display: flex;
-  margin-bottom: 20px;
-  border-bottom: 1px solid #e5e7eb;
-  flex-wrap: wrap;
+  margin-bottom: 15px;
+  border-bottom: 1px solid #3a3f57;
 `;
 
 const Tab = styled.button`
-  padding: 12px 20px;
+  padding: 10px 16px;
   background: none;
   border: none;
   cursor: pointer;
   font-weight: 500;
-  color: #6b7280;
+  font-size: 0.9rem;
+  color: #a4aabc;
   border-bottom: 2px solid transparent;
   
   ${props => props.$active && `
@@ -68,9 +105,9 @@ const Tab = styled.button`
 `;
 
 const Content = styled.div`
-  background: white;
-  border-radius: 10px;
-  padding: 25px;
+  background: #2e3245;
+  border-radius: 8px;
+  padding: 20px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 `;
 
@@ -89,7 +126,7 @@ const SectionTitle = styled.h2`
   display: flex;
   align-items: center;
   gap: 10px;
-  color: #374151;
+  color: #fff;
 `;
 
 const FormGroup = styled.div`
@@ -100,15 +137,17 @@ const Label = styled.label`
   display: block;
   margin-bottom: 8px;
   font-weight: 500;
-  color: #374151;
+  color: #a4aabc;
 `;
 
 const Input = styled.input`
   width: 100%;
   padding: 10px 15px;
-  border: 1px solid #d1d5db;
+  background: #35394e;
+  border: 1px solid #3a3f57;
   border-radius: 6px;
   font-size: 1rem;
+  color: #fff;
   
   &:focus {
     outline: none;
@@ -120,9 +159,11 @@ const Input = styled.input`
 const Select = styled.select`
   width: 100%;
   padding: 10px 15px;
-  border: 1px solid #d1d5db;
+  background: #35394e;
+  border: 1px solid #3a3f57;
   border-radius: 6px;
   font-size: 1rem;
+  color: #fff;
   
   &:focus {
     outline: none;
@@ -134,11 +175,13 @@ const Select = styled.select`
 const TextArea = styled.textarea`
   width: 100%;
   padding: 10px 15px;
-  border: 1px solid #d1d5db;
+  background: #35394e;
+  border: 1px solid #3a3f57;
   border-radius: 6px;
   font-size: 1rem;
   min-height: 100px;
   resize: vertical;
+  color: #fff;
   
   &:focus {
     outline: none;
@@ -153,6 +196,7 @@ const CheckboxLabel = styled.label`
   gap: 10px;
   cursor: pointer;
   margin-bottom: 10px;
+  color: #a4aabc;
 `;
 
 const Checkbox = styled.input`
@@ -166,20 +210,20 @@ const ButtonGroup = styled.div`
   gap: 15px;
   margin-top: 30px;
   padding-top: 20px;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid #3a3f57;
 `;
 
 const CancelButton = styled.button`
   padding: 10px 20px;
-  background: #f3f4f6;
-  color: #374151;
+  background: #4a5070;
+  color: #cbd5e1;
   border: none;
   border-radius: 6px;
   cursor: pointer;
   font-weight: 500;
   
   &:hover {
-    background: #e5e7eb;
+    background: #565d81;
   }
 `;
 
@@ -200,7 +244,7 @@ const SaveButton = styled.button`
   }
   
   &:disabled {
-    background: #9ca3af;
+    background: #4a5070;
     cursor: not-allowed;
   }
 `;
@@ -222,8 +266,8 @@ const Description = styled.p`
 `;
 
 const ErrorMessage = styled.div`
-  background: #fee2e2;
-  color: #dc2626;
+  background: #991b1b;
+  color: #ef4444;
   padding: 15px;
   border-radius: 6px;
   margin-bottom: 20px;
@@ -260,33 +304,33 @@ const WorldList = styled.div`
 
 const WorldItem = styled.div`
   padding: 12px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid #3a3f57;
   border-radius: 6px;
   margin-bottom: 10px;
-  background: ${props => props.$active ? '#e0e7ff' : '#f9fafb'};
+  background: ${props => props.$active ? '#1e3a8a' : '#35394e'};
   cursor: pointer;
   transition: all 0.2s;
   
   &:hover {
-    background: ${props => props.$active ? '#d1dafe' : '#f3f4f6'};
+    background: ${props => props.$active ? '#1e40af' : '#3a3f57'};
   }
 `;
 
 const WorldName = styled.div`
   font-weight: 500;
-  color: #374151;
+  color: #fff;
 `;
 
 const WorldPath = styled.div`
   font-size: 0.8rem;
-  color: #6b7280;
+  color: #a4aabc;
   margin-top: 4px;
 `;
 
 const RefreshButton = styled.button`
   padding: 8px 12px;
-  background: #f3f4f6;
-  color: #374151;
+  background: #4a5070;
+  color: #cbd5e1;
   border: none;
   border-radius: 6px;
   cursor: pointer;
@@ -297,11 +341,11 @@ const RefreshButton = styled.button`
   margin-left: auto;
   
   &:hover {
-    background: #e5e7eb;
+    background: #565d81;
   }
   
   &:disabled {
-    background: #d1d5db;
+    background: #3a3f57;
     cursor: not-allowed;
   }
 `;
@@ -315,6 +359,7 @@ const SectionHeader = styled.div`
 
 function Settings() {
   const { serverId } = useParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [server, setServer] = useState(null);
   const [properties, setProperties] = useState({});
@@ -616,6 +661,44 @@ const updateWorldPacksFiles = async (worldName) => {
 
   return (
     <Container>
+      <NavTabs>
+        <NavTab 
+          $active={false} 
+          onClick={() => navigate(`/servers/${serverId}`)}
+        >
+          <FiActivity /> Overview
+        </NavTab>
+        <NavTab 
+          $active={false} 
+          onClick={() => navigate(`/servers/${serverId}/console`)}
+        >
+          <FiTerminal /> Console
+        </NavTab>
+        <NavTab 
+          $active={false} 
+          onClick={() => navigate(`/servers/${serverId}/files`)}
+        >
+          <FiFolder /> Files
+        </NavTab>
+        <NavTab 
+          $active={true}
+        >
+          <FiSettings /> Config
+        </NavTab>
+        <NavTab 
+          $active={false} 
+          onClick={() => navigate(`/servers/${serverId}/plugins`)}
+        >
+          <FiBox /> Plugins
+        </NavTab>
+        <NavTab 
+          $active={activeTab === 'users'} 
+          onClick={() => navigate(`/servers/${serverId}/users`)}
+        >
+          <FiUser /> Users
+        </NavTab>
+      </NavTabs>
+
       <Header>
         <Title>
           <FiSettings /> Settings - {server?.name}
@@ -1096,7 +1179,7 @@ const updateWorldPacksFiles = async (worldName) => {
                     checked={false}
                     onChange={() => {}}
                   />
-                  Player deaths
+                  Player leaves
                 </CheckboxLabel>
                 <CheckboxLabel>
                   <Checkbox
@@ -1104,49 +1187,9 @@ const updateWorldPacksFiles = async (worldName) => {
                     checked={false}
                     onChange={() => {}}
                   />
-                  Achievements
+                  Server warnings
                 </CheckboxLabel>
               </FormGroup>
-            </Section>
-            
-            <Section>
-              <SectionTitle>Backup Settings</SectionTitle>
-              
-              <FormGroup>
-                <Label>Automatic Backups</Label>
-                <CheckboxLabel>
-                  <Checkbox
-                    type="checkbox"
-                    checked={true}
-                    onChange={() => {}}
-                  />
-                  Enable automatic backups
-                </CheckboxLabel>
-              </FormGroup>
-              
-              <TwoColumnGrid>
-                <FormGroup>
-                  <Label>Backup Interval (hours)</Label>
-                  <Input
-                    type="number"
-                    value={6}
-                    onChange={() => {}}
-                    min="1"
-                    max="168"
-                  />
-                </FormGroup>
-                
-                <FormGroup>
-                  <Label>Keep Backups (days)</Label>
-                  <Input
-                    type="number"
-                    value={30}
-                    onChange={() => {}}
-                    min="1"
-                    max="365"
-                  />
-                </FormGroup>
-              </TwoColumnGrid>
             </Section>
           </>
         )}
@@ -1155,7 +1198,7 @@ const updateWorldPacksFiles = async (worldName) => {
           <CancelButton onClick={() => fetchProperties()}>
             Discard Changes
           </CancelButton>
-          <SaveButton onClick={handleSave} disabled={saving}>
+          <SaveButton onClick={handleSave} disabled={saving || !hasPermission}>
             <FiSave /> {saving ? 'Saving...' : 'Save Settings'}
           </SaveButton>
         </ButtonGroup>

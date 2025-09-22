@@ -4,76 +4,120 @@ import {
   FiServer, 
   FiHome, 
   FiTerminal, 
+  FiActivity,
   FiFile, 
   FiUsers, 
   FiPackage, 
   FiSettings, 
   FiLogOut,
   FiMenu,
-  FiX
+  FiX,
+  FiBox,
+  FiShield,
+  FiHelpCircle
 } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 const LayoutContainer = styled.div`
   display: flex;
   min-height: 100vh;
+  background: transparent;
+  position: relative;
+  width: 100%;
 `;
 
-const Sidebar = styled.div.attrs(props => ({
-  style: {
-    transform: props.$isOpen ? 'translateX(0)' : 'translateX(-100%)'
-  }
-}))`
+const Sidebar = styled.div`
   width: 250px;
-  background: #1f2937;
-  color: white;
+  padding: 20px 0;
+  background-color: transparent;
+  color: #a4aabc;
   position: fixed;
   height: 100vh;
   overflow-y: auto;
-  transition: transform 0.3s ease;
   z-index: 1000;
   
-  @media (min-width: 769px) {
-    transform: translateX(0) !important;
+  @media (max-width: 768px) {
+    transform: ${props => props.$isOpen ? 'translateX(0)' : 'translateX(-100%)'};
+    transition: transform 0.3s ease;
+    background: #1f2937;
   }
 `;
 
 const SidebarHeader = styled.div`
-  padding: 20px;
-  border-bottom: 1px solid #374151;
+  padding: 0 20px 20px;
+  border-bottom: 1px solid #3a3f57;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  margin-bottom: 20px;
 `;
 
-const SidebarTitle = styled.h2`
+const LogoIcon = styled.div`
+  font-size: 28px;
+  color: #3b82f6;
+`;
+
+const LogoText = styled.h1`
+  font-size: 24px;
+  font-weight: 700;
+  color: #fff;
   margin: 0;
-  font-size: 1.2rem;
-  font-weight: 600;
 `;
 
 const Nav = styled.nav`
-  padding: 20px 0;
+  padding: 0 15px;
 `;
 
-const NavItem = styled.div.attrs(props => ({
-  style: {
-    color: props['data-active'] ? '#3b82f6' : '#d1d5db',
-    background: props['data-active'] ? '#111827' : 'transparent',
-    borderRight: props['data-active'] ? '3px solid #3b82f6' : 'none'
-  }
-}))`
-  padding: 12px 20px;
+const UserAvatar = styled.div`
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background-color: #3b82f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  color: white;
+`;
+
+const UserName = styled.div`
+  font-weight: bold;
+  color: #fff;
+`;
+
+const MenuCategory = styled.div`
+  font-size: 12px;
+  color: #6b7293;
+  text-transform: uppercase;
+  font-weight: 600;
+  margin: 20px 0 10px 15px;
+  letter-spacing: 0.05em;
+`;
+
+const MenuList = styled.ul`
+  list-style: none;
+  padding: 0;
+  margin: 0;
+`;
+
+const MenuItem = styled.li`
+  padding: 12px 15px;
+  border-radius: 6px;
+  margin-bottom: 5px;
+  cursor: pointer;
   display: flex;
   align-items: center;
   gap: 12px;
-  cursor: pointer;
-  transition: background-color 0.2s;
-  
+  transition: all 0.3s ease;
+  font-size: 15px;
+  color: ${props => props.$isActive ? '#fff' : '#a4aabc'};
+  background: ${props => props.$isActive ? '#222b43' : 'transparent'};
+
   &:hover {
-    background: #111827;
-    color: white;
+    background: #222b43;
+    color: #fff;
   }
 `;
 
@@ -87,9 +131,8 @@ const MainContent = styled.div`
 `;
 
 const Header = styled.header`
-  background: white;
+
   padding: 16px 24px;
-  border-bottom: 1px solid #e5e7eb;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -103,7 +146,7 @@ const MenuButton = styled.button`
   display: none;
   background: none;
   border: none;
-  color: #374151;
+  color: #a4aabc;
   cursor: pointer;
   font-size: 1.2rem;
   
@@ -115,18 +158,13 @@ const MenuButton = styled.button`
 const UserInfo = styled.div`
   display: flex;
   align-items: center;
-  gap: 12px;
-`;
-
-const UserName = styled.span`
-  font-weight: 500;
-  color: #374151;
+  gap: 15px;
 `;
 
 const LogoutButton = styled.button`
   background: none;
   border: none;
-  color: #6b7280;
+  color: #a4aabc;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -135,13 +173,13 @@ const LogoutButton = styled.button`
   border-radius: 6px;
   
   &:hover {
-    background: #f3f4f6;
-    color: #374151;
+    background: #222b43;
+    color: #fff;
   }
 `;
 
 const Content = styled.main`
-  padding: 24px;
+  padding: 10px;
   
   @media (max-width: 768px) {
     padding: 16px;
@@ -151,16 +189,14 @@ const Content = styled.main`
 const AdminSection = styled.div`
   margin-top: 20px;
   padding-top: 20px;
-  border-top: 1px solid #374151;
+  border-top: 1px solid #3a3f57;
 `;
 
-const AdminLabel = styled.div`
-  padding: 0 20px 10px 20px;
-  color: #9ca3af;
-  font-size: 0.8rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+const PageTitle = styled.h2`
+  font-size: 24px;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
 `;
 
 function Layout({ children }) {
@@ -169,7 +205,6 @@ function Layout({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Pobierz ID serwera z aktualnej ścieżki
   const getCurrentServerId = () => {
     const pathParts = location.pathname.split('/');
     const serverIndex = pathParts.indexOf('servers');
@@ -181,26 +216,25 @@ function Layout({ children }) {
 
   const currentServerId = getCurrentServerId();
 
-  // Funkcja do generowania ścieżek z aktualnym ID serwera
-  const getServerPath = (path) => {
-    if (currentServerId) {
-      return path.replace(':serverId', currentServerId);
-    }
-    return '/dashboard'; // Fallback jeśli nie ma ID serwera
-  };
-
-  const navItems = [
+  const mainItems = [
     { path: '/dashboard', icon: FiHome, label: 'Dashboard' },
-    { path: `/servers/${currentServerId || ':serverId'}/console`, icon: FiTerminal, label: 'Console' },
-    { path: `/servers/${currentServerId || ':serverId'}/files`, icon: FiFile, label: 'File Manager' },
-    { path: `/servers/${currentServerId || ':serverId'}/users`, icon: FiUsers, label: 'User Manager' },
-    { path: `/servers/${currentServerId || ':serverId'}/plugins`, icon: FiPackage, label: 'Plugins' },
-    { path: `/servers/${currentServerId || ':serverId'}/settings`, icon: FiSettings, label: 'Settings' },
+    { path: '/servers', icon: FiServer, label: 'Serwery' },
+    { path: `/servers/${currentServerId || ':serverId'}/console`, icon: FiTerminal, label: 'Konsola' },
+  ];
+  
+  const managementItems = [
+    { path: '/instances', icon: FiPackage, label: 'Instancje' },
+    { path: '/resources', icon: FiActivity, label: 'Zasoby' },
+    { path: '/tasks', icon: FiSettings, label: 'Zadania' },
   ];
   
   const adminItems = [
-    { path: '/admin/bedrock-versions', icon: FiPackage, label: 'Bedrock Versions' },
-    { path: '/admin/addons', icon: FiPackage, label: 'Addon Manager' }
+    { path: '/admin/users', icon: FiUsers, label: 'Użytkownicy' },
+    { path: '/admin/bedrock-versions', icon: FiBox, label: 'Bedrock Versions' },
+    { path: '/admin/addons', icon: FiPackage, label: 'Addon Manager' },
+    { path: '/permissions', icon: FiShield, label: 'Uprawnienia' },
+    { path: '/admin/settings', icon: FiSettings, label: 'Ustawienia' },
+    { path: '/support', icon: FiHelpCircle, label: 'Wsparcie' },
   ];
 
   const handleLogout = () => {
@@ -209,73 +243,92 @@ function Layout({ children }) {
   };
 
   const isActive = (path) => {
-    // Sprawdź czy ścieżka pasuje do aktualnej lokalizacji
-    const serverPath = getServerPath(path);
-    return location.pathname === serverPath || 
-           location.pathname.startsWith(serverPath + '/');
+    return location.pathname === path;
   };
+  
+  const { title, icon: Icon } = usePageTitle();
 
   return (
     <LayoutContainer>
       <Sidebar $isOpen={isSidebarOpen}>
         <SidebarHeader>
-          <FiServer size={24} />
-          <SidebarTitle>Minecraft Panel</SidebarTitle>
+          <LogoIcon>
+            <FiServer />
+          </LogoIcon>
+          <LogoText>MCpanel</LogoText>
         </SidebarHeader>
         
         <Nav>
-          {navItems.map((item) => (
-            <NavItem
-              key={item.path}
-              data-active={isActive(item.path)}
-              onClick={() => {
-                navigate(getServerPath(item.path));
-                setIsSidebarOpen(false);
-              }}
-            >
-              <item.icon />
-              {item.label}
-            </NavItem>
-          ))}
-          
-          {/* Admin Section */}
-          {user?.role === 'admin' && (
-            <AdminSection>
-              <AdminLabel>Admin</AdminLabel>
-              {adminItems.map((item) => (
-                <NavItem
-                  key={item.path}
-                  data-active={isActive(item.path)}
-                  onClick={() => {
-                    navigate(item.path);
-                    setIsSidebarOpen(false);
-                  }}
-                >
-                  <item.icon />
-                  {item.label}
-                </NavItem>
-              ))}
-            </AdminSection>
-          )}
+          <MenuCategory>GŁÓWNE</MenuCategory>
+          <MenuList>
+            {mainItems.map((item) => (
+              <MenuItem
+                key={item.path}
+                $isActive={isActive(item.path)}
+                onClick={() => {
+                  navigate(item.path);
+                  setIsSidebarOpen(false);
+                }}
+              >
+                <item.icon />
+                <span>{item.label}</span>
+              </MenuItem>
+            ))}
+          </MenuList>
+
+          <MenuCategory>ZARZĄDZANIE</MenuCategory>
+          <MenuList>
+            {managementItems.map((item) => (
+              <MenuItem
+                key={item.path}
+                $isActive={isActive(item.path)}
+                onClick={() => {
+                  navigate(item.path);
+                  setIsSidebarOpen(false);
+                }}
+              >
+                <item.icon />
+                <span>{item.label}</span>
+              </MenuItem>
+            ))}
+          </MenuList>
+
+          <MenuCategory>ADMINISTRACJA</MenuCategory>
+          <MenuList>
+            {adminItems.map((item) => (
+              <MenuItem
+                key={item.path}
+                $isActive={isActive(item.path)}
+                onClick={() => {
+                  navigate(item.path);
+                  setIsSidebarOpen(false);
+                }}
+              >
+                <item.icon />
+                <span>{item.label}</span>
+              </MenuItem>
+            ))}
+          </MenuList>
         </Nav>
       </Sidebar>
 
       <MainContent>
+        <Content>
         <Header>
-          <MenuButton onClick={() => setIsSidebarOpen(!isSidebarOpen)}>
+      	  <MenuButton onClick={() => setIsSidebarOpen(!isSidebarOpen)}>
             {isSidebarOpen ? <FiX /> : <FiMenu />}
           </MenuButton>
-          
-          <UserInfo>
-            <UserName>Hello, {user?.username}</UserName>
+        <PageTitle>{Icon && <Icon style={{ marginRight: '10px' }} />}
+        {title}</PageTitle>
+	  <UserInfo> 
+		<UserAvatar>{user?.username?.charAt(0)?.toUpperCase() || 'U'}</UserAvatar>
+            <UserName>{user?.username || 'User'}</UserName>
             <LogoutButton onClick={handleLogout}>
               <FiLogOut />
-              Logout
+              Wyloguj
             </LogoutButton>
-          </UserInfo>
-        </Header>
-
-        <Content>
+	  </UserInfo>
+	</Header>
           {children}
         </Content>
       </MainContent>
