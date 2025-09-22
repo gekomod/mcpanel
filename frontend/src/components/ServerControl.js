@@ -611,23 +611,23 @@ function ServerControl() {
   const [activeTab, setActiveTab] = useState('overview');
   const [consoleFilter, setConsoleFilter] = useState('ALL');
 
-  useEffect(() => {
-    fetchServer();
-    fetchPerformanceStats();
-    fetchServerSizes();
-    fetchBackups();
-    
-    // Set up interval for performance stats if server is running
-    let performanceInterval;
-    if (server?.status === 'running') {
-      performanceInterval = setInterval(fetchPerformanceStats, 5000);
-    }
-    
-    return () => {
-      stopProgressPolling();
-      if (performanceInterval) clearInterval(performanceInterval);
-    };
-  }, [serverId, server?.status]);
+	useEffect(() => {
+	  fetchServer();
+	  fetchServerSizes();
+	  fetchBackups();
+	  
+	  let performanceInterval;
+	  
+	  if (server?.status === 'running') {
+		fetchPerformanceStats();
+		performanceInterval = setInterval(fetchPerformanceStats, 5000);
+	  }
+	  
+	  return () => {
+		stopProgressPolling();
+		if (performanceInterval) clearInterval(performanceInterval);
+	  };
+	}, [serverId]); 
 
   const fetchServer = async () => {
     try {
@@ -760,32 +760,59 @@ function ServerControl() {
     }
   };
 
-  const handleServerAction = async (action) => {
-    setActionLoading(true);
-    setCurrentAction(action);
-    
-    try {
-      await api.post(`/servers/${serverId}/${action}`);
-      
-      if (action === 'start') {
-        setTimeout(() => {
-          setActionLoading(false);
-          setCurrentAction(null);
-        }, 1000);
-      } else {
-        setTimeout(() => {
-          fetchServer();
-          setActionLoading(false);
-          setCurrentAction(null);
-        }, 2000);
-      }
-    } catch (error) {
-      console.error(`Error ${action} server:`, error);
-      alert(`Failed to ${action} server: ${error.response?.data?.error || error.message}`);
-      setActionLoading(false);
-      setCurrentAction(null);
-    }
-  };
+	const handleServerAction = async (action) => {
+	  setActionLoading(true);
+	  setCurrentAction(action);
+	  
+	  try {
+		await api.post(`/servers/${serverId}/${action}`);
+
+		if (action === 'start') {
+		  startStatusPolling('running');
+		} else if (action === 'stop') {
+		  startStatusPolling('stopped');
+		} else if (action === 'restart') {
+		  setTimeout(() => {
+		    startStatusPolling('running');
+		  }, 5000);
+		}
+		
+	  } catch (error) {
+		console.error(`Error ${action} server:`, error);
+		toast.error(`Failed to ${action} server: ${error.response?.data?.error || error.message}`);
+		setActionLoading(false);
+		setCurrentAction(null);
+	  }
+	};
+
+	const startStatusPolling = (targetStatus) => {
+	  const pollInterval = setInterval(async () => {
+		try {
+		  const response = await api.get(`/servers/${serverId}`);
+		  const currentStatus = response.data.status;
+		  
+		  if (currentStatus === targetStatus) {
+		    clearInterval(pollInterval);
+		    setServer(response.data);
+		    setActionLoading(false);
+		    setCurrentAction(null);
+		    
+		    if (targetStatus === 'running') {
+		      fetchPerformanceStats();
+		    }
+		  }
+		} catch (error) {
+		  console.error('Error polling server status:', error);
+		}
+	  }, 2000);
+
+	  setTimeout(() => {
+		clearInterval(pollInterval);
+		setActionLoading(false);
+		setCurrentAction(null);
+		fetchServer();
+	  }, 150000);
+	};
 
   const handleCancelDownload = async () => {
     try {
@@ -936,17 +963,17 @@ function ServerControl() {
     return <Container>Server not found</Container>;
   }
 
-  const getActionMessage = () => {
-    if (!currentAction) return null;
-    
-    const messages = {
-      start: 'Trwa uruchamianie serwera, proszę czekać...',
-      restart: 'Trwa restartowanie serwera, proszę czekać...',
-      stop: 'Trwa zatrzymywanie serwera, proszę czekać...'
-    };
-    
-    return messages[currentAction] || null;
-  };
+	const getActionMessage = () => {
+	  if (!currentAction) return null;
+	  
+	  const messages = {
+		start: 'Trwa uruchamianie serwera, proszę czekać...',
+		restart: 'Trwa restartowanie serwera, proszę czekać...',
+		stop: 'Trwa zatrzymywanie serwera, proszę czekać...'
+	  };
+	  
+	  return messages[currentAction] || null;
+	};
 
   return (
     <Container>
@@ -1000,12 +1027,17 @@ function ServerControl() {
         />
       )}
 
-      {currentAction && (
-        <StatusMessage>
-          <LoadingSpinner />
-          {getActionMessage()}
-        </StatusMessage>
-      )}
+		{currentAction && (
+		  <StatusMessage>
+			<LoadingSpinner />
+			<div>
+			  <div>{getActionMessage()}</div>
+			  <div style={{ fontSize: '12px', opacity: '0.8', marginTop: '5px' }}>
+				Status będzie automatycznie odświeżany...
+			  </div>
+			</div>
+		  </StatusMessage>
+		)}
 
       <ServerActions>
         <ActionButton 
@@ -1118,20 +1150,20 @@ function ServerControl() {
             <TasksHeader>
               <TasksTitle>Szybkie Zadania</TasksTitle>
             </TasksHeader>
-            <TaskButtons>
-              <TaskButton onClick={handleCreateBackup} disabled={server.status === 'running'}>
-                <FiDownload /> Kopia zapasowa
-              </TaskButton>
-              <TaskButton>
-                <FiUpload /> Prześlij świat
-              </TaskButton>
-              <TaskButton>
-                <FaWrench /> Napraw serwer
-              </TaskButton>
-              <TaskButton onClick={() => navigate(`/servers/${serverId}/users`)}>
-                <FiUsers /> Uprawnienia
-              </TaskButton>
-            </TaskButtons>
+			<TaskButtons>
+			  <TaskButton onClick={handleCreateBackup} disabled={server.status === 'running'}>
+				<FiDownload /> Kopia zapasowa
+			  </TaskButton>
+			  <TaskButton onClick={() => toast.info('Funkcja "Prześlij świat" jest w trakcie tworzenia')}>
+				<FiUpload /> Prześlij świat
+			  </TaskButton>
+			  <TaskButton onClick={() => toast.info('Funkcja "Napraw serwer" jest w trakcie tworzenia')}>
+				<FaWrench /> Napraw serwer
+			  </TaskButton>
+			  <TaskButton onClick={() => navigate(`/servers/${serverId}/users`)}>
+				<FiUsers /> Uprawnienia
+			  </TaskButton>
+			</TaskButtons>
           </QuickTasks>
         </Column>
 

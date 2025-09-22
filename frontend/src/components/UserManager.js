@@ -14,6 +14,7 @@ import {
   FiTerminal,
   FiFolder,
   FiSettings,
+  FiRefreshCw,
   FiBox,
   FiList
 } from 'react-icons/fi';
@@ -475,6 +476,7 @@ function UserManager() {
   const [showPermissionsModal, setShowPermissionsModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [availableUsers, setAvailableUsers] = useState([]);
+  const [gamertagMap, setGamertagMap] = useState({});
   const [newUser, setNewUser] = useState({
     username: '',
     permissions: {
@@ -500,7 +502,7 @@ function UserManager() {
   useEffect(() => {
     fetchServer();
     fetchData();
-  }, [serverId, activeTab]);
+  }, [serverId, activeTabs]);
 
   const fetchXuidFromGamertag = async (gamertag) => {
     try {
@@ -571,28 +573,82 @@ function UserManager() {
       setWhitelist([]);
     }
   };
+  
+	const fetchGamertagFromXuid = async (xuid) => {
+	  try {
+		const response = await fetch(`https://api.geysermc.org/v2/xbox/gamertag/${xuid}`);
+		
+		if (!response.ok) {
+		  throw new Error(`Failed to fetch gamertag: ${response.status} ${response.statusText}`);
+		}
+		
+		const data = await response.json();
+		return data.gamertag;
+	  } catch (error) {
+		console.error('Error fetching gamertag:', error);
+		return null;
+	  }
+	};
+	
+	const fetchGamertagsForPlayers = async (players) => {
+	  const newGamertagMap = { ...gamertagMap };
+	  
+	  for (const player of players) {
+		if (player.xuid && !newGamertagMap[player.xuid]) {
+		  try {
+		    const gamertag = await fetchGamertagFromXuid(player.xuid);
+		    if (gamertag) {
+		      newGamertagMap[player.xuid] = gamertag;
+		    }
+		  } catch (error) {
+		    console.error(`Error fetching gamertag for XUID ${player.xuid}:`, error);
+		  }
+		}
+	  }
+	  
+	  setGamertagMap(newGamertagMap);
+	};
 
-  const fetchPlayerPermissions = async () => {
-    try {
-      // Pobierz uprawnienia graczy z pliku permissions.json
-      const response = await api.get(`/servers/${serverId}/files/read?path=permissions.json`);
-      if (response.data.content) {
-        const permissionsData = JSON.parse(response.data.content);
-        // Konwertuj dane do formatu używanego w UI
-        const formattedPermissions = permissionsData.map(item => ({
-          name: item.xuid, // Używamy xuid jako name dla kompatybilności
-          permission: item.permission,
-          xuid: item.xuid
-        }));
-        setPlayerPermissions(formattedPermissions);
-      } else {
-        setPlayerPermissions([]);
-      }
-    } catch (error) {
-      console.error('Error fetching player permissions:', error);
-      setPlayerPermissions([]);
-    }
-  };
+	const fetchPlayerPermissions = async () => {
+	  try {
+		const response = await api.get(`/servers/${serverId}/files/read?path=permissions.json`);
+		
+		if (response.data.content && response.data.content.trim() !== '') {
+		  try {
+		    const permissionsData = JSON.parse(response.data.content);
+		    
+		    if (Array.isArray(permissionsData)) {
+		      const formattedPermissions = permissionsData.map((item, index) => ({
+		        id: `${item.xuid}-${index}`,
+		        name: item.xuid || 'Unknown',
+		        permission: item.permission || 'member',
+		        xuid: item.xuid || 'Unknown'
+		      }));
+		      
+		      setPlayerPermissions(formattedPermissions);
+		      
+		      // Pobierz gamertagi dla wyświetlania
+		      fetchGamertagsForPlayers(formattedPermissions);
+		    } else {
+		      console.warn('Permissions data is not an array:', permissionsData);
+		      setPlayerPermissions([]);
+		    }
+		  } catch (parseError) {
+		    console.error('Error parsing JSON:', parseError);
+		    setPlayerPermissions([]);
+		  }
+		} else {
+		  setPlayerPermissions([]);
+		}
+	  } catch (error) {
+		console.error('Error fetching player permissions:', error);
+		if (error.response?.status === 404) {
+		  setPlayerPermissions([]);
+		} else {
+		  setPlayerPermissions([]);
+		}
+	  }
+	};
 
   const fetchAvailableUsers = async () => {
     try {
@@ -837,9 +893,11 @@ function UserManager() {
     user.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const filteredPlayerPermissions = playerPermissions.filter(player => 
-    player.name
-  );
+const filteredPlayerPermissions = playerPermissions.filter(player => 
+  player.xuid ||
+  (gamertagMap[player.xuid] && gamertagMap[player.xuid].toLowerCase().includes(searchTerm.toLowerCase())) ||
+  player.permission.toLowerCase().includes(searchTerm.toLowerCase())
+);
 
   const renderServerUsers = () => (
     <>
@@ -1009,84 +1067,107 @@ function UserManager() {
     </>
   );
 
-  const renderPlayerPermissions = () => (
-    <>
-      <Header>
-        <Title>
-          <FiShield /> Player Permissions - {server?.name}
-        </Title>
-        
-        <HeaderActions>
-          <SearchContainer>
-            <SearchIcon />
-            <SearchInput
-              type="text"
-              placeholder="Search by XUID..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </SearchContainer>
-          
-          <AddButton onClick={() => openPermissionsModal()}>
-            <FiPlus /> Add Permissions
-          </AddButton>
-        </HeaderActions>
-      </Header>
+const renderPlayerPermissions = () => (
+  <>
+    <Header>
+      <Title>
+        <FiShield /> Player Permissions - {server?.name}
+      </Title>
+      
+<HeaderActions>
+  <SearchContainer>
+    <SearchIcon />
+    <SearchInput
+      type="text"
+      placeholder="Search by XUID, gamertag or permission..."
+      value={searchTerm}
+      onChange={(e) => setSearchTerm(e.target.value)}
+    />
+  </SearchContainer>
+  
+  <ActionButton 
+    variant="whitelist" 
+    onClick={() => fetchGamertagsForPlayers(playerPermissions)}
+    style={{ marginRight: '10px' }}
+  >
+    <FiRefreshCw /> Refresh Gamertags
+  </ActionButton>
+  
+  <AddButton onClick={() => openPermissionsModal()}>
+    <FiPlus /> Add Permissions
+  </AddButton>
+</HeaderActions>
+    </Header>
 
-      {loading ? (
-        <LoadingSpinner>
-          <div>Loading player permissions...</div>
-        </LoadingSpinner>
-      ) : (
-        <Table>
-          <TableHeader>
-            <tr>
-              <TableHeaderCell>XUID</TableHeaderCell>
-              <TableHeaderCell>Permission Level</TableHeaderCell>
-              <TableHeaderCell style={{ textAlign: 'right' }}>Actions</TableHeaderCell>
-            </tr>
-          </TableHeader>
+    {loading ? (
+      <LoadingSpinner>
+        <div>Loading player permissions...</div>
+      </LoadingSpinner>
+    ) : (
+      <Table>
+        <TableHeader>
+          <tr>
+            <TableHeaderCell>XUID</TableHeaderCell>
+            <TableHeaderCell>Gamertag</TableHeaderCell>
+            <TableHeaderCell>Permission Level</TableHeaderCell>
+            <TableHeaderCell style={{ textAlign: 'right' }}>Actions</TableHeaderCell>
+          </tr>
+        </TableHeader>
+        
+        <tbody>
+          {filteredPlayerPermissions.map(player => (
+            <TableRow key={player.id || player.xuid}>
+              <TableCell>{player.xuid}</TableCell>
+              <TableCell>
+                {gamertagMap[player.xuid] ? (
+                  <div>
+                    <div>{gamertagMap[player.xuid]}</div>
+                    <div style={{ fontSize: '0.8rem', color: '#a4aabc', marginTop: '2px' }}>
+                      (XUID: {player.xuid})
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ color: '#6b7280', fontStyle: 'italic' }}>
+                    Loading gamertag...
+                  </div>
+                )}
+              </TableCell>
+              <TableCell>
+                <StatusBadge status={player.permission}>
+                  {player.permission.toUpperCase()}
+                </StatusBadge>
+              </TableCell>
+              <ActionCell>
+                <ActionButton 
+                  variant="edit" 
+                  onClick={() => openPermissionsModal(player)}
+                >
+                  <FiEdit /> Edit
+                </ActionButton>
+                <ActionButton 
+                  variant="delete" 
+                  onClick={() => handleRemovePlayerPermissions(player.xuid)}
+                >
+                  <FiTrash2 /> Remove
+                </ActionButton>
+              </ActionCell>
+            </TableRow>
+          ))}
           
-          <tbody>
-            {filteredPlayerPermissions.map(player => (
-              <TableRow key={player.xuid}>
-                <TableCell>{player.xuid}</TableCell>
-                <TableCell>
-                  <StatusBadge status={player.permission}>
-                    {player.permission}
-                  </StatusBadge>
-                </TableCell>
-                <ActionCell>
-                  <ActionButton 
-                    variant="edit" 
-                    onClick={() => openPermissionsModal(player)}
-                  >
-                    <FiEdit /> Edit
-                  </ActionButton>
-                  <ActionButton 
-                    variant="delete" 
-                    onClick={() => handleRemovePlayerPermissions(player.xuid)}
-                  >
-                    <FiTrash2 /> Remove
-                  </ActionButton>
-                </ActionCell>
-              </TableRow>
-            ))}
-            
-            {filteredPlayerPermissions.length === 0 && (
-              <TableRow>
-                <TableCell colSpan="3">
-                  <EmptyState>
-                    {searchTerm ? 'No players match your search' : 'No custom player permissions set'}
-                  </EmptyState>
-                </TableCell>
-              </TableRow>
-            )}
-          </tbody>
-        </Table>
-      )}
-    </>
-  );
+          {filteredPlayerPermissions.length === 0 && (
+            <TableRow>
+              <TableCell colSpan="4">
+                <EmptyState>
+                  {searchTerm ? 'No players match your search' : 'No custom player permissions set'}
+                </EmptyState>
+              </TableCell>
+            </TableRow>
+          )}
+        </tbody>
+      </Table>
+    )}
+  </>
+);
 
   return (
     <Container>
