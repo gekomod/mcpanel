@@ -339,65 +339,79 @@ class ServerManager:
             )
             return False
     
-    def _start_server_async(self, server, bedrock_url=None, app_context=None):
+    def _start_server_async(self, server_id, bedrock_url=None, app_context=None):
         """Start server in a separate thread with application context"""
-        # Użyj przekazanego kontekstu aplikacji
-        if app_context is None:
-            # Fallback: spróbuj utworzyć własny kontekst
-            try:
-                from flask import current_app
-                app_context = current_app.app_context
-            except:
-                # Ostateczny fallback - aktualizuj tylko progress bez bazy danych
-                app_context = None
-        
         try:
+            # Użyj przekazanego kontekstu aplikacji
+            if app_context is None:
+                # Fallback: spróbuj utworzyć własny kontekst
+                try:
+                    from flask import current_app
+                    app_context = current_app.app_context
+                except:
+                    # Ostateczny fallback - aktualizuj tylko progress bez bazy danych
+                    app_context = None
+        
+            # Pobierz serwer w kontekście aplikacji
+            server = None
+            if app_context:
+                from .models import Server
+                with app_context():
+                    server = Server.query.get(server_id)
+                    if not server:
+                        self._update_progress(server_id, 'error', 0, 'Server not found')
+                        return
+            else:
+                # Jeśli nie ma kontekstu, użyj podstawowych danych
+                self._update_progress(server_id, 'error', 0, 'No application context available')
+                return
+
             server_path = self.get_server_path(server.name)
-            
+        
             # Initialize download progress
-            self._update_progress(server.id, 'preparing', 0, 'Przygotowywanie serwera...')
+            self._update_progress(server_id, 'preparing', 0, 'Przygotowywanie serwera...')
             time.sleep(1)
-            
+        
             # Check if server directory exists
             if not os.path.exists(server_path):
                 try:
                     os.makedirs(server_path, exist_ok=True)
-                    self._update_progress(server.id, 'preparing', 10, 'Tworzenie katalogu serwera...')
+                    self._update_progress(server_id, 'preparing', 10, 'Tworzenie katalogu serwera...')
                     time.sleep(0.5)
                 except Exception as e:
-                    self._update_progress(server.id, 'error', 0, f'Błąd tworzenia katalogu: {str(e)}')
+                    self._update_progress(server_id, 'error', 0, f'Błąd tworzenia katalogu: {str(e)}')
                     return
-            
+        
             # For Bedrock servers
             if server.type == 'bedrock':
                 bedrock_binary = 'bedrock_server'
                 if os.name == 'nt':
                     bedrock_binary = 'bedrock_server.exe'
-                
+            
                 bedrock_path = os.path.join(server_path, bedrock_binary)
-                
+            
                 if not os.path.exists(bedrock_path):
                     if not bedrock_url:
-                        self._update_progress(server.id, 'error', 0, 'Brak URL do pobrania serwera Bedrock')
+                        self._update_progress(server_id, 'error', 0, 'Brak URL do pobrania serwera Bedrock')
                         return
-                    
+                
                     try:
                         temp_zip_path = os.path.join(server_path, 'bedrock_server.zip')
-                        success = self._download_file_with_progress(bedrock_url, temp_zip_path, server.id)
+                        success = self._download_file_with_progress(bedrock_url, temp_zip_path, server_id)
                         if not success:
                             return
-                        
+                    
                         if not os.path.exists(bedrock_path):
-                            self._update_progress(server.id, 'error', 0, 'Brak pliku wykonywalnego po rozpakowaniu')
+                            self._update_progress(server_id, 'error', 0, 'Brak pliku wykonywalnego po rozpakowaniu')
                             return
-                        
+                    
                         if os.name != 'nt':
                             os.chmod(bedrock_path, 0o755)
-                        
+                    
                     except Exception as e:
-                        self._update_progress(server.id, 'error', 0, f'Błąd pobierania serwera Bedrock: {str(e)}')
+                        self._update_progress(server_id, 'error', 0, f'Błąd pobierania serwera Bedrock: {str(e)}')
                         return
-            
+        
             # For Java servers
             if server.type == 'java':
                 jar_file = None
@@ -405,37 +419,37 @@ class ServerManager:
                     if file.endswith('.jar') and 'server' in file.lower():
                         jar_file = file
                         break
-                
+            
                 if not jar_file:
                     try:
-                        self._update_progress(server.id, 'fetching_manifest', 15, 'Pobieranie informacji o wersji...')
-                        
+                        self._update_progress(server_id, 'fetching_manifest', 15, 'Pobieranie informacji o wersji...')
+                    
                         version_manifest_url = "https://launchermeta.mojang.com/mc/game/version_manifest.json"
                         version_manifest = requests.get(version_manifest_url).json()
-                        
+                    
                         version_info = None
                         for version in version_manifest['versions']:
                             if version['id'] == server.version and version['type'] == 'release':
                                 version_info = requests.get(version['url']).json()
                                 break
-                        
+                    
                         if not version_info:
-                            self._update_progress(server.id, 'error', 0, f'Wersja {server.version} nie znaleziona')
+                            self._update_progress(server_id, 'error', 0, f'Wersja {server.version} nie znaleziona')
                             return
-                        
+                    
                         server_jar_url = version_info['downloads']['server']['url']
                         jar_path = os.path.join(server_path, 'server.jar')
-                        
-                        success = self._download_file_with_progress(server_jar_url, jar_path, server.id)
+                    
+                        success = self._download_file_with_progress(server_jar_url, jar_path, server_id)
                         if not success:
                             return
-                        
+                    
                         jar_file = 'server.jar'
-                        
+                    
                     except Exception as e:
-                        self._update_progress(server.id, 'error', 0, f'Błąd pobierania server.jar: {str(e)}')
+                        self._update_progress(server_id, 'error', 0, f'Błąd pobierania server.jar: {str(e)}')
                         return
-            
+        
             # Create eula.txt for Java servers
             if server.type == 'java':
                 eula_path = os.path.join(server_path, 'eula.txt')
@@ -443,15 +457,15 @@ class ServerManager:
                     try:
                         with open(eula_path, 'w') as f:
                             f.write("eula=true\n")
-                        self._update_progress(server.id, 'preparing', 98, 'Tworzenie konfiguracji serwera...')
+                        self._update_progress(server_id, 'preparing', 98, 'Tworzenie konfiguracji serwera...')
                         time.sleep(0.5)
                     except Exception as e:
                         print(f"Warning: Could not create eula.txt: {e}")
-            
+        
             # Prepare startup command
-            self._update_progress(server.id, 'starting', 99, 'Uruchamianie procesu serwera...')
+            self._update_progress(server_id, 'starting', 99, 'Uruchamianie procesu serwera...')
             time.sleep(1)
-            
+        
             if server.type == 'java':
                 cmd = ['java', '-Xmx2G', '-Xms1G', '-jar', 'server.jar', 'nogui']
             else:
@@ -459,7 +473,7 @@ class ServerManager:
                     cmd = ['bedrock_server.exe']
                 else:
                     cmd = ['./bedrock_server']
-            
+        
             # Start the process
             process = subprocess.Popen(
                 cmd,
@@ -471,85 +485,88 @@ class ServerManager:
                 bufsize=1,
                 universal_newlines=True
             )
-        
+    
             # Store process reference
-            self.processes[server.id] = process
-            
+            self.processes[server_id] = process
+        
             # Update database with PID using application context
             if app_context:
                 try:
                     from .models import db, Server
                     with app_context():
-                        server_obj = Server.query.get(server.id)
+                        server_obj = Server.query.get(server_id)
                         if server_obj:
                             server_obj.pid = process.pid
                             server_obj.status = 'running'
                             db.session.commit()
-                            print(f"Server {server.id} started with PID: {process.pid}")
+                            print(f"Server {server_id} started with PID: {process.pid}")
                 except Exception as e:
                     print(f"Error updating database with PID: {e}")
             else:
-                print(f"Server {server.id} started with PID: {process.pid} (no database update)")
-                    
+                print(f"Server {server_id} started with PID: {process.pid} (no database update)")
+                
             # Start output listener thread
-            self.output_listeners[server.id] = True
-            thread = threading.Thread(target=self._capture_output, args=(server.id, process, app_context))
+            self.output_listeners[server_id] = True
+            thread = threading.Thread(target=self._capture_output, args=(server_id, process, app_context))
             thread.daemon = True
             thread.start()
-            
+        
             # Final success message
-            self._update_progress(server.id, 'complete', 100, 'Serwer został pomyślnie uruchomiony!')
-            
+            self._update_progress(server_id, 'complete', 100, 'Serwer został pomyślnie uruchomiony!')
+        
             # Clean up thread reference
             with self.lock:
-                if server.id in self.download_threads:
-                    del self.download_threads[server.id]
-            
+                if server_id in self.download_threads:
+                    del self.download_threads[server_id]
+        
         except Exception as e:
             print(f"Error in _start_server_async: {e}")
             # Update progress with error
             error_message = f'Błąd uruchamiania serwera: {str(e)}'
-            self._update_progress(server.id, 'error', 0, error_message)
-            
+            self._update_progress(server_id, 'error', 0, error_message)
+        
             # Update database status if app context is available
             if app_context:
                 try:
                     from .models import db, Server
                     with app_context():
-                        server_obj = Server.query.get(server.id)
+                        server_obj = Server.query.get(server_id)
                         if server_obj:
                             server_obj.status = 'stopped'
                             server_obj.pid = None
                             db.session.commit()
                 except Exception as update_error:
                     print(f"Error updating database status: {update_error}")
-                    
+                
         # Clean up thread reference on error too
         with self.lock:
-            if server.id in self.download_threads:
-                del self.download_threads[server.id]
-    
+            if server_id in self.download_threads:
+                del self.download_threads[server_id]
+
     def start_server(self, server, bedrock_url=None):
         """Start the server - returns immediately, actual work happens in thread"""
         # Check if server is already starting or running
         with self.lock:
             if server.id in self.download_threads and self.download_threads[server.id].is_alive():
                 return False, "Server is already starting"
-            
+        
             if server.id in self.processes and self.processes[server.id].poll() is None:
                 return False, "Server is already running"
 
-            # Przekaż kontekst aplikacji do wątku
+            # Przekaż tylko ID serwera i kontekst aplikacji
             from flask import current_app
             app_context = current_app.app_context
 
-            # Start the server in a separate thread
-            thread = threading.Thread(target=self._start_server_async, args=(server, bedrock_url, app_context))
+            # Start the server in a separate thread - przekaż tylko ID
+            thread = threading.Thread(
+                target=self._start_server_async, 
+                args=(server.id, bedrock_url, app_context)
+            )
             thread.daemon = True
             thread.start()
 
             self.download_threads[server.id] = thread
-        
+    
         return True, "Server starting process initiated"
     
     def stop_server(self, server_id):
@@ -985,3 +1002,166 @@ class ServerManager:
                 output_buffer = self.server_outputs[server_id]
                 return '\n'.join(output_buffer[-lines:]) if output_buffer else ""
             return ""
+            
+    def install_bedrock_server(self, server, download_url):
+        """
+        Instalacja serwera Bedrock
+        """
+        try:
+            server_path = self.get_server_path(server.name)
+            
+            # Sprawdź czy katalog serwera istnieje
+            if not os.path.exists(server_path):
+                os.makedirs(server_path, exist_ok=True)
+            
+            # Rozpocznij pobieranie
+            return self._download_and_extract_bedrock(server.id, download_url, server_path)
+            
+        except Exception as e:
+            return False, f"Bedrock installation error: {str(e)}"
+    
+    def install_java_server(self, server):
+        """
+        Instalacja serwera Java
+        """
+        try:
+            server_path = self.get_server_path(server.name)
+            
+            # Sprawdź czy katalog serwera istnieje
+            if not os.path.exists(server_path):
+                os.makedirs(server_path, exist_ok=True)
+            
+            # Pobierz plik JAR serwera Minecraft
+            return self._download_java_server(server.id, server.version, server_path)
+            
+        except Exception as e:
+            return False, f"Java installation error: {str(e)}"
+    
+    def _download_and_extract_bedrock(self, server_id, download_url, server_path):
+        """
+        Pobiera i wypakowuje serwer Bedrock
+        """
+        try:
+            import requests
+            import zipfile
+            
+            # Rozpocznij pobieranie
+            response = requests.get(download_url, stream=True)
+            response.raise_for_status()
+            
+            # Zapisz plik tymczasowy
+            temp_zip = os.path.join(server_path, 'bedrock_server.zip')
+            total_size = int(response.headers.get('content-length', 0))
+            
+            with open(temp_zip, 'wb') as f:
+                downloaded = 0
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        
+                        # Aktualizuj postęp
+                        progress = (downloaded / total_size) * 100 if total_size > 0 else 0
+                        self._update_download_progress(server_id, progress, downloaded, total_size)
+            
+            # Wypakuj plik ZIP
+            with zipfile.ZipFile(temp_zip, 'r') as zip_ref:
+                zip_ref.extractall(server_path)
+            
+            # Usuń plik ZIP
+            os.remove(temp_zip)
+            
+            # Ustaw uprawnienia wykonania dla pliku binarnego (Linux)
+            bedrock_binary = os.path.join(server_path, 'bedrock_server')
+            if os.path.exists(bedrock_binary):
+                os.chmod(bedrock_binary, 0o755)
+            
+            # Oznacz jako zakończone
+            self._update_download_progress(server_id, 100, total_size, total_size, 'complete')
+            
+            return True, "Bedrock server installed successfully"
+            
+        except Exception as e:
+            self._update_download_progress(server_id, 0, 0, 0, 'error', str(e))
+            return False, f"Download failed: {str(e)}"
+    
+    def _download_java_server(self, server_id, version, server_path):
+        """
+        Pobiera serwer Java
+        """
+        try:
+            import requests
+            
+            # URL do pobrania serwera Minecraft (można dostosować do różnych wersji)
+            if version == '1.20.1':
+                jar_url = "https://piston-data.mojang.com/v1/objects/84194a2f286ef7c14ed7ce0090dba59902951553/server.jar"
+            elif version == '1.19.4':
+                jar_url = "https://piston-data.mojang.com/v1/objects/8f3112a1049751cc472ec13e397eade5336ca7ae/server.jar"
+            else:
+                # Domyślna najnowsza wersja
+                jar_url = "https://piston-data.mojang.com/v1/objects/84194a2f286ef7c14ed7ce0090dba59902951553/server.jar"
+            
+            # Rozpocznij pobieranie
+            response = requests.get(jar_url, stream=True)
+            response.raise_for_status()
+            
+            # Zapisz plik JAR
+            jar_path = os.path.join(server_path, 'server.jar')
+            total_size = int(response.headers.get('content-length', 0))
+            
+            with open(jar_path, 'wb') as f:
+                downloaded = 0
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        
+                        # Aktualizuj postęp
+                        progress = (downloaded / total_size) * 100 if total_size > 0 else 0
+                        self._update_download_progress(server_id, progress, downloaded, total_size)
+            
+            # Oznacz jako zakończone
+            self._update_download_progress(server_id, 100, total_size, total_size, 'complete')
+            
+            return True, "Java server installed successfully"
+            
+        except Exception as e:
+            self._update_download_progress(server_id, 0, 0, 0, 'error', str(e))
+            return False, f"Download failed: {str(e)}"
+    
+    def _update_download_progress(self, server_id, progress, downloaded, total, status='downloading', message=''):
+        """
+        Aktualizuje postęp pobierania w pamięci
+        """
+        if not hasattr(self, 'download_progress'):
+            self.download_progress = {}
+        
+        self.download_progress[server_id] = {
+            'progress': progress,
+            'downloaded_size': downloaded,
+            'total_size': total,
+            'status': status,
+            'message': message,
+            'timestamp': time.time()
+        }
+    
+    def get_installation_progress(self, server_id):
+        """
+        Pobiera postęp instalacji
+        """
+        if not hasattr(self, 'download_progress') or server_id not in self.download_progress:
+            return {
+                'status': 'idle',
+                'progress': 0,
+                'downloaded_size': 0,
+                'total_size': 0,
+                'message': 'No active installation'
+            }
+        
+        return self.download_progress[server_id]
+    
+    def get_download_status(self, server_id):
+        """
+        Pobiera status pobierania (alias dla get_installation_progress)
+        """
+        return self.get_installation_progress(server_id)

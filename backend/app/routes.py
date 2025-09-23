@@ -1221,20 +1221,29 @@ def get_server_backups(server_id):
         return jsonify({'error': 'Access denied'}), 403
     
     backups = []
-    backup_dir = os.path.join(os.path.realpath('../data'), 'backups')
+    
+    # Użyj ścieżki względnej z konfiguracji zamiast hardcodowanej
+    backup_dir = current_app.config.get('BACKUP_PATH', os.path.join(current_app.config.get('SERVER_BASE_PATH', ''), '..', 'data', 'backups'))
+    backup_dir = os.path.realpath(backup_dir)
+    
+    print(f"Backup directory: {backup_dir}")
     
     if os.path.exists(backup_dir):
         for file_name in os.listdir(backup_dir):
-            if file_name.endswith('.zip'):
+            if file_name.endswith('.zip') and server.name in file_name:
                 file_path = os.path.join(backup_dir, file_name)
-                created_at = os.path.getctime(file_path)
-                backups.append({
-                    'name': file_name,
-                    'size': os.path.getsize(file_path),
-                    'created_at': created_at,
-                    'created_at_formatted': datetime.fromtimestamp(created_at).strftime('%Y-%m-%d %H:%M:%S'),
-                    'status': 'completed'  # Dodaj status wymagany przez frontend
-                })
+                try:
+                    created_at = os.path.getctime(file_path)
+                    backups.append({
+                        'name': file_name,
+                        'size': os.path.getsize(file_path),
+                        'created_at': created_at,
+                        'created_at_formatted': datetime.fromtimestamp(created_at).strftime('%Y-%m-%d %H:%M:%S'),
+                        'status': 'completed'
+                    })
+                except OSError as e:
+                    print(f"Error reading backup file {file_name}: {e}")
+                    continue
     
     backups.sort(key=lambda x: x['created_at'], reverse=True)
     
@@ -1256,11 +1265,11 @@ def create_server_backup(server_id):
     
     try:
         import zipfile
-        import shutil
         from datetime import datetime
         
-        # Utwórz katalog backupów jeśli nie istnieje
-        backup_dir = os.path.join(os.path.realpath('../data'), 'backups')
+        # Użyj ścieżki z konfiguracji
+        backup_dir = current_app.config.get('BACKUP_PATH', os.path.join(current_app.config.get('SERVER_BASE_PATH', ''), '..', 'data', 'backups'))
+        backup_dir = os.path.realpath(backup_dir)
         os.makedirs(backup_dir, exist_ok=True)
         
         # Nazwa pliku backupu
@@ -1276,59 +1285,27 @@ def create_server_backup(server_id):
         if not os.path.exists(server.path):
             return jsonify({'error': f'Server directory does not exist: {server.path}'}), 400
         
-        # Utwórz backup (skompresuj świat i ważne pliki)
+        # Utwórz backup
         with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
             added_files = 0
             
-            # Dodaj cały katalog świata
-            world_dir = os.path.join(server.path, 'worlds')
-            if os.path.exists(world_dir):
-                print(f"Adding world directory: {world_dir}")
-                for root, dirs, files in os.walk(world_dir):
-                    for file in files:
-                        file_path = os.path.join(root, file)
-                        # Użyj ścieżki względnej od server.path
-                        arcname = os.path.relpath(file_path, server.path)
-                        zipf.write(file_path, arcname)
-                        added_files += 1
-                        if added_files % 100 == 0:  # Log co 100 plików
-                            print(f"Added {added_files} files...")
-            
-            # Dodaj pojedyncze ważne pliki
-            important_files = [
-                'server.properties', 'whitelist.json', 'ops.json', 
-                'banned-players.json', 'banned-ips.json', 
-                'permissions.json', 'allowlist.json', 'eula.txt'
-            ]
-            
-            for file in important_files:
-                file_path = os.path.join(server.path, file)
-                if os.path.exists(file_path):
-                    print(f"Adding file: {file}")
-                    zipf.write(file_path, file)
+            # Rekurencyjnie dodaj wszystkie pliki z katalogu serwera
+            for root, dirs, files in os.walk(server.path):
+                # Pomijaj niektóre katalogi/pliki
+                dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ['__pycache__', 'cache']]
+                
+                for file in files:
+                    if file.startswith('.'):
+                        continue
+                        
+                    file_path = os.path.join(root, file)
+                    # Użyj ścieżki względnej od server.path
+                    arcname = os.path.relpath(file_path, server.path)
+                    zipf.write(file_path, arcname)
                     added_files += 1
                     
-            # Dodaj katalog plugins jeśli istnieje (dla serwerów Bedrocks)
-            bh_dir = os.path.join(server.path, 'behavior_packs')
-            if os.path.exists(bh_dir):
-                print(f"Adding plugins directory: {bh_dir}")
-                for root, dirs, files in os.walk(bh_dir):
-                    for file in files:
-                        file_path = os.path.join(root, file)
-                        arcname = os.path.relpath(file_path, server.path)
-                        zipf.write(file_path, arcname)
-                        added_files += 1
-            
-            # Dodaj katalog plugins jeśli istnieje (dla serwerów Java)
-            plugins_dir = os.path.join(server.path, 'plugins')
-            if os.path.exists(plugins_dir):
-                print(f"Adding plugins directory: {plugins_dir}")
-                for root, dirs, files in os.walk(plugins_dir):
-                    for file in files:
-                        file_path = os.path.join(root, file)
-                        arcname = os.path.relpath(file_path, server.path)
-                        zipf.write(file_path, arcname)
-                        added_files += 1
+                    if added_files % 100 == 0:
+                        print(f"Added {added_files} files...")
             
             print(f"Backup completed. Total files added: {added_files}")
         
@@ -1337,6 +1314,9 @@ def create_server_backup(server_id):
         print(f"Backup size: {backup_size} bytes")
         
         if backup_size == 0:
+            # Usuń pusty plik backupu
+            if os.path.exists(backup_path):
+                os.remove(backup_path)
             return jsonify({'error': 'Backup file is empty. No files were added.'}), 500
         
         return jsonify({
@@ -1531,6 +1511,230 @@ def check_port():
         return jsonify({'error': f'Error checking port: {str(e)}'}), 500
     
     return jsonify({'available': available})
+    
+@main.route('/servers/<int:server_id>/files/check', methods=['GET'])
+@jwt_required()
+def check_server_files(server_id):
+    """
+    Sprawdza czy serwer ma zainstalowane pliki
+    """
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'view'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    try:
+        server_path = server_manager.get_server_path(server.name)
+        
+        # Sprawdź czy katalog serwera istnieje i nie jest pusty
+        if not os.path.exists(server_path):
+            return jsonify({'hasFiles': False, 'message': 'Server directory does not exist'})
+        
+        # Sprawdź czy są jakieś pliki (ignorując ukryte pliki systemowe)
+        files = [f for f in os.listdir(server_path) 
+                if not f.startswith('.') and f not in ['__pycache__', '.git']]
+        
+        has_files = len(files) > 0
+        
+        # Dla serwerów Bedrock sprawdź obecność bedrock_server
+        if server.type == 'bedrock':
+            bedrock_binary = os.path.join(server_path, 'bedrock_server')
+            bedrock_binary_exe = os.path.join(server_path, 'bedrock_server.exe')
+            has_bedrock_binary = os.path.exists(bedrock_binary) or os.path.exists(bedrock_binary_exe)
+            has_files = has_files and has_bedrock_binary
+        
+        # Dla serwerów Java sprawdź obecność pliku JAR
+        elif server.type == 'java':
+            jar_files = [f for f in files if f.endswith('.jar') and 'server' in f.lower()]
+            has_jar = len(jar_files) > 0
+            has_files = has_files and has_jar
+        
+        return jsonify({
+            'hasFiles': has_files,
+            'fileCount': len(files),
+            'serverType': server.type,
+            'serverPath': server_path
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'Error checking server files: {str(e)}'}), 500
+        
+@main.route('/servers/<int:server_id>/install', methods=['POST'])
+@jwt_required()
+def install_server(server_id):
+    """
+    Rozpoczyna proces instalacji serwera
+    """
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_start'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    # Sprawdź czy serwer jest zatrzymany
+    if server.status == 'running':
+        return jsonify({'error': 'Server must be stopped to install'}), 400
+    
+    # Sprawdź czy serwer już ma pliki
+    try:
+        server_path = server_manager.get_server_path(server.name)
+        if os.path.exists(server_path) and len([f for f in os.listdir(server_path) if not f.startswith('.')]) > 0:
+            return jsonify({'error': 'Server already has files installed'}), 400
+    except Exception as e:
+        print(f"Warning: Could not check server files: {e}")
+    
+    try:
+        # Utwórz katalog serwera jeśli nie istnieje
+        server_path = server_manager.get_server_path(server.name)
+        os.makedirs(server_path, exist_ok=True)
+        
+        # Rozpocznij instalację w zależności od typu serwera
+        if server.type == 'bedrock':
+            return _install_bedrock_server(server)
+        elif server.type == 'java':
+            return _install_java_server(server)
+        else:
+            return jsonify({'error': f'Unsupported server type: {server.type}'}), 400
+            
+    except Exception as e:
+        return jsonify({'error': f'Installation failed: {str(e)}'}), 500
+
+def _install_bedrock_server(server):
+    """
+    Instalacja serwera Bedrock
+    """
+    try:
+        # Znajdź wersję Bedrock
+        bedrock_version = BedrockVersion.query.filter_by(
+            version=server.version, 
+            is_active=True
+        ).first()
+        
+        if not bedrock_version:
+            return jsonify({'error': f'Bedrock version {server.version} not found or inactive'}), 400
+        
+        # Pobierz URL do pobrania
+        download_url = bedrock_version.download_url
+        
+        # Użyj server_manager do pobrania i instalacji
+        success, message = server_manager.install_bedrock_server(server, download_url)
+        
+        if success:
+            return jsonify({
+                'message': 'Bedrock server installation started',
+                'download_url': download_url,
+                'version': server.version
+            })
+        else:
+            return jsonify({'error': message}), 500
+            
+    except Exception as e:
+        return jsonify({'error': f'Bedrock installation error: {str(e)}'}), 500
+
+def _install_java_server(server):
+    """
+    Instalacja serwera Java
+    """
+    try:
+        # Dla serwera Java użyj standardowego pobierania
+        success, message = server_manager.install_java_server(server)
+        
+        if success:
+            return jsonify({
+                'message': 'Java server installation started',
+                'version': server.version
+            })
+        else:
+            return jsonify({'error': message}), 500
+            
+    except Exception as e:
+        return jsonify({'error': f'Java installation error: {str(e)}'}), 500
+
+@main.route('/servers/<int:server_id>/installation-progress', methods=['GET'])
+@jwt_required()
+def get_installation_progress(server_id):
+    """
+    Pobiera postęp instalacji serwera
+    """
+    current_user_id = get_jwt_identity()
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'view'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    try:
+        # Sprawdź postęp przez server_manager
+        progress = server_manager.get_installation_progress(server_id)
+        
+        return jsonify(progress)
+        
+    except Exception as e:
+        return jsonify({'error': f'Error getting installation progress: {str(e)}'}), 500
+
+@main.route('/servers/<int:server_id>/clean-install', methods=['POST'])
+@jwt_required()
+def clean_install_server(server_id):
+    """
+    Czyści instalację serwera i rozpoczyna nową
+    """
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    
+    # Check permissions - tylko admin
+    user = User.query.get(current_user_id)
+    if user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    # Sprawdź czy serwer jest zatrzymany
+    if server.status == 'running':
+        return jsonify({'error': 'Server must be stopped to reinstall'}), 400
+    
+    try:
+        server_path = server_manager.get_server_path(server.name)
+        
+        # Usuń istniejące pliki serwera
+        if os.path.exists(server_path):
+            shutil.rmtree(server_path)
+            print(f"Removed server directory: {server_path}")
+        
+        # Utwórz pusty katalog
+        os.makedirs(server_path, exist_ok=True)
+        
+        # Rozpocznij nową instalację
+        if server.type == 'bedrock':
+            return _install_bedrock_server(server)
+        elif server.type == 'java':
+            return _install_java_server(server)
+        else:
+            return jsonify({'error': f'Unsupported server type: {server.type}'}), 400
+            
+    except Exception as e:
+        return jsonify({'error': f'Clean installation failed: {str(e)}'}), 500
+
+@main.route('/servers/<int:server_id>/download-status', methods=['GET'])
+@jwt_required()
+def get_download_status(server_id):
+    """
+    Pobiera status pobierania plików serwera
+    """
+    current_user_id = get_jwt_identity()
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'view'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    try:
+        # Sprawdź status przez server_manager
+        status = server_manager.get_download_status(server_id)
+        
+        return jsonify(status)
+        
+    except Exception as e:
+        return jsonify({'error': f'Error getting download status: {str(e)}'}), 500
+
 
 def _check_permission(user_id, server_id, permission):
     user = User.query.get(user_id)

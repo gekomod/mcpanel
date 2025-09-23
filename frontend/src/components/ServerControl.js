@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { 
   FiPlay, 
@@ -681,26 +681,42 @@ function ServerControl() {
   const [activeTab, setActiveTab] = useState('overview');
   const [consoleFilter, setConsoleFilter] = useState('ALL');
   const [playerStats, setPlayerStats] = useState(null);
+  const [hasFiles, setHasFiles] = useState(true); 
+  const [performanceInterval, setPerformanceInterval] = useState(null);
 
-	useEffect(() => {
-	  fetchServer();
-	  fetchServerSizes();
-	  fetchBackups();
-	  
-	  let performanceInterval;
-	  let playerStatsInterval;
-	  
-	  if (server?.status == 'running') {
-		fetchPerformanceStats();
-		performanceInterval = setInterval(fetchPerformanceStats, 5000);
-	  }
-	  
-	  return () => {
-		stopProgressPolling();
-		if (performanceInterval) clearInterval(performanceInterval);
-		if (playerStatsInterval) clearInterval(playerStatsInterval);
-	  };
-	}, [serverId], server?.status); 
+useEffect(() => {
+  fetchServer();
+  fetchServerSizes();
+  fetchBackups();
+  checkServerFiles();
+}, [serverId]);
+
+useEffect(() => {
+  let performanceInterval;
+  let playerStatsInterval;
+
+  if (server?.status === 'running') {
+    fetchPerformanceStats();
+    performanceInterval = setInterval(fetchPerformanceStats, 5000);
+    playerStatsInterval = setInterval(fetchRealtimeOutput, 3000);
+  }
+
+  return () => {
+    stopProgressPolling();
+    if (performanceInterval) clearInterval(performanceInterval);
+    if (playerStatsInterval) clearInterval(playerStatsInterval);
+  };
+}, [serverId, server?.status]);
+	
+  const checkServerFiles = async () => {
+    try {
+      const response = await api.get(`/servers/${serverId}/files/check`);
+      setHasFiles(response.data.hasFiles || false);
+    } catch (error) {
+      console.error('Error checking server files:', error);
+      setHasFiles(false);
+    }
+  };
 
   const fetchServer = async () => {
     try {
@@ -710,6 +726,7 @@ function ServerControl() {
       if (response.data.status === 'stopped') {
         checkDownloadProgress();
       }
+      checkServerFiles();
     } catch (error) {
       console.error('Error fetching server:', error);
     } finally {
@@ -717,16 +734,21 @@ function ServerControl() {
     }
   };
 
-  const fetchPerformanceStats = async () => {
-    //if (server?.status !== 'running') return;
-    
-    try {
-      const response = await api.get(`/servers/${serverId}/performance`);
-      setPerformanceStats(response.data);
-    } catch (error) {
-      console.error('Error fetching performance stats:', error);
-    }
-  };
+const fetchPerformanceStats = async () => {
+  try {
+    const response = await api.get(`/servers/${serverId}/performance`);
+    setPerformanceStats(response.data);
+  } catch (error) {
+    console.error('Error fetching performance stats:', error);
+    // Ustaw domyślne wartości w przypadku błędu
+    setPerformanceStats({
+      cpu_percent: 0,
+      memory_percent: 0,
+      disk_percent: 0,
+      disk_total: 0
+    });
+  }
+};
 
   const fetchServerSizes = async () => {
       try {
@@ -748,34 +770,31 @@ function ServerControl() {
   };
 
   // Fetch real-time output logs
-  const fetchRealtimeOutput = async () => {
-    if (server?.status !== 'running') {
-      setConsoleLogs([]);
-      return;
-    }
+const fetchRealtimeOutput = useCallback(async () => {
+  if (server?.status !== 'running') {
+    setConsoleLogs([]);
+    return;
+  }
 
-    try {
-      const response = await api.get(`/servers/${serverId}/realtime-output`);
-      
-      // Upewnij się, że output jest tablicą
-      let logsArray = response.data.output || [];
-      
-      // Jeśli logs jest stringiem, zamień na tablicę linii
-      if (typeof logsArray === 'string') {
-        logsArray = logsArray.split('\n');
-      }
-      
-      // Upewnij się, że to na pewno tablica
-      if (!Array.isArray(logsArray)) {
-        logsArray = [];
-      }
-      
-      setConsoleLogs(logsArray);
-    } catch (error) {
-      console.error('Error fetching realtime output:', error);
-      setConsoleLogs([]); // Ustaw pustą tablicę w przypadku błędu
+  try {
+    const response = await api.get(`/servers/${serverId}/realtime-output`);
+    
+    let logsArray = response.data.output || [];
+    
+    if (typeof logsArray === 'string') {
+      logsArray = logsArray.split('\n');
     }
-  };
+    
+    if (!Array.isArray(logsArray)) {
+      logsArray = [];
+    }
+    
+    setConsoleLogs(logsArray);
+  } catch (error) {
+    console.error('Error fetching realtime output:', error);
+    setConsoleLogs([]);
+  }
+}, [serverId, server?.status]);
   
 	const parsePlayerCountFromLogs = (logs) => {
 	  if (!Array.isArray(logs)) return null;
@@ -914,34 +933,40 @@ function ServerControl() {
 	  }
 	};
 
-	const startStatusPolling = (targetStatus) => {
-	  const pollInterval = setInterval(async () => {
-		try {
-		  const response = await api.get(`/servers/${serverId}`);
-		  const currentStatus = response.data.status;
-		  
-		  if (currentStatus === targetStatus) {
-		    clearInterval(pollInterval);
-		    setServer(response.data);
-		    setActionLoading(false);
-		    setCurrentAction(null);
-		    
-		    if (targetStatus === 'running') {
-		      fetchPerformanceStats();
-		    }
-		  }
-		} catch (error) {
-		  console.error('Error polling server status:', error);
-		}
-	  }, 2000);
+const startStatusPolling = (targetStatus) => {
+  const pollInterval = setInterval(async () => {
+    try {
+      const response = await api.get(`/servers/${serverId}`);
+      const currentStatus = response.data.status;
+      
+      if (currentStatus === targetStatus) {
+        clearInterval(pollInterval);
+        setServer(response.data);
+        setActionLoading(false);
+        setCurrentAction(null);
+        
+        if (targetStatus === 'running') {
+          // Natychmiast pobierz statystyki po uruchomieniu
+          fetchPerformanceStats();
+          // Rozpocznij regularne odświeżanie
+          const statsInterval = setInterval(fetchPerformanceStats, 5000);
+          
+          // Zapisz interval do późniejszego wyczyszczenia
+          setPerformanceInterval(statsInterval);
+        }
+      }
+    } catch (error) {
+      console.error('Error polling server status:', error);
+    }
+  }, 2000);
 
-	  setTimeout(() => {
-		clearInterval(pollInterval);
-		setActionLoading(false);
-		setCurrentAction(null);
-		fetchServer();
-	  }, 150000);
-	};
+  setTimeout(() => {
+    clearInterval(pollInterval);
+    setActionLoading(false);
+    setCurrentAction(null);
+    fetchServer();
+  }, 150000);
+};
 
   const handleCancelDownload = async () => {
     try {
@@ -1098,6 +1123,72 @@ useEffect(() => {
     
     return counts;
   };
+  
+  const handleInstallServer = async () => {
+    setActionLoading(true);
+    setCurrentAction('install');
+    
+    try {
+      await api.post(`/servers/${serverId}/install`);
+      toast.success('Rozpoczęto instalację serwera');
+      
+      // Rozpocznij śledzenie postępu instalacji
+      startInstallationPolling();
+      
+    } catch (error) {
+      console.error('Error installing server:', error);
+      toast.error(`Failed to install server: ${error.response?.data?.error || error.message}`);
+      setActionLoading(false);
+      setCurrentAction(null);
+    }
+  };
+  
+  const startInstallationPolling = () => {
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await api.get(`/servers/${serverId}/installation-progress`);
+        const progress = response.data;
+        
+        if (progress.status === 'complete') {
+          clearInterval(pollInterval);
+          setActionLoading(false);
+          setCurrentAction(null);
+          setHasFiles(true);
+          toast.success('Instalacja serwera zakończona pomyślnie');
+          fetchServer(); // Odśwież dane serwera
+        } else if (progress.status === 'error') {
+          clearInterval(pollInterval);
+          setActionLoading(false);
+          setCurrentAction(null);
+          toast.error('Błąd podczas instalacji serwera');
+        }
+        
+        // Aktualizuj postęp pobierania jeśli dostępny
+        if (progress.downloadProgress) {
+          setDownloadProgress(progress.downloadProgress);
+        }
+        
+      } catch (error) {
+        console.error('Error polling installation progress:', error);
+      }
+    }, 2000);
+
+    // Timeout po 10 minutach
+    setTimeout(() => {
+      clearInterval(pollInterval);
+      setActionLoading(false);
+      setCurrentAction(null);
+      toast.error('Instalacja serwera przekroczyła limit czasu');
+    }, 10 * 60 * 1000);
+  };
+  
+  useEffect(() => {
+  return () => {
+    if (performanceInterval) {
+      clearInterval(performanceInterval);
+    }
+  };
+}, [performanceInterval]);
 
   const logCounts = getLogCounts();
 
@@ -1114,6 +1205,7 @@ useEffect(() => {
 	  
 	  const messages = {
 		start: 'Trwa uruchamianie serwera, proszę czekać...',
+		install: 'Trwa instalacja serwera, proszę czekać...',
 		restart: 'Trwa restartowanie serwera, proszę czekać...',
 		stop: 'Trwa zatrzymywanie serwera, proszę czekać...'
 	  };
@@ -1242,29 +1334,44 @@ useEffect(() => {
 		)}
 
       <ServerActions>
-        <ActionButton 
-          $variant="success"
-          onClick={() => handleServerAction('start')} 
-          disabled={server.status === 'running' || actionLoading || (downloadProgress && downloadProgress.status !== 'complete')}
-        >
-          {actionLoading && currentAction === 'start' ? <LoadingSpinner /> : <FiPower />}
-          Uruchom Serwer
-        </ActionButton>
+        {!hasFiles ? (
+          <ActionButton 
+            $variant="success"
+            onClick={handleInstallServer} 
+            disabled={actionLoading || server.status === 'running'}
+          >
+            {actionLoading && currentAction === 'install' ? <LoadingSpinner /> : <FiDownload />}
+            Zainstaluj Serwer
+          </ActionButton>
+        ) : (
+          <ActionButton 
+            $variant="success"
+            onClick={() => handleServerAction('start')} 
+            disabled={server.status === 'running' || actionLoading || (downloadProgress && downloadProgress.status !== 'complete')}
+          >
+            {actionLoading && currentAction === 'start' ? <LoadingSpinner /> : <FiPower />}
+            Uruchom Serwer
+          </ActionButton>
+        )}
         <ActionButton 
           $variant="secondary" 
           onClick={() => handleServerAction('restart')} 
-          disabled={server.status === 'stopped' || actionLoading}
+          disabled={server.status === 'stopped' || actionLoading || !hasFiles}
         >
           {actionLoading && currentAction === 'restart' ? <LoadingSpinner /> : <FiRefreshCw />}
           Restartuj Serwer
         </ActionButton>
-        <ActionButton $variant="secondary" onClick={() => navigate(`/servers/${serverId}/console`)} disabled={server.status === 'stopped' || actionLoading}>
+        <ActionButton 
+          $variant="secondary" 
+          onClick={() => navigate(`/servers/${serverId}/console`)} 
+          disabled={server.status === 'stopped' || actionLoading || !hasFiles}
+        >
           <FiTerminal /> Konsola
         </ActionButton>
         <ActionButton 
           $variant="danger" 
           onClick={() => handleServerAction('stop')} 
-          disabled={server.status === 'stopped' || actionLoading}
+          disabled={server.status === 'stopped' || actionLoading || !hasFiles}
         >
           {actionLoading && currentAction === 'stop' ? <LoadingSpinner /> : <FiStopCircle />}
           Zatrzymaj Serwer
