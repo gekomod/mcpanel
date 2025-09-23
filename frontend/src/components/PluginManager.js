@@ -202,7 +202,6 @@ const Tab = styled.button`
 `;
 
 const Content = styled.div`
-  background: #2e3245;
   border-radius: 8px;
   padding: 20px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);

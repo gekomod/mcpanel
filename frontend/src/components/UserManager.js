@@ -653,7 +653,7 @@ function UserManager() {
 
   const fetchAvailableUsers = async () => {
     try {
-      const response = await api.get('/auth/users');
+      const response = await api.get('/users');
       setAvailableUsers(response.data);
     } catch (error) {
       console.error('Error fetching available users:', error);

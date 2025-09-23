@@ -16,6 +16,7 @@ import UserAdminManager from './components/UserAdminManager';
 import Support from './components/Support';
 import SettingsAdmin from './components/SettingsAdmin';
 import BackupServer from './components/BackupServer';
+import UserSettings from './components/UserSettings';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -60,6 +61,7 @@ function App() {
 					<Route path="/servers/:serverId/backups" element={<BackupServer />} />
 					<Route path="/servers" element={<Servers />} />
 					<Route path="/support" element={<Support />} />
+					<Route path="/user-settings" element={<UserSettings />} />
                     {/* Admin routes */}
                     <Route path="/admin/bedrock-versions" element={<BedrockManager />} />
                     <Route path="/admin/addons" element={<AddonManager />} />

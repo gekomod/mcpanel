@@ -19,7 +19,7 @@ export function AuthProvider({ children }) {
     if (token && savedUser) {
       setUser(JSON.parse(savedUser));
       // Verify token is still valid
-      api.get('/auth/profile')
+      api.get('/auth/profiles')
         .catch(() => {
           logout();
         });

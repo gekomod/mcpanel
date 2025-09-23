@@ -72,6 +72,10 @@ const routeConfig = {
     title: 'Support',
     icon: ImQuestion
   },
+  '/user-settings': {
+    title: 'Account Settings',
+    icon: FiUser
+  },
   '/admin/bedrock-versions': {
     title: 'Zarządzanie Wersjami Bedrock',
     icon: FiBox

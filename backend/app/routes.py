@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from .models import db, User, Server, Permission, BedrockVersion, Addon
+from .models import db, User, Server, Permission, BedrockVersion, Addon, UserSession
 from .managers import server_manager, file_manager
 from .bedrock_manager import BedrockAddonManager
 from datetime import datetime
@@ -1735,6 +1735,204 @@ def get_download_status(server_id):
     except Exception as e:
         return jsonify({'error': f'Error getting download status: {str(e)}'}), 500
 
+
+@main.route('/user/profile', methods=['GET'])
+@jwt_required()
+def get_user_profile():
+    """Pobiera profil użytkownika"""
+    current_user_id = get_jwt_identity()
+    user = User.query.get_or_404(current_user_id)
+    
+    return jsonify(user.to_dict())
+
+@main.route('/user/profile', methods=['PUT'])
+@jwt_required()
+def update_user_profile():
+    """Aktualizuje profil użytkownika"""
+    current_user_id = get_jwt_identity()
+    user = User.query.get_or_404(current_user_id)
+    data = request.get_json()
+    
+    if 'full_name' in data:
+        user.full_name = data['full_name']
+    
+    if 'email' in data:
+        # Sprawdź czy email nie jest już używany
+        existing_user = User.query.filter_by(email=data['email']).first()
+        if existing_user and existing_user.id != user.id:
+            return jsonify({'error': 'Email jest już używany przez innego użytkownika'}), 400
+        user.email = data['email']
+    
+    if 'username' in data:
+        # Sprawdź czy nazwa użytkownika nie jest już używana
+        existing_user = User.query.filter_by(username=data['username']).first()
+        if existing_user and existing_user.id != user.id:
+            return jsonify({'error': 'Nazwa użytkownika jest już używana'}), 400
+        user.username = data['username']
+    
+    if 'language' in data:
+        user.language = data['language']
+    
+    user.updated_at = datetime.utcnow()
+    db.session.commit()
+    
+    return jsonify({
+        'message': 'Profil został zaktualizowany',
+        'user': user.to_dict()
+    })
+
+@main.route('/user/notifications', methods=['GET'])
+@jwt_required()
+def get_user_notifications():
+    """Pobiera ustawienia powiadomień użytkownika"""
+    current_user_id = get_jwt_identity()
+    user = User.query.get_or_404(current_user_id)
+    
+    notification_settings = user.get_notification_settings()
+    
+    return jsonify(notification_settings)
+
+@main.route('/user/notifications', methods=['PUT'])
+@jwt_required()
+def update_user_notifications():
+    """Aktualizuje ustawienia powiadomień użytkownika"""
+    current_user_id = get_jwt_identity()
+    user = User.query.get_or_404(current_user_id)
+    data = request.get_json()
+    
+    valid_settings = ['email_notifications', 'server_status', 'backup_notifications', 'security_alerts']
+    for key in data:
+        if key not in valid_settings:
+            return jsonify({'error': f'Nieprawidłowe ustawienie: {key}'}), 400
+    
+    user.set_notification_settings(data)
+    user.updated_at = datetime.utcnow()
+    db.session.commit()
+    
+    return jsonify({
+        'message': 'Ustawienia powiadomień zostały zaktualizowane',
+        'notifications': user.get_notification_settings()
+    })
+
+@main.route('/user/change-password', methods=['POST'])
+@jwt_required()
+def change_user_password():
+    """Zmienia hasło użytkownika"""
+    current_user_id = get_jwt_identity()
+    user = User.query.get_or_404(current_user_id)
+    data = request.get_json()
+    
+    current_password = data.get('current_password')
+    new_password = data.get('new_password')
+    confirm_password = data.get('confirm_password')
+    
+    if not current_password or not new_password or not confirm_password:
+        return jsonify({'error': 'Wszystkie pola są wymagane'}), 400
+    
+    if new_password != confirm_password:
+        return jsonify({'error': 'Nowe hasła nie są identyczne'}), 400
+    
+    success, message = user.change_password(current_password, new_password)
+    
+    if success:
+        return jsonify({'message': message})
+    else:
+        return jsonify({'error': message}), 400
+
+@main.route('/user/export-data', methods=['POST'])
+@jwt_required()
+def export_user_data():
+    """Inicjuje eksport danych użytkownika"""
+    current_user_id = get_jwt_identity()
+    user = User.query.get_or_404(current_user_id)
+    
+    # Tutaj logika eksportu danych - symulacja
+    # W rzeczywistej aplikacji tutaj byłby proces eksportu do pliku
+    
+    return jsonify({
+        'message': 'Rozpoczęto eksport danych. Link do pobrania zostanie wysłany na adres email.',
+        'export_id': f'export_{user.id}_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}'
+    })
+
+@main.route('/user/sessions', methods=['GET'])
+@jwt_required()
+def get_user_sessions():
+    """Pobiera aktywne sesje użytkownika"""
+    current_user_id = get_jwt_identity()
+    user = User.query.get_or_404(current_user_id)
+
+    active_sessions = UserSession.query.filter_by(
+        user_id=user.id, 
+        is_active=True
+    ).filter(UserSession.expires_at > datetime.utcnow()).all()
+    
+    return jsonify([session.to_dict() for session in active_sessions])
+
+@main.route('/user/sessions/<int:session_id>', methods=['DELETE'])
+@jwt_required()
+def revoke_user_session(session_id):
+    """Unieważnia sesję użytkownika"""
+    current_user_id = get_jwt_identity()
+    user = User.query.get_or_404(current_user_id)
+    
+    session = UserSession.query.filter_by(
+        id=session_id, 
+        user_id=user.id
+    ).first_or_404()
+    
+    session.is_active = False
+    db.session.commit()
+    
+    return jsonify({'message': 'Sesja została unieważniona'})
+
+@main.route('/user/enable-2fa', methods=['POST'])
+@jwt_required()
+def enable_2fa():
+    """Włącza uwierzytelnianie dwuskładnikowe"""
+    current_user_id = get_jwt_identity()
+    user = User.query.get_or_404(current_user_id)
+    data = request.get_json()
+    
+    verification_code = data.get('verification_code')
+    secret = data.get('secret')
+    
+    if not verification_code or not secret:
+        return jsonify({'error': 'Brakujący kod weryfikacyjny lub sekret'}), 400
+    
+    # Tutaj weryfikacja kodu 2FA - symulacja
+    # W rzeczywistej aplikacji użyj biblioteki do 2FA jak pyotp
+    
+    user.enable_two_factor(secret)
+    
+    return jsonify({'message': 'Uwierzytelnianie dwuskładnikowe zostało włączone'})
+
+@main.route('/user/disable-2fa', methods=['POST'])
+@jwt_required()
+def disable_2fa():
+    """Wyłącza uwierzytelnianie dwuskładnikowe"""
+    current_user_id = get_jwt_identity()
+    user = User.query.get_or_404(current_user_id)
+    
+    user.disable_two_factor()
+    
+    return jsonify({'message': 'Uwierzytelnianie dwuskładnikowe zostało wyłączone'})
+
+@main.route('/user/generate-2fa-secret', methods=['POST'])
+@jwt_required()
+def generate_2fa_secret():
+    """Generuje sekret 2FA"""
+    current_user_id = get_jwt_identity()
+    user = User.query.get_or_404(current_user_id)
+
+    import secrets
+    import base64
+    
+    secret = base64.b32encode(secrets.token_bytes(10)).decode('utf-8')
+    
+    return jsonify({
+        'secret': secret,
+        'qr_code_url': f'otpauth://totp/Shockbyte:{user.username}?secret={secret}&issuer=Shockbyte'
+    })
 
 def _check_permission(user_id, server_id, permission):
     user = User.query.get(user_id)

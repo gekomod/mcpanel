@@ -115,7 +115,7 @@ const RoleBadge = styled.span`
   `}
   
   ${props => props.$role === 'user' && `
-    backgroundColor: #065f46;
+    background-color: #065f46;
     color: #10b981;
   `}
 `;
@@ -344,7 +344,7 @@ function UserAdminManager() {
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      const response = await api.get('/auth/users');
+      const response = await api.get('/users');
       setUsers(response.data);
     } catch (error) {
       console.error('Error fetching users:', error);
@@ -383,7 +383,8 @@ function UserAdminManager() {
       await api.put(`/auth/users/${selectedUser.id}`, {
         username: selectedUser.username,
         email: selectedUser.email,
-        role: selectedUser.role
+        role: selectedUser.role,
+        is_active: selectedUser.is_active !== undefined ? selectedUser.is_active : true
       });
       
       setShowEditModal(false);
@@ -396,12 +397,12 @@ function UserAdminManager() {
   };
 
   const handleDeleteUser = async (userId) => {
-    if (!window.confirm('Are you sure you want to delete this user?')) {
+    if (!window.confirm('Czy na pewno chcesz usunąć tego użytkownika?')) {
       return;
     }
     
     try {
-      await api.delete(`/auth/users/${userId}`);
+      await api.delete(`/users/${userId}`);
       fetchUsers();
     } catch (error) {
       console.error('Error deleting user:', error);
@@ -446,6 +447,7 @@ function UserAdminManager() {
                 <TableHeaderCell>Użytkownik</TableHeaderCell>
                 <TableHeaderCell>Email</TableHeaderCell>
                 <TableHeaderCell>Rola</TableHeaderCell>
+                <TableHeaderCell>Status</TableHeaderCell>
                 <TableHeaderCell>Data utworzenia</TableHeaderCell>
                 <TableHeaderCell style={{ textAlign: 'right' }}>Akcje</TableHeaderCell>
               </tr>
@@ -468,6 +470,14 @@ function UserAdminManager() {
                       {user.role === 'admin' ? 'Administrator' : 
                        user.role === 'moderator' ? 'Moderator' : 'Użytkownik'}
                     </RoleBadge>
+                  </TableCell>
+                  <TableCell>
+                    <span style={{ 
+                      color: user.is_active ? '#10b981' : '#ef4444',
+                      fontWeight: '500'
+                    }}>
+                      {user.is_active ? 'Aktywny' : 'Nieaktywny'}
+                    </span>
                   </TableCell>
                   <TableCell>
                     {user.created_at ? new Date(user.created_at).toLocaleDateString('pl-PL') : 'Brak danych'}
@@ -493,7 +503,7 @@ function UserAdminManager() {
               
               {filteredUsers.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan="5">
+                  <TableCell colSpan="6">
                     <EmptyState>
                       {searchTerm ? 'Brak użytkowników spełniających kryteria wyszukiwania' : 'Brak użytkowników w systemie'}
                     </EmptyState>
@@ -613,6 +623,20 @@ function UserAdminManager() {
                 <option value="user">Użytkownik</option>
                 <option value="moderator">Moderator</option>
                 <option value="admin">Administrator</option>
+              </Select>
+            </FormGroup>
+
+            <FormGroup>
+              <Label>Status konta</Label>
+              <Select
+                value={selectedUser.is_active ? 'active' : 'inactive'}
+                onChange={(e) => setSelectedUser({ 
+                  ...selectedUser, 
+                  is_active: e.target.value === 'active' 
+                })}
+              >
+                <option value="active">Aktywny</option>
+                <option value="inactive">Nieaktywny</option>
               </Select>
             </FormGroup>
             

@@ -14,7 +14,8 @@ import {
   FiX,
   FiBox,
   FiShield,
-  FiHelpCircle
+  FiHelpCircle,
+  FiUser
 } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -320,14 +321,23 @@ function Layout({ children }) {
           </MenuButton>
         <PageTitle>{Icon && <Icon style={{ marginRight: '10px' }} />}
         {title}</PageTitle>
-	  <UserInfo> 
-		<UserAvatar>{user?.username?.charAt(0)?.toUpperCase() || 'U'}</UserAvatar>
-            <UserName>{user?.username || 'User'}</UserName>
-            <LogoutButton onClick={handleLogout}>
-              <FiLogOut />
-              Wyloguj
-            </LogoutButton>
-	  </UserInfo>
+<UserInfo> 
+  <UserAvatar>{user?.username?.charAt(0)?.toUpperCase() || 'U'}</UserAvatar>
+  <UserName>{user?.username || 'User'}</UserName>
+  
+  <LogoutButton 
+    onClick={() => navigate('/user-settings')}
+    style={{ background: 'transparent' }}
+  >
+    <FiUser />
+    Moje konto
+  </LogoutButton>
+  
+  <LogoutButton onClick={handleLogout}>
+    <FiLogOut />
+    Wyloguj
+  </LogoutButton>
+</UserInfo>
 	</Header>
           {children}
         </Content>
