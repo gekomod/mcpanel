@@ -11,13 +11,12 @@ import {
   FiLock,
   FiX
 } from 'react-icons/fi';
+import { useLanguage } from '../context/LanguageContext';
 
 const SettingsContainer = styled.div`
   padding: 20px;
-
   border-radius: 10px;
   margin-bottom: 30px;
-
   position: relative;
 `;
 
@@ -497,6 +496,7 @@ const ModalButton = styled.button`
 `;
 
 function SettingsAdmin() {
+  const { t } = useLanguage();
   const [activeSection, setActiveSection] = useState('ogolne');
   const [settings, setSettings] = useState({
     // Ogólne ustawienia
@@ -536,7 +536,6 @@ function SettingsAdmin() {
     const newToast = { id, title, message, type };
     setToasts(prev => [...prev, newToast]);
     
-    // Auto remove after 5 seconds
     setTimeout(() => {
       removeToast(id);
     }, 5000);
@@ -574,52 +573,50 @@ function SettingsAdmin() {
   };
 
   const handleSave = () => {
-    // Tutaj logika zapisywania ustawień
-    showToast('Sukces', 'Ustawienia zostały zapisane pomyślnie!', 'success');
+    showToast(t('user.settings.success.profileSaved'), t('user.settings.success.notificationsSaved'), 'success');
   };
 
   const handleReset = () => {
     showConfirmationDialog({
-      title: 'Przywracanie ustawień',
-      message: 'Czy na pewno chcesz przywrócić domyślne ustawienia?',
+      title: t('server.settings.resetToDefault'),
+      message: t('user.settings.warning.deleteAccount'),
       onConfirm: () => {
-        // Tutaj logika resetowania ustawień
-        showToast('Informacja', 'Ustawienia zostały zresetowane do wartości domyślnych.', 'info');
+        showToast(t('common.info'), t('user.settings.success.profileSaved'), 'info');
       }
     });
   };
 
   const regenerateApiKey = () => {
     showConfirmationDialog({
-      title: 'Generowanie nowego klucza API',
-      message: 'Czy na pewno chcesz wygenerować nowy klucz API? Obecny klucz przestanie działać.',
+      title: t('server.settings.regenerateApiKey'),
+      message: t('user.settings.warning.deleteAccount'),
       onConfirm: () => {
         const newApiKey = 'sb_' + Math.random().toString(36).substring(2, 15);
         setSettings(prev => ({
           ...prev,
           apiKey: newApiKey
         }));
-        showToast('Sukces', 'Nowy klucz API został wygenerowany!', 'success');
+        showToast(t('common.success'), t('user.settings.success.profileSaved'), 'success');
       }
     });
   };
 
   const handleLogoutAll = () => {
     showConfirmationDialog({
-      title: 'Wylogowywanie',
-      message: 'Czy na pewno chcesz wylogować się ze wszystkich urządzeń?',
+      title: t('nav.logout'),
+      message: t('user.settings.warning.deleteAccount'),
       variant: 'danger',
       onConfirm: () => {
-        showToast('Sukces', 'Pomyślnie wylogowano ze wszystkich urządzeń.', 'success');
+        showToast(t('common.success'), t('user.settings.success.profileSaved'), 'success');
       }
     });
   };
 
   const menuItems = [
-    { id: 'ogolne', label: 'Ogólne', icon: <FiGlobe /> },
-    { id: 'powiadomienia', label: 'Powiadomienia', icon: <FiBell /> },
-    { id: 'bezpieczenstwo', label: 'Bezpieczeństwo', icon: <FiShield /> },
-    { id: 'zaawansowane', label: 'Zaawansowane', icon: <FiDatabase /> },
+    { id: 'ogolne', label: t('server.settings.general'), icon: <FiGlobe /> },
+    { id: 'powiadomienia', label: t('server.settings.notifications'), icon: <FiBell /> },
+    { id: 'bezpieczenstwo', label: t('server.settings.security'), icon: <FiShield /> },
+    { id: 'zaawansowane', label: t('server.settings.advanced'), icon: <FiDatabase /> },
     { id: 'api', label: 'API', icon: <FiServer /> }
   ];
 
@@ -628,29 +625,29 @@ function SettingsAdmin() {
       case 'ogolne':
         return (
           <>
-            <SectionTitle><FiGlobe /> Ustawienia Ogólne</SectionTitle>
+            <SectionTitle><FiGlobe /> {t('server.settings.general')}</SectionTitle>
             
             <FormGroup>
-              <Label>Język</Label>
+              <Label>{t('user.settings.profile.language')}</Label>
               <Select name="language" value={settings.language} onChange={handleInputChange}>
-                <option value="pl">Polski</option>
-                <option value="en">English</option>
-                <option value="de">Deutsch</option>
-                <option value="fr">Français</option>
+                <option value="pl">{t('languages.polish')}</option>
+                <option value="en">{t('languages.english')}</option>
+                <option value="de">{t('languages.german')}</option>
+                <option value="fr">{t('languages.french')}</option>
               </Select>
             </FormGroup>
             
             <FormGroup>
-              <Label>Motyw</Label>
+              <Label>{t('server.settings.theme')}</Label>
               <Select name="theme" value={settings.theme} onChange={handleInputChange}>
-                <option value="dark">Ciemny</option>
-                <option value="light">Jasny</option>
-                <option value="auto">Auto (systemowy)</option>
+                <option value="dark">{t('server.settings.dark')}</option>
+                <option value="light">{t('server.settings.light')}</option>
+                <option value="auto">{t('server.settings.auto')}</option>
               </Select>
             </FormGroup>
             
             <FormGroup>
-              <Label>Strefa czasowa</Label>
+              <Label>{t('server.settings.timezone')}</Label>
               <Select name="timezone" value={settings.timezone} onChange={handleInputChange}>
                 <option value="Europe/Warsaw">Europe/Warsaw (CET)</option>
                 <option value="UTC">UTC</option>
@@ -664,7 +661,7 @@ function SettingsAdmin() {
       case 'powiadomienia':
         return (
           <>
-            <SectionTitle><FiBell /> Ustawienia Powiadomień</SectionTitle>
+            <SectionTitle><FiBell /> {t('server.settings.notifications')}</SectionTitle>
             
             <CheckboxGroup>
               <CheckboxLabel>
@@ -674,7 +671,7 @@ function SettingsAdmin() {
                   checked={settings.emailNotifications}
                   onChange={handleInputChange}
                 />
-                Powiadomienia email
+                {t('user.settings.notifications.email')}
               </CheckboxLabel>
               
               <CheckboxLabel>
@@ -684,7 +681,7 @@ function SettingsAdmin() {
                   checked={settings.pushNotifications}
                   onChange={handleInputChange}
                 />
-                Powiadomienia push (przeglądarka)
+                {t('server.settings.pushNotifications')}
               </CheckboxLabel>
               
               <CheckboxLabel>
@@ -694,7 +691,7 @@ function SettingsAdmin() {
                   checked={settings.serverAlerts}
                   onChange={handleInputChange}
                 />
-                Alerty serwerowe
+                {t('user.settings.notifications.serverStatus')}
               </CheckboxLabel>
               
               <CheckboxLabel>
@@ -704,7 +701,7 @@ function SettingsAdmin() {
                   checked={settings.maintenanceAlerts}
                   onChange={handleInputChange}
                 />
-                Powiadomienia o konserwacji
+                {t('server.settings.maintenanceAlerts')}
               </CheckboxLabel>
             </CheckboxGroup>
           </>
@@ -713,7 +710,7 @@ function SettingsAdmin() {
       case 'bezpieczenstwo':
         return (
           <>
-            <SectionTitle><FiShield /> Ustawienia Bezpieczeństwa</SectionTitle>
+            <SectionTitle><FiShield /> {t('server.settings.security')}</SectionTitle>
             
             <CheckboxGroup>
               <CheckboxLabel>
@@ -723,7 +720,7 @@ function SettingsAdmin() {
                   checked={settings.twoFactorAuth}
                   onChange={handleInputChange}
                 />
-                Uwierzytelnianie dwuskładnikowe (2FA)
+                {t('user.settings.security.2fa')}
               </CheckboxLabel>
               
               <CheckboxLabel>
@@ -733,12 +730,12 @@ function SettingsAdmin() {
                   checked={settings.loginAlerts}
                   onChange={handleInputChange}
                 />
-                Powiadomienia o nowych logowaniach
+                {t('server.settings.loginAlerts')}
               </CheckboxLabel>
             </CheckboxGroup>
             
             <FormGroup>
-              <Label>Limit czasu sesji (minuty)</Label>
+              <Label>{t('server.settings.sessionTimeout')}</Label>
               <Input
                 type="number"
                 name="sessionTimeout"
@@ -747,7 +744,7 @@ function SettingsAdmin() {
                 min="5"
                 max="1440"
               />
-              <InfoText>Po tym czasie użytkownik zostanie automatycznie wylogowany.</InfoText>
+              <InfoText>{t('server.settings.sessionTimeoutDesc')}</InfoText>
             </FormGroup>
           </>
         );
@@ -755,7 +752,7 @@ function SettingsAdmin() {
       case 'zaawansowane':
         return (
           <>
-            <SectionTitle><FiDatabase /> Ustawienia Zaawansowane</SectionTitle>
+            <SectionTitle><FiDatabase /> {t('server.settings.advanced')}</SectionTitle>
             
             <CheckboxGroup>
               <CheckboxLabel>
@@ -765,13 +762,13 @@ function SettingsAdmin() {
                   checked={settings.autoBackup}
                   onChange={handleInputChange}
                 />
-                Automatyczne tworzenie kopii zapasowych
+                {t('server.settings.autoBackup')}
               </CheckboxLabel>
             </CheckboxGroup>
             
             <TwoColumnLayout>
               <FormGroup>
-                <Label>Interwał backupu (godziny)</Label>
+                <Label>{t('server.settings.backupInterval')}</Label>
                 <Input
                   type="number"
                   name="backupInterval"
@@ -784,7 +781,7 @@ function SettingsAdmin() {
               </FormGroup>
               
               <FormGroup>
-                <Label>Maksymalna liczba backupów</Label>
+                <Label>{t('server.settings.maxBackups')}</Label>
                 <Input
                   type="number"
                   name="maxBackups"
@@ -794,12 +791,12 @@ function SettingsAdmin() {
                   max="100"
                   disabled={!settings.autoBackup}
                 />
-                <InfoText>Starsze kopie zostaną automatycznie usunięte.</InfoText>
+                <InfoText>{t('server.settings.maxBackupsDesc')}</InfoText>
               </FormGroup>
             </TwoColumnLayout>
             
             <FormGroup>
-              <Label>Limit historii konsoli (linie)</Label>
+              <Label>{t('server.settings.consoleHistory')}</Label>
               <Input
                 type="number"
                 name="consoleHistory"
@@ -815,7 +812,7 @@ function SettingsAdmin() {
       case 'api':
         return (
           <>
-            <SectionTitle><FiServer /> Ustawienia API</SectionTitle>
+            <SectionTitle><FiServer /> {t('server.settings.api')}</SectionTitle>
             
             <CheckboxGroup>
               <CheckboxLabel>
@@ -825,29 +822,29 @@ function SettingsAdmin() {
                   checked={settings.apiEnabled}
                   onChange={handleInputChange}
                 />
-                Włącz dostęp API
+                {t('server.settings.apiEnabled')}
               </CheckboxLabel>
             </CheckboxGroup>
             
             <FormGroup>
-              <Label>Klucz API</Label>
+              <Label>{t('server.settings.apiKey')}</Label>
               <Input
                 type="text"
                 value={settings.apiKey}
                 disabled
               />
-              <InfoText>Klucz API jest używany do autoryzacji żądań do API.</InfoText>
+              <InfoText>{t('server.settings.apiKeyDesc')}</InfoText>
               <Button 
                 $variant="secondary" 
                 onClick={regenerateApiKey}
                 style={{ marginTop: '10px' }}
               >
-                <FiLock /> Wygeneruj nowy klucz
+                <FiLock /> {t('server.settings.regenerateApiKey')}
               </Button>
             </FormGroup>
             
             <FormGroup>
-              <Label>Limit zapytań API (na minutę)</Label>
+              <Label>{t('server.settings.apiRateLimit')}</Label>
               <Input
                 type="number"
                 name="apiRateLimit"
@@ -869,7 +866,6 @@ function SettingsAdmin() {
   return (
     <>
       <SettingsContainer>
-
         <SettingsGrid>
           <SettingsSidebar>
             {menuItems.map(item => (
@@ -889,23 +885,23 @@ function SettingsAdmin() {
             
             <FormActions>
               <Button $variant="secondary" onClick={handleReset}>
-                Przywróć domyślne
+                {t('server.settings.resetToDefault')}
               </Button>
               <Button $variant="primary" onClick={handleSave}>
-                <FiSave /> Zapisz zmiany
+                <FiSave /> {t('common.save')}
               </Button>
             </FormActions>
 
             {activeSection === 'bezpieczenstwo' && (
               <DangerZone>
                 <DangerZoneTitle>
-                  <FiUser /> Strefa niebezpieczna
+                  <FiUser /> {t('server.settings.dangerZone')}
                 </DangerZoneTitle>
                 <p style={{ color: '#a4aabc', marginBottom: '15px' }}>
-                  Te operacje mogą wpłynąć na bezpieczeństwo Twojego konta.
+                  {t('server.settings.dangerZoneDesc')}
                 </p>
                 <DangerButton onClick={handleLogoutAll}>
-                  Wyloguj się ze wszystkich urządzeń
+                  {t('server.settings.logoutAllDevices')}
                 </DangerButton>
               </DangerZone>
             )}
@@ -939,7 +935,7 @@ function SettingsAdmin() {
         <ModalOverlay>
           <Modal>
             <ModalHeader>
-              <ModalTitle>{confirmationConfig.title || 'Potwierdzenie'}</ModalTitle>
+              <ModalTitle>{confirmationConfig.title || t('common.confirmation')}</ModalTitle>
               <ModalClose onClick={handleCancel}>
                 <FiX />
               </ModalClose>
@@ -947,13 +943,13 @@ function SettingsAdmin() {
             <ModalMessage>{confirmationConfig.message}</ModalMessage>
             <ModalActions>
               <ModalButton $variant="secondary" onClick={handleCancel}>
-                Anuluj
+                {t('common.cancel')}
               </ModalButton>
               <ModalButton 
                 $variant={confirmationConfig.variant === 'danger' ? 'danger' : 'primary'} 
                 onClick={handleConfirm}
               >
-                Potwierdź
+                {t('common.confirm')}
               </ModalButton>
             </ModalActions>
           </Modal>

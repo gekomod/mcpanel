@@ -9,6 +9,7 @@ import {
   FiExternalLink,
   FiSend
 } from 'react-icons/fi';
+import { useLanguage } from '../context/LanguageContext';
 
 const SupportContainer = styled.div`
   padding: 20px;
@@ -345,6 +346,7 @@ const Footer = styled.footer`
 `;
 
 function Support() {
+  const { t } = useLanguage();
   const [openFaqIndex, setOpenFaqIndex] = useState(null);
   const [formData, setFormData] = useState({
     subject: '',
@@ -367,7 +369,11 @@ function Support() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    alert(`Dziękujemy za wiadomość!\nTemat: ${formData.subject}\nEmail: ${formData.email}\nKategoria: ${formData.category}\n\nTwoja wiadomość została wysłana. Odpowiemy w ciągu 24 godzin.`);
+    alert(t('support.thankYouMessage', {
+      subject: formData.subject,
+      email: formData.email,
+      category: formData.category
+    }));
     setFormData({
       subject: '',
       email: '',
@@ -378,31 +384,31 @@ function Support() {
 
   const faqItems = [
     {
-      question: "Jak zainstalować panel na własnym serwerze?",
-      answer: "Instalacja panelu jest możliwa na dwa sposoby: korzystając z obrazu Dockera lub instalując bezpośrednio na systemie. Zalecamy użycie Dockera - pobierz obraz z Docker Hub i uruchom kontener z odpowiednimi parametrami. Więcej szczegółów znajdziesz w README na GitHub."
+      question: t('support.faq.installation.question'),
+      answer: t('support.faq.installation.answer')
     },
     {
-      question: "Jak dodać nowy serwer Minecraft?",
-      answer: "Aby dodać nowy serwer, przejdź do zakładki 'Serwery' i kliknij kartę 'Dodaj nowy serwer'. Następnie wypełnij formularz, wybierając wersję Minecraft, lokalizację i typ serwera. Po zatwierdzeniu serwer zostanie utworzony w ciągu kilku minut."
+      question: t('support.faq.addServer.question'),
+      answer: t('support.faq.addServer.answer')
     },
     {
-      question: "Jak skonfigurować backup serwera?",
-      answer: "Backupy można skonfigurować w ustawieniach każdego serwera. Przejdź do zarządzania serwerem, wybierz zakładkę 'Backup' i skonfiguruj harmonogram oraz ustawienia przechowywania kopii zapasowych. System obsługuje backup zarówno na lokalnym dysku, jak i w chmurze."
+      question: t('support.faq.backup.question'),
+      answer: t('support.faq.backup.answer')
     },
     {
-      question: "Jak zgłosić błąd lub problem?",
-      answer: "Problemy i błędy można zgłaszać na kilka sposobów: poprzez formularz kontaktowy na tej stronie, tworząc issue na GitHub lub kontaktując się z nami przez Discord. Przy zgłaszaniu problemu podaj jak najwięcej szczegółów: wersję panelu, system operacyjny i kroki prowadzące do błędu."
+      question: t('support.faq.reportBug.question'),
+      answer: t('support.faq.reportBug.answer')
     },
     {
-      question: "Czy panel wspiera modyfikacje i pluginy?",
-      answer: "Tak, panel w pełni obsługuje najpopularniejsze modyfikacje i pluginy do Minecrafta. Możesz łatwo instalować i zarządzać modyfikacjami bezpośrednio z poziomu interfejsu."
+      question: t('support.faq.modsSupport.question'),
+      answer: t('support.faq.modsSupport.answer')
     }
   ];
 
   return (
     <SupportContainer>
       <Header>
-        <Title>Wsparcie Techniczne</Title>
+        <Title>{t('page.support')}</Title>
       </Header>
 
       <SupportGrid>
@@ -411,14 +417,14 @@ function Support() {
             <SupportCardIcon>
               <FiGithub />
             </SupportCardIcon>
-            <SupportCardTitle>GitHub</SupportCardTitle>
+            <SupportCardTitle>{t('support.github.title')}</SupportCardTitle>
           </SupportCardHeader>
           <SupportCardContent>
-            <p>Odwiedź nasze repozytorium GitHub, aby zgłaszać problemy, proponować nowe funkcje lub współtworzyć projekt. Kod źródłowy jest dostępny publicznie.</p>
-            <p><strong>Wskazówka:</strong> Przed zgłoszeniem problemu sprawdź czy nie został on już rozwiązany w istniejących issue.</p>
+            <p>{t('support.github.description')}</p>
+            <p><strong>{t('support.tip')}:</strong> {t('support.github.tip')}</p>
           </SupportCardContent>
           <SupportLink href="https://github.com/gekomod/mcpanel" target="_blank" rel="noopener noreferrer">
-            <FiExternalLink /> Przejdź do GitHub
+            <FiExternalLink /> {t('support.github.action')}
           </SupportLink>
         </SupportCard>
 
@@ -427,14 +433,14 @@ function Support() {
             <SupportCardIcon>
               <FiExternalLink />
             </SupportCardIcon>
-            <SupportCardTitle>Docker Hub</SupportCardTitle>
+            <SupportCardTitle>{t('support.docker.title')}</SupportCardTitle>
           </SupportCardHeader>
           <SupportCardContent>
-            <p>Pobierz najnowszy obraz Dockera naszego panelu. Zawiera on wszystkie niezbędne zależności i jest gotowy do uruchomienia w środowisku produkcyjnym.</p>
-            <p><strong>Wskazówka:</strong> Użyj tagu "latest" dla najnowszej stabilnej wersji lub wybierz konkretną wersję dla zgodności.</p>
+            <p>{t('support.docker.description')}</p>
+            <p><strong>{t('support.tip')}:</strong> {t('support.docker.tip')}</p>
           </SupportCardContent>
           <SupportLink href="https://hub.docker.com/r/gekomod/mcpanel" target="_blank" rel="noopener noreferrer">
-            <FiExternalLink /> Przejdź do Docker Hub
+            <FiExternalLink /> {t('support.docker.action')}
           </SupportLink>
         </SupportCard>
 
@@ -443,20 +449,20 @@ function Support() {
             <SupportCardIcon>
               <FiMessageSquare />
             </SupportCardIcon>
-            <SupportCardTitle>Społeczność</SupportCardTitle>
+            <SupportCardTitle>{t('support.community.title')}</SupportCardTitle>
           </SupportCardHeader>
           <SupportCardContent>
-            <p>Dołącz do naszej społeczności na Discordzie, gdzie możesz uzyskać pomoc od innych użytkowników, dzielić się swoimi doświadczeniami i śledzić najnowsze aktualizacje.</p>
-            <p><strong>Wskazówka:</strong> Społeczność to doskonałe miejsce do uzyskania szybkiej pomocy i inspiracji.</p>
+            <p>{t('support.community.description')}</p>
+            <p><strong>{t('support.tip')}:</strong> {t('support.community.tip')}</p>
           </SupportCardContent>
-          <SupportLink href="#" onClick={(e) => { e.preventDefault(); alert('Link do Discord zostanie wkrótce udostępniony!'); }}>
-            <FiExternalLink /> Dołącz do Discord
+          <SupportLink href="#" onClick={(e) => { e.preventDefault(); alert(t('support.community.soon')); }}>
+            <FiExternalLink /> {t('support.community.action')}
           </SupportLink>
         </SupportCard>
       </SupportGrid>
 
       <FaqSection>
-        <SectionTitle>Najczęściej Zadawane Pytania</SectionTitle>
+        <SectionTitle>{t('support.faq.title')}</SectionTitle>
         
         {faqItems.map((faq, index) => (
           <FaqItem key={index}>
@@ -471,37 +477,37 @@ function Support() {
         ))}
       </FaqSection>
 
-      <SectionTitle>Skontaktuj się z nami</SectionTitle>
+      <SectionTitle>{t('support.contact.title')}</SectionTitle>
       
       <ContactForm onSubmit={handleSubmit}>
         <FormGroup>
-          <Label htmlFor="subject">Temat</Label>
+          <Label htmlFor="subject">{t('support.contact.subject')}</Label>
           <Input
             type="text"
             id="subject"
             name="subject"
             value={formData.subject}
             onChange={handleInputChange}
-            placeholder="Temat zapytania"
+            placeholder={t('support.contact.subjectPlaceholder')}
             required
           />
         </FormGroup>
         
         <FormGroup>
-          <Label htmlFor="email">Email</Label>
+          <Label htmlFor="email">{t('user.settings.profile.email')}</Label>
           <Input
             type="email"
             id="email"
             name="email"
             value={formData.email}
             onChange={handleInputChange}
-            placeholder="Twój adres email"
+            placeholder={t('support.contact.emailPlaceholder')}
             required
           />
         </FormGroup>
 
         <FormGroup>
-          <Label htmlFor="category">Kategoria</Label>
+          <Label htmlFor="category">{t('support.contact.category')}</Label>
           <Select
             id="category"
             name="category"
@@ -509,29 +515,29 @@ function Support() {
             onChange={handleInputChange}
             required
           >
-            <option value="">Wybierz kategorię</option>
-            <option value="problem">Problem techniczny</option>
-            <option value="question">Pytanie</option>
-            <option value="suggestion">Sugestia</option>
-            <option value="other">Inne</option>
+            <option value="">{t('support.contact.categoryPlaceholder')}</option>
+            <option value="problem">{t('support.contact.categories.problem')}</option>
+            <option value="question">{t('support.contact.categories.question')}</option>
+            <option value="suggestion">{t('support.contact.categories.suggestion')}</option>
+            <option value="other">{t('support.contact.categories.other')}</option>
           </Select>
         </FormGroup>
         
         <FormGroup>
-          <Label htmlFor="message">Wiadomość</Label>
+          <Label htmlFor="message">{t('support.contact.message')}</Label>
           <TextArea
             id="message"
             name="message"
             value={formData.message}
             onChange={handleInputChange}
-            placeholder="Opisz swój problem lub pytanie..."
+            placeholder={t('support.contact.messagePlaceholder')}
             required
           />
         </FormGroup>
         
         <FormActions>
           <SubmitButton type="submit" disabled={!formData.subject || !formData.email || !formData.category || !formData.message}>
-            <FiSend /> Wyślij wiadomość
+            <FiSend /> {t('support.contact.sendButton')}
           </SubmitButton>
         </FormActions>
       </ContactForm>

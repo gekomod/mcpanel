@@ -17,6 +17,7 @@ import {
 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import api from '../services/api';
+import { useLanguage } from '../context/LanguageContext';
 
 // Styled components matching the HTML style
 const Container = styled.div`
@@ -477,6 +478,7 @@ const EmptyState = styled.div`
 `;
 
 function AddonManager() {
+  const { t } = useLanguage();
   const [addons, setAddons] = useState([]);
   const [filteredAddons, setFilteredAddons] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -523,7 +525,7 @@ function AddonManager() {
       setAddons(response.data);
     } catch (error) {
       console.error('Error fetching addons:', error);
-      toast.error('Failed to load addons');
+      toast.error(t('plugin.manager.error.fetch'));
     } finally {
       setLoading(false);
     }
@@ -615,24 +617,27 @@ function AddonManager() {
       if (formData.type === 'addon') {
         delete submitData.download_url;
         if (!formData.behavior_pack_url && !formData.resource_pack_url) {
-          toast.error('Bedrock addon requires at least one pack URL');
+          toast.error(t('plugin.manager.bedrock.noPacksAvailable'));
           return;
         }
       } else {
         delete submitData.behavior_pack_url;
         delete submitData.resource_pack_url;
         if (!formData.download_url) {
-          toast.error('Plugin/script requires download URL');
+          toast.error(t('plugin.manager.download.noLinks'));
           return;
         }
       }
       
       if (editingAddon) {
         await api.put(`/addons/${editingAddon.id}`, submitData);
-        toast.success('Addon updated successfully');
+        toast.success(t('plugin.manager.toggle.success'));
       } else {
         await api.post('/addons', submitData);
-        toast.success('Addon created successfully');
+        toast.success(t('plugin.manager.installation.success', { 
+          name: formData.name, 
+          type: t(`plugin.manager.addon.type.${formData.type}`) 
+        }));
       }
       
       setShowModal(false);
@@ -655,7 +660,7 @@ function AddonManager() {
       fetchAddons();
     } catch (error) {
       console.error('Error saving addon:', error);
-      toast.error(error.response?.data?.error || 'Failed to save addon');
+      toast.error(error.response?.data?.error || t('plugin.manager.installation.error', { name: formData.name }));
     }
   };
 
@@ -679,17 +684,17 @@ function AddonManager() {
   };
 
   const handleDelete = async (addon) => {
-    if (!window.confirm(`Are you sure you want to delete "${addon.name}"?`)) {
+    if (!window.confirm(t('plugin.manager.uninstallation.confirm'))) {
       return;
     }
 
     try {
       await api.delete(`/addons/${addon.id}`);
-      toast.success('Addon deleted successfully');
+      toast.success(t('plugin.manager.uninstallation.success'));
       fetchAddons();
     } catch (error) {
       console.error('Error deleting addon:', error);
-      toast.error('Failed to delete addon');
+      toast.error(t('plugin.manager.uninstallation.error'));
     }
   };
 
@@ -699,11 +704,11 @@ function AddonManager() {
         ...addon,
         is_active: !addon.is_active
       });
-      toast.success(`Addon ${!addon.is_active ? 'activated' : 'deactivated'}`);
+      toast.success(t('plugin.manager.toggle.success'));
       fetchAddons();
     } catch (error) {
       console.error('Error toggling addon status:', error);
-      toast.error('Failed to update addon status');
+      toast.error(t('plugin.manager.toggle.error'));
     }
   };
 
@@ -732,8 +737,8 @@ function AddonManager() {
     return (
       <Container>
         <EmptyState>
-          <h3>Loading addons...</h3>
-          <p>Please wait while we load your addons</p>
+          <h3>{t('plugin.manager.loading')}</h3>
+          <p>{t('common.loading')}</p>
         </EmptyState>
       </Container>
     );
@@ -748,7 +753,7 @@ function AddonManager() {
           </SearchIcon>
           <SearchInput
             type="text"
-            placeholder="Search addons..."
+            placeholder={t('plugin.manager.search.placeholder')}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
@@ -758,10 +763,10 @@ function AddonManager() {
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
           >
-            <option value="">All Types</option>
+            <option value="">{t('plugin.manager.category.all')}</option>
             {types.map(type => (
               <option key={type} value={type}>
-                {type.charAt(0).toUpperCase() + type.slice(1)}
+                {t(`plugin.manager.category.${type}`) || type.charAt(0).toUpperCase() + type.slice(1)}
               </option>
             ))}
           </FilterSelect>
@@ -769,15 +774,15 @@ function AddonManager() {
             value={versionFilter}
             onChange={(e) => setVersionFilter(e.target.value)}
           >
-            <option value="">All Versions</option>
+            <option value="">{t('server.versions.loading')}</option>
             {minecraftVersions.map(version => (
               <option key={version} value={version}>
                 {version}
               </option>
             ))}
           </FilterSelect>
-                    <AddButton onClick={openModal}>
-            <FiPlus /> Add New
+          <AddButton onClick={openModal}>
+            <FiPlus /> {t('plugin.manager.action.install')}
           </AddButton>
         </FilterGroup>
       </Filters>
@@ -789,21 +794,21 @@ function AddonManager() {
               <AddonCardTitle>{addon.name}</AddonCardTitle>
               <AddonStatus active={addon.is_active}>
                 <StatusIndicator active={addon.is_active} />
-                <span>{addon.is_active ? 'Active' : 'Inactive'}</span>
+                <span>{addon.is_active ? t('plugin.manager.status.enabled') : t('plugin.manager.status.disabled')}</span>
               </AddonStatus>
             </AddonCardHeader>
             
             <AddonCardDetails>
               <AddonDetail>
-                <AddonDetailLabel>Type:</AddonDetailLabel>
-                <AddonDetailValue>{addon.type}</AddonDetailValue>
+                <AddonDetailLabel>{t('plugin.manager.addon.type.' + addon.type)}:</AddonDetailLabel>
+                <AddonDetailValue>{t(`plugin.manager.category.${addon.type}`) || addon.type}</AddonDetailValue>
               </AddonDetail>
               <AddonDetail>
-                <AddonDetailLabel>Version:</AddonDetailLabel>
-                <AddonDetailValue>v{addon.version}</AddonDetailValue>
+                <AddonDetailLabel>{t('server.settings.version')}:</AddonDetailLabel>
+                <AddonDetailValue>{t('plugin.manager.addon.version', { version: addon.version })}</AddonDetailValue>
               </AddonDetail>
               <AddonDetail>
-                <AddonDetailLabel>MC Version:</AddonDetailLabel>
+                <AddonDetailLabel>{t('plugin.manager.addon.minecraft.version', { version: '' })}:</AddonDetailLabel>
                 <AddonDetailValue>{addon.minecraft_version}</AddonDetailValue>
               </AddonDetail>
             </AddonCardDetails>
@@ -812,40 +817,40 @@ function AddonManager() {
               <AddonDescription>{addon.description}</AddonDescription>
             )}
             
-<AddonCardFooter>
-  <AddonAuthor>
-    <FiUser size={14} />
-    <span>{addon.author || 'Unknown'}</span>
-  </AddonAuthor>
-  <div style={{ display: 'flex', gap: '5px' }}>
-    <ManageAddonBtn 
-      onClick={(e) => {
-        e.stopPropagation();
-        handleToggleStatus(addon);
-      }}
-      style={{ 
-        background: addon.is_active ? '#dc2626' : '#059669'
-      }}
-    >
-      {addon.is_active ? <FiX /> : <FiCheck />}
-    </ManageAddonBtn>
-    <ManageAddonBtn onClick={(e) => {
-      e.stopPropagation();
-      handleEdit(addon);
-    }}>
-      <FiEdit />
-    </ManageAddonBtn>
-    <ManageAddonBtn 
-      onClick={(e) => {
-        e.stopPropagation();
-        handleDelete(addon);
-      }}
-      style={{ background: '#dc2626' }}
-    >
-      <FiTrash2 />
-    </ManageAddonBtn>
-  </div>
-</AddonCardFooter>
+            <AddonCardFooter>
+              <AddonAuthor>
+                <FiUser size={14} />
+                <span>{addon.author || t('plugin.manager.addon.author.unknown')}</span>
+              </AddonAuthor>
+              <div style={{ display: 'flex', gap: '5px' }}>
+                <ManageAddonBtn 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleStatus(addon);
+                  }}
+                  style={{ 
+                    background: addon.is_active ? '#dc2626' : '#059669'
+                  }}
+                >
+                  {addon.is_active ? <FiX /> : <FiCheck />}
+                </ManageAddonBtn>
+                <ManageAddonBtn onClick={(e) => {
+                  e.stopPropagation();
+                  handleEdit(addon);
+                }}>
+                  <FiEdit />
+                </ManageAddonBtn>
+                <ManageAddonBtn 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDelete(addon);
+                  }}
+                  style={{ background: '#dc2626' }}
+                >
+                  <FiTrash2 />
+                </ManageAddonBtn>
+              </div>
+            </AddonCardFooter>
           </AddonCard>
         ))}
         
@@ -853,17 +858,17 @@ function AddonManager() {
           <InstallAddonIcon>
             <FiPlus />
           </InstallAddonIcon>
-          <InstallAddonText>Add New Addon</InstallAddonText>
+          <InstallAddonText>{t('plugin.manager.action.install')}</InstallAddonText>
           <InstallAddonDescription>
-            Click here to add a new addon to your server
+            {t('plugin.manager.installed.empty.description')}
           </InstallAddonDescription>
         </InstallAddonCard>
       </AddonsGrid>
 
       {filteredAddons.length === 0 && addons.length > 0 && (
         <EmptyState>
-          <h3>No addons found</h3>
-          <p>Try changing your search or filters</p>
+          <h3>{t('plugin.manager.marketplace.empty.search.title')}</h3>
+          <p>{t('plugin.manager.marketplace.empty.search.description')}</p>
         </EmptyState>
       )}
 
@@ -872,41 +877,41 @@ function AddonManager() {
           <ModalContent onClick={(e) => e.stopPropagation()}>
             <ModalHeader>
               <ModalTitle>
-                {editingAddon ? 'Edit Addon' : 'Add New Addon'}
+                {editingAddon ? t('common.edit') : t('plugin.manager.action.install')}
               </ModalTitle>
               <CloseModal onClick={closeModal}>&times;</CloseModal>
             </ModalHeader>
             
             <form onSubmit={handleSubmit}>
               <FormGroup>
-                <FormLabel>Addon Name *</FormLabel>
+                <FormLabel>{t('plugin.manager.addon.type.' + formData.type)} {t('server.settings.serverName')} *</FormLabel>
                 <FormInput
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({...formData, name: e.target.value})}
-                  placeholder="Name of your addon"
+                  placeholder={t('server.name.placeholder')}
                   required
                 />
               </FormGroup>
               
               <FormGroup>
-                <FormLabel>Type *</FormLabel>
+                <FormLabel>{t('plugin.manager.addon.type.' + formData.type)} *</FormLabel>
                 <FormSelect
                   value={formData.type}
                   onChange={(e) => setFormData({...formData, type: e.target.value})}
                   required
                 >
-                  <option value="">Select Type</option>
+                  <option value="">{t('server.type')}</option>
                   {types.map(type => (
                     <option key={type} value={type}>
-                      {type.charAt(0).toUpperCase() + type.slice(1)}
+                      {t(`plugin.manager.category.${type}`) || type.charAt(0).toUpperCase() + type.slice(1)}
                     </option>
                   ))}
                 </FormSelect>
               </FormGroup>
               
               <FormGroup>
-                <FormLabel>Version *</FormLabel>
+                <FormLabel>{t('server.settings.version')} *</FormLabel>
                 <FormInput
                   type="text"
                   value={formData.version}
@@ -917,13 +922,13 @@ function AddonManager() {
               </FormGroup>
               
               <FormGroup>
-                <FormLabel>Minecraft Version *</FormLabel>
+                <FormLabel>{t('plugin.manager.addon.minecraft.version', { version: '' })} *</FormLabel>
                 <FormSelect
                   value={formData.minecraft_version}
                   onChange={(e) => setFormData({...formData, minecraft_version: e.target.value})}
                   required
                 >
-                  <option value="">Select Version</option>
+                  <option value="">{t('server.versions.loading')}</option>
                   {minecraftVersions.map(version => (
                     <option key={version} value={version}>
                       {version}
@@ -934,7 +939,7 @@ function AddonManager() {
               
               {formData.type !== 'addon' && (
                 <FormGroup>
-                  <FormLabel>Download URL *</FormLabel>
+                  <FormLabel>{t('plugin.manager.action.download')} URL *</FormLabel>
                   <FormInput
                     type="url"
                     value={formData.download_url}
@@ -948,7 +953,7 @@ function AddonManager() {
               {formData.type === 'addon' && (
                 <>
                   <FormGroup>
-                    <FormLabel>Behavior Pack URL</FormLabel>
+                    <FormLabel>{t('plugin.manager.bedrock.behaviorPack')} URL</FormLabel>
                     <FormInput
                       type="url"
                       value={formData.behavior_pack_url}
@@ -958,7 +963,7 @@ function AddonManager() {
                   </FormGroup>
                   
                   <FormGroup>
-                    <FormLabel>Resource Pack URL</FormLabel>
+                    <FormLabel>{t('plugin.manager.bedrock.resourcePack')} URL</FormLabel>
                     <FormInput
                       type="url"
                       value={formData.resource_pack_url}
@@ -970,21 +975,21 @@ function AddonManager() {
               )}
               
               <FormGroup>
-                <FormLabel>Author</FormLabel>
+                <FormLabel>{t('plugin.manager.addon.author', { author: '' })}</FormLabel>
                 <FormInput
                   type="text"
                   value={formData.author}
                   onChange={(e) => setFormData({...formData, author: e.target.value})}
-                  placeholder="Author Name"
+                  placeholder={t('plugin.manager.addon.author.unknown')}
                 />
               </FormGroup>
               
               <FormGroup>
-                <FormLabel>Description</FormLabel>
+                <FormLabel>{t('plugin.manager.addon.noDescription')}</FormLabel>
                 <FormTextarea
                   value={formData.description}
                   onChange={(e) => setFormData({...formData, description: e.target.value})}
-                  placeholder="Describe what this addon does..."
+                  placeholder={t('plugin.manager.addon.noDescription')}
                 />
               </FormGroup>
               
@@ -996,16 +1001,16 @@ function AddonManager() {
                     onChange={(e) => setFormData({...formData, is_active: e.target.checked})}
                     style={{ marginRight: '8px' }}
                   />
-                  Active
+                  {t('plugin.manager.status.enabled')}
                 </FormLabel>
               </FormGroup>
               
               <FormActions>
                 <BtnSecondary type="button" onClick={closeModal}>
-                  Cancel
+                  {t('common.cancel')}
                 </BtnSecondary>
                 <BtnPrimary type="submit">
-                  {editingAddon ? 'Update' : 'Create'} Addon
+                  {editingAddon ? t('common.save') : t('plugin.manager.action.install')}
                 </BtnPrimary>
               </FormActions>
             </form>

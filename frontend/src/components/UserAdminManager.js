@@ -8,6 +8,7 @@ import {
   FiSearch
 } from 'react-icons/fi';
 import api from '../services/api';
+import { useLanguage } from '../context/LanguageContext';
 
 const UsersTableContainer = styled.div`
   background: #2e3245;
@@ -324,6 +325,7 @@ const SaveButton = styled.button`
 `;
 
 function UserAdminManager() {
+  const { t } = useLanguage();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -348,7 +350,7 @@ function UserAdminManager() {
       setUsers(response.data);
     } catch (error) {
       console.error('Error fetching users:', error);
-      alert('Failed to fetch users');
+      alert(t('user.admin.fetch.error'));
     } finally {
       setLoading(false);
     }
@@ -372,9 +374,10 @@ function UserAdminManager() {
       });
       
       fetchUsers();
+      alert(t('user.admin.add.success'));
     } catch (error) {
       console.error('Error adding user:', error);
-      alert('Failed to add user');
+      alert(t('user.admin.add.error'));
     }
   };
 
@@ -390,23 +393,25 @@ function UserAdminManager() {
       setShowEditModal(false);
       setSelectedUser(null);
       fetchUsers();
+      alert(t('user.admin.edit.success'));
     } catch (error) {
       console.error('Error updating user:', error);
-      alert('Failed to update user');
+      alert(t('user.admin.edit.error'));
     }
   };
 
   const handleDeleteUser = async (userId) => {
-    if (!window.confirm('Czy na pewno chcesz usunąć tego użytkownika?')) {
+    if (!window.confirm(t('user.admin.delete.confirm'))) {
       return;
     }
     
     try {
       await api.delete(`/users/${userId}`);
       fetchUsers();
+      alert(t('user.admin.delete.success'));
     } catch (error) {
       console.error('Error deleting user:', error);
-      alert('Failed to delete user');
+      alert(t('user.admin.delete.error'));
     }
   };
 
@@ -420,16 +425,29 @@ function UserAdminManager() {
     user.email.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const getRoleDisplayName = (role) => {
+    switch (role) {
+      case 'admin': return t('user.role.admin');
+      case 'moderator': return t('user.role.moderator');
+      case 'user': return t('user.role.user');
+      default: return role;
+    }
+  };
+
+  const getStatusDisplayName = (isActive) => {
+    return isActive ? t('user.status.active') : t('user.status.inactive');
+  };
+
   return (
     <>
       <UsersTableContainer>
         <TableHeader>
-          <TableTitle>Lista użytkowników</TableTitle>
+          <TableTitle>{t('user.admin.title')}</TableTitle>
           <SearchBox>
             <FiSearch />
             <input
               type="text"
-              placeholder="Szukaj użytkowników..."
+              placeholder={t('user.admin.search.placeholder')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -438,18 +456,18 @@ function UserAdminManager() {
 
         {loading ? (
           <LoadingSpinner>
-            <div>Ładowanie użytkowników...</div>
+            <div>{t('user.admin.loading')}</div>
           </LoadingSpinner>
         ) : (
           <UsersTable>
             <thead>
               <tr>
-                <TableHeaderCell>Użytkownik</TableHeaderCell>
-                <TableHeaderCell>Email</TableHeaderCell>
-                <TableHeaderCell>Rola</TableHeaderCell>
-                <TableHeaderCell>Status</TableHeaderCell>
-                <TableHeaderCell>Data utworzenia</TableHeaderCell>
-                <TableHeaderCell style={{ textAlign: 'right' }}>Akcje</TableHeaderCell>
+                <TableHeaderCell>{t('user.admin.table.username')}</TableHeaderCell>
+                <TableHeaderCell>{t('user.admin.table.email')}</TableHeaderCell>
+                <TableHeaderCell>{t('user.admin.table.role')}</TableHeaderCell>
+                <TableHeaderCell>{t('user.admin.table.status')}</TableHeaderCell>
+                <TableHeaderCell>{t('user.admin.table.created')}</TableHeaderCell>
+                <TableHeaderCell style={{ textAlign: 'right' }}>{t('user.admin.table.actions')}</TableHeaderCell>
               </tr>
             </thead>
             
@@ -467,8 +485,7 @@ function UserAdminManager() {
                   <TableCell>{user.email}</TableCell>
                   <TableCell>
                     <RoleBadge $role={user.role}>
-                      {user.role === 'admin' ? 'Administrator' : 
-                       user.role === 'moderator' ? 'Moderator' : 'Użytkownik'}
+                      {getRoleDisplayName(user.role)}
                     </RoleBadge>
                   </TableCell>
                   <TableCell>
@@ -476,11 +493,11 @@ function UserAdminManager() {
                       color: user.is_active ? '#10b981' : '#ef4444',
                       fontWeight: '500'
                     }}>
-                      {user.is_active ? 'Aktywny' : 'Nieaktywny'}
+                      {getStatusDisplayName(user.is_active)}
                     </span>
                   </TableCell>
                   <TableCell>
-                    {user.created_at ? new Date(user.created_at).toLocaleDateString('pl-PL') : 'Brak danych'}
+                    {user.created_at ? new Date(user.created_at).toLocaleDateString('pl-PL') : t('common.none')}
                   </TableCell>
                   <TableCell>
                     <ActionButtons>
@@ -488,13 +505,13 @@ function UserAdminManager() {
                         $variant="edit" 
                         onClick={() => openEditModal(user)}
                       >
-                        <FiEdit /> Edytuj
+                        <FiEdit /> {t('common.edit')}
                       </ActionButton>
                       <ActionButton 
                         $variant="delete" 
                         onClick={() => handleDeleteUser(user.id)}
                       >
-                        <FiTrash2 /> Usuń
+                        <FiTrash2 /> {t('common.delete')}
                       </ActionButton>
                     </ActionButtons>
                   </TableCell>
@@ -505,7 +522,7 @@ function UserAdminManager() {
                 <TableRow>
                   <TableCell colSpan="6">
                     <EmptyState>
-                      {searchTerm ? 'Brak użytkowników spełniających kryteria wyszukiwania' : 'Brak użytkowników w systemie'}
+                      {searchTerm ? t('user.admin.empty.search') : t('user.admin.empty.default')}
                     </EmptyState>
                   </TableCell>
                 </TableRow>
@@ -516,7 +533,7 @@ function UserAdminManager() {
       </UsersTableContainer>
 
       <AddUserButton onClick={() => setShowAddModal(true)}>
-        <FiPlus /> Dodaj użytkownika
+        <FiPlus /> {t('user.admin.add.button')}
       </AddUserButton>
 
       {/* Add User Modal */}
@@ -524,61 +541,61 @@ function UserAdminManager() {
         <ModalOverlay onClick={() => setShowAddModal(false)}>
           <Modal onClick={(e) => e.stopPropagation()}>
             <ModalHeader>
-              <ModalTitle>Dodaj nowego użytkownika</ModalTitle>
+              <ModalTitle>{t('user.admin.modal.add.title')}</ModalTitle>
               <ModalClose onClick={() => setShowAddModal(false)}>×</ModalClose>
             </ModalHeader>
             
             <FormGroup>
-              <Label>Nazwa użytkownika</Label>
+              <Label>{t('user.username')}</Label>
               <Input
                 type="text"
                 value={newUser.username}
                 onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
-                placeholder="Nazwa użytkownika"
+                placeholder={t('user.username.placeholder')}
               />
             </FormGroup>
             
             <FormGroup>
-              <Label>Email</Label>
+              <Label>{t('user.email')}</Label>
               <Input
                 type="email"
                 value={newUser.email}
                 onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                placeholder="Adres email"
+                placeholder={t('user.email.placeholder')}
               />
             </FormGroup>
             
             <FormGroup>
-              <Label>Hasło</Label>
+              <Label>{t('user.password')}</Label>
               <Input
                 type="password"
                 value={newUser.password}
                 onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                placeholder="Hasło"
+                placeholder={t('user.password.placeholder')}
               />
             </FormGroup>
             
             <FormGroup>
-              <Label>Rola</Label>
+              <Label>{t('user.role')}</Label>
               <Select
                 value={newUser.role}
                 onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
               >
-                <option value="user">Użytkownik</option>
-                <option value="moderator">Moderator</option>
-                <option value="admin">Administrator</option>
+                <option value="user">{t('user.role.user')}</option>
+                <option value="moderator">{t('user.role.moderator')}</option>
+                <option value="admin">{t('user.role.admin')}</option>
               </Select>
             </FormGroup>
             
             <ModalActions>
               <CancelButton onClick={() => setShowAddModal(false)}>
-                Anuluj
+                {t('common.cancel')}
               </CancelButton>
               <SaveButton 
                 onClick={handleAddUser} 
                 disabled={!newUser.username || !newUser.email || !newUser.password}
               >
-                Dodaj użytkownika
+                {t('user.admin.add.button')}
               </SaveButton>
             </ModalActions>
           </Modal>
@@ -590,44 +607,44 @@ function UserAdminManager() {
         <ModalOverlay onClick={() => setShowEditModal(false)}>
           <Modal onClick={(e) => e.stopPropagation()}>
             <ModalHeader>
-              <ModalTitle>Edytuj użytkownika</ModalTitle>
+              <ModalTitle>{t('user.admin.modal.edit.title')}</ModalTitle>
               <ModalClose onClick={() => setShowEditModal(false)}>×</ModalClose>
             </ModalHeader>
             
             <FormGroup>
-              <Label>Nazwa użytkownika</Label>
+              <Label>{t('user.username')}</Label>
               <Input
                 type="text"
                 value={selectedUser.username}
                 onChange={(e) => setSelectedUser({ ...selectedUser, username: e.target.value })}
-                placeholder="Nazwa użytkownika"
+                placeholder={t('user.username.placeholder')}
               />
             </FormGroup>
             
             <FormGroup>
-              <Label>Email</Label>
+              <Label>{t('user.email')}</Label>
               <Input
                 type="email"
                 value={selectedUser.email}
                 onChange={(e) => setSelectedUser({ ...selectedUser, email: e.target.value })}
-                placeholder="Adres email"
+                placeholder={t('user.email.placeholder')}
               />
             </FormGroup>
             
             <FormGroup>
-              <Label>Rola</Label>
+              <Label>{t('user.role')}</Label>
               <Select
                 value={selectedUser.role}
                 onChange={(e) => setSelectedUser({ ...selectedUser, role: e.target.value })}
               >
-                <option value="user">Użytkownik</option>
-                <option value="moderator">Moderator</option>
-                <option value="admin">Administrator</option>
+                <option value="user">{t('user.role.user')}</option>
+                <option value="moderator">{t('user.role.moderator')}</option>
+                <option value="admin">{t('user.role.admin')}</option>
               </Select>
             </FormGroup>
 
             <FormGroup>
-              <Label>Status konta</Label>
+              <Label>{t('user.status.title')}</Label>
               <Select
                 value={selectedUser.is_active ? 'active' : 'inactive'}
                 onChange={(e) => setSelectedUser({ 
@@ -635,17 +652,17 @@ function UserAdminManager() {
                   is_active: e.target.value === 'active' 
                 })}
               >
-                <option value="active">Aktywny</option>
-                <option value="inactive">Nieaktywny</option>
+                <option value="active">{t('user.status.active')}</option>
+                <option value="inactive">{t('user.status.inactive')}</option>
               </Select>
             </FormGroup>
             
             <ModalActions>
               <CancelButton onClick={() => setShowEditModal(false)}>
-                Anuluj
+                {t('common.cancel')}
               </CancelButton>
               <SaveButton onClick={handleUpdateUser}>
-                Zapisz zmiany
+                {t('common.save')}
               </SaveButton>
             </ModalActions>
           </Modal>

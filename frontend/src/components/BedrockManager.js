@@ -10,6 +10,7 @@ import {
   FiSearch
 } from 'react-icons/fi';
 import api from '../services/api';
+import { useLanguage } from '../context/LanguageContext';
 
 const Container = styled.div`
   padding: 20px 30px;
@@ -98,7 +99,7 @@ const TableHeader = styled.thead`
 `;
 
 const TableHeaderCell = styled.th`
-
+  padding: 15px;
   text-align: left;
   font-weight: 600;
   color: #fff;
@@ -311,6 +312,7 @@ const EmptyState = styled.div`
 `;
 
 function BedrockManager() {
+  const { t } = useLanguage();
   const [versions, setVersions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -334,7 +336,7 @@ function BedrockManager() {
       setVersions(response.data);
     } catch (error) {
       console.error('Error fetching bedrock versions:', error);
-      setError('Failed to load versions');
+      setError(t('bedrock.versions.error.fetch'));
     } finally {
       setLoading(false);
     }
@@ -366,7 +368,7 @@ function BedrockManager() {
 
   const handleSaveVersion = async () => {
     if (!formData.version || !formData.download_url) {
-      setError('Please fill in all required fields');
+      setError(t('bedrock.versions.error.requiredFields'));
       return;
     }
 
@@ -380,12 +382,12 @@ function BedrockManager() {
       setShowModal(false);
       fetchVersions();
     } catch (error) {
-      setError(error.response?.data?.error || 'Failed to save version');
+      setError(error.response?.data?.error || t('bedrock.versions.error.save'));
     }
   };
 
   const handleDeleteVersion = async (version) => {
-    if (!window.confirm(`Are you sure you want to delete version ${version.version}?`)) {
+    if (!window.confirm(t('bedrock.versions.delete.confirm', { version: version.version }))) {
       return;
     }
 
@@ -393,7 +395,7 @@ function BedrockManager() {
       await api.delete(`/bedrock-versions/${version.id}`);
       fetchVersions();
     } catch (error) {
-      alert(error.response?.data?.error || 'Failed to delete version');
+      alert(error.response?.data?.error || t('bedrock.versions.error.delete'));
     }
   };
 
@@ -404,7 +406,7 @@ function BedrockManager() {
       });
       fetchVersions();
     } catch (error) {
-      alert('Failed to toggle version status');
+      alert(t('bedrock.versions.error.toggle'));
     }
   };
 
@@ -418,11 +420,11 @@ function BedrockManager() {
       <Container>
         <Header>
           <Title>
-            <FiPackage /> Zarządzanie Wersjami Bedrock
+            <FiPackage /> {t('nav.bedrock')}
           </Title>
         </Header>
         <Content>
-          <EmptyState>Loading versions...</EmptyState>
+          <EmptyState>{t('common.loading')}</EmptyState>
         </Content>
       </Container>
     );
@@ -435,30 +437,30 @@ function BedrockManager() {
           <FiSearch style={{ color: '#a4aabc', marginRight: '8px' }} />
           <input
             type="text"
-            placeholder="Szukaj wersji..."
+            placeholder={t('bedrock.versions.search.placeholder')}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </SearchBox>
         <AddButton onClick={handleAddVersion}>
-          <FiPlus /> Dodaj nową wersję
+          <FiPlus /> {t('bedrock.versions.add.button')}
         </AddButton>
       </AdminControls>
 
       <Content>
         {versions.length === 0 ? (
           <EmptyState>
-            No Bedrock versions found. Add your first version!
+            {t('bedrock.versions.empty.default')}
           </EmptyState>
         ) : (
           <Table>
             <TableHeader>
               <tr>
-                <TableHeaderCell>Wersja</TableHeaderCell>
-                <TableHeaderCell>URL do pobrania</TableHeaderCell>
-                <TableHeaderCell>Status</TableHeaderCell>
-                <TableHeaderCell>Data wydania</TableHeaderCell>
-                <TableHeaderCell style={{ textAlign: 'right' }}>Akcje</TableHeaderCell>
+                <TableHeaderCell>{t('bedrock.versions.table.version')}</TableHeaderCell>
+                <TableHeaderCell>{t('bedrock.versions.table.downloadUrl')}</TableHeaderCell>
+                <TableHeaderCell>{t('bedrock.versions.table.status')}</TableHeaderCell>
+                <TableHeaderCell>{t('bedrock.versions.table.releaseDate')}</TableHeaderCell>
+                <TableHeaderCell style={{ textAlign: 'right' }}>{t('bedrock.versions.table.actions')}</TableHeaderCell>
               </tr>
             </TableHeader>
             
@@ -481,7 +483,7 @@ function BedrockManager() {
                   <TableCell>
                     <StatusBadge $active={version.is_active}>
                       {version.is_active ? <FiCheckCircle /> : <FiXCircle />}
-                      {version.is_active ? 'Aktywna' : 'Nieaktywna'}
+                      {version.is_active ? t('bedrock.versions.status.active') : t('bedrock.versions.status.inactive')}
                     </StatusBadge>
                   </TableCell>
                   <TableCell>
@@ -494,21 +496,21 @@ function BedrockManager() {
                       onClick={() => handleToggleVersion(version)}
                     >
                       {version.is_active ? <FiXCircle /> : <FiCheckCircle />}
-                      {version.is_active ? 'Deaktywuj' : 'Aktywuj'}
+                      {version.is_active ? t('bedrock.versions.actions.deactivate') : t('bedrock.versions.actions.activate')}
                     </ActionButton>
                     
                     <ActionButton
                       $variant="edit"
                       onClick={() => handleEditVersion(version)}
                     >
-                      <FiEdit /> Edytuj
+                      <FiEdit /> {t('common.edit')}
                     </ActionButton>
                     
                     <ActionButton
                       $variant="delete"
                       onClick={() => handleDeleteVersion(version)}
                     >
-                      <FiTrash2 /> Usuń
+                      <FiTrash2 /> {t('common.delete')}
                     </ActionButton>
                   </ActionCell>
                 </TableRow>
@@ -523,7 +525,7 @@ function BedrockManager() {
         <Modal onClick={(e) => e.stopPropagation()}>
           <ModalHeader>
             <ModalTitle>
-              {editingVersion ? 'Edytuj Wersję' : 'Dodaj Nową Wersję'}
+              {editingVersion ? t('bedrock.versions.modal.edit.title') : t('bedrock.versions.modal.add.title')}
             </ModalTitle>
             <ModalClose onClick={() => setShowModal(false)}>×</ModalClose>
           </ModalHeader>
@@ -531,27 +533,27 @@ function BedrockManager() {
           {error && <ErrorMessage>{error}</ErrorMessage>}
           
           <FormGroup>
-            <Label>Numer Wersji *</Label>
+            <Label>{t('bedrock.versions.form.version')} *</Label>
             <Input
               type="text"
               value={formData.version}
               onChange={(e) => setFormData({ ...formData, version: e.target.value })}
-              placeholder="np. 1.20.15"
+              placeholder={t('bedrock.versions.form.versionPlaceholder')}
             />
           </FormGroup>
           
           <FormGroup>
-            <Label>URL do pobrania *</Label>
+            <Label>{t('bedrock.versions.form.downloadUrl')} *</Label>
             <Input
               type="url"
               value={formData.download_url}
               onChange={(e) => setFormData({ ...formData, download_url: e.target.value })}
-              placeholder="https://example.com/bedrock-server.zip"
+              placeholder={t('bedrock.versions.form.downloadUrlPlaceholder')}
             />
           </FormGroup>
           
           <FormGroup>
-            <Label>Data wydania</Label>
+            <Label>{t('bedrock.versions.form.releaseDate')}</Label>
             <Input
               type="date"
               value={formData.release_date}
@@ -567,16 +569,16 @@ function BedrockManager() {
                 onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
                 style={{ marginRight: '8px' }}
               />
-              Aktywna wersja
+              {t('bedrock.versions.form.active')}
             </Label>
           </FormGroup>
           
           <ModalActions>
             <CancelButton onClick={() => setShowModal(false)}>
-              Anuluj
+              {t('common.cancel')}
             </CancelButton>
             <SaveButton onClick={handleSaveVersion}>
-              {editingVersion ? 'Zapisz' : 'Dodaj'} Wersję
+              {editingVersion ? t('common.save') : t('bedrock.versions.actions.add')}
             </SaveButton>
           </ModalActions>
         </Modal>
