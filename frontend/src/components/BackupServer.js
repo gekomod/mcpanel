@@ -20,6 +20,7 @@ import {
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { toast } from 'react-toastify';
+import { useLanguage } from '../context/LanguageContext';
 
 const Container = styled.div`
   padding: 15px 20px;
@@ -328,6 +329,7 @@ const ModalActions = styled.div`
 function BackupServer() {
   const { serverId } = useParams();
   const navigate = useNavigate();
+  const { t } = useLanguage();
   const [backups, setBackups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [creatingBackup, setCreatingBackup] = useState(false);
@@ -344,12 +346,11 @@ function BackupServer() {
   const fetchBackups = async () => {
     try {
       const response = await api.get(`/servers/${serverId}/backups`);
-      // Poprawiona struktura - response.data.backups zamiast response.data
       setBackups(response.data.backups || []);
       setError(null);
     } catch (error) {
       console.error('Error fetching backups:', error);
-      setError('Failed to load backups');
+      setError(t('backup.error.fetch'));
     } finally {
       setLoading(false);
     }
@@ -361,13 +362,12 @@ function BackupServer() {
     setCreatingBackup(true);
     try {
       await api.post(`/servers/${serverId}/backups`);
-      toast.success('Backup creation started');
+      toast.success(t('backup.create.success'));
       
-      // Refresh backups list after a short delay
       setTimeout(fetchBackups, 2000);
     } catch (error) {
       console.error('Error creating backup:', error);
-      toast.error('Failed to create backup');
+      toast.error(t('backup.create.error'));
     } finally {
       setCreatingBackup(false);
     }
@@ -376,20 +376,19 @@ function BackupServer() {
   const handleRestoreBackup = async (backupName) => {
     if (restoringBackup) return;
 
-    if (!window.confirm(`Are you sure you want to restore backup "${backupName}"? This will replace the current world and server files.`)) {
+    if (!window.confirm(t('backup.restore.confirm', { name: backupName }))) {
       return;
     }
 
     setRestoringBackup(backupName);
     try {
       await api.post(`/servers/${serverId}/backups/${backupName}/restore`);
-      toast.success('Backup restoration started');
+      toast.success(t('backup.restore.success'));
       
-      // Refresh backups list after restoration
       setTimeout(fetchBackups, 2000);
     } catch (error) {
       console.error('Error restoring backup:', error);
-      toast.error('Failed to restore backup');
+      toast.error(t('backup.restore.error'));
     } finally {
       setRestoringBackup(null);
     }
@@ -400,15 +399,13 @@ function BackupServer() {
 
     setDeletingBackup(backupName);
     try {
-      // Użyj poprawnego endpointu DELETE
       await api.delete(`/servers/${serverId}/backups/${backupName}`);
-      toast.success('Backup deleted successfully');
+      toast.success(t('backup.delete.success'));
       
-      // Remove backup from local state
       setBackups(backups.filter(backup => backup.name !== backupName));
     } catch (error) {
       console.error('Error deleting backup:', error);
-      toast.error('Failed to delete backup');
+      toast.error(t('backup.delete.error'));
     } finally {
       setDeletingBackup(null);
       setShowDeleteModal(false);
@@ -430,13 +427,11 @@ function BackupServer() {
   };
 
   const formatDate = (dateString) => {
-    if (!dateString) return 'Unknown';
-    // Obsłuż różne formaty daty
+    if (!dateString) return t('common.unknown');
     if (typeof dateString === 'number') {
       return new Date(dateString * 1000).toLocaleString();
     }
     if (dateString.includes('_')) {
-      // Format timestamp: backup_servername_20241231_120000.zip
       return dateString.replace('backup_', '').replace(/_/g, ' ').replace('.zip', '');
     }
     return new Date(dateString).toLocaleString();
@@ -464,25 +459,25 @@ function BackupServer() {
     <Container>
       <NavTabs>
         <NavTab onClick={() => navigate(`/servers/${serverId}`)}>
-          <FiActivity /> Overview
+          <FiActivity /> {t('page.dashboard')}
         </NavTab>
         <NavTab onClick={() => navigate(`/servers/${serverId}/console`)}>
-          <FiTerminal /> Console
+          <FiTerminal /> {t('nav.console')}
         </NavTab>
         <NavTab onClick={() => navigate(`/servers/${serverId}/files`)}>
-          <FiFolder /> Files
+          <FiFolder /> {t('nav.files')}
         </NavTab>
         <NavTab onClick={() => navigate(`/servers/${serverId}/settings`)}>
-          <FiSettings /> Config
+          <FiSettings /> {t('page.server.settings')}
         </NavTab>
         <NavTab onClick={() => navigate(`/servers/${serverId}/plugins`)}>
-          <FiBox /> Plugins
+          <FiBox /> {t('nav.plugins')}
         </NavTab>
         <NavTab onClick={() => navigate(`/servers/${serverId}/users`)}>
-          <FiUser /> Users
+          <FiUser /> {t('nav.users')}
         </NavTab>
         <NavTab $active={true}>
-          <FiDownload /> Backups
+          <FiDownload /> {t('nav.backups')}
         </NavTab>
       </NavTabs>
 
@@ -491,7 +486,7 @@ function BackupServer() {
           <FiAlertCircle />
           {error}
           <ActionButton $variant="secondary" onClick={fetchBackups} style={{ marginLeft: 'auto' }}>
-            <FiRefreshCw /> Retry
+            <FiRefreshCw /> {t('common.retry')}
           </ActionButton>
         </ErrorMessage>
       )}
@@ -503,7 +498,7 @@ function BackupServer() {
           </StatIcon>
           <StatInfo>
             <StatValue>{backups.length}</StatValue>
-            <StatLabel>Total Backups</StatLabel>
+            <StatLabel>{t('backup.stats.total')}</StatLabel>
           </StatInfo>
         </StatCard>
 
@@ -513,7 +508,7 @@ function BackupServer() {
           </StatIcon>
           <StatInfo>
             <StatValue>{getCompletedBackups()}</StatValue>
-            <StatLabel>Completed</StatLabel>
+            <StatLabel>{t('backup.stats.completed')}</StatLabel>
           </StatInfo>
         </StatCard>
 
@@ -523,7 +518,7 @@ function BackupServer() {
           </StatIcon>
           <StatInfo>
             <StatValue>{formatFileSize(getTotalBackupSize())}</StatValue>
-            <StatLabel>Total Size</StatLabel>
+            <StatLabel>{t('backup.stats.totalSize')}</StatLabel>
           </StatInfo>
         </StatCard>
       </BackupStats>
@@ -534,31 +529,27 @@ function BackupServer() {
           disabled={creatingBackup}
         >
           {creatingBackup ? <LoadingSpinner /> : <FiPlus />}
-          Create New Backup
+          {t('backup.actions.create')}
         </ActionButton>
 
         <ActionButton $variant="secondary" onClick={fetchBackups}>
-          <FiRefreshCw /> Refresh List
-        </ActionButton>
-        
-        <ActionButton onClick={fetchBackups}>
-          <FiRefreshCw /> Refresh
+          <FiRefreshCw /> {t('backup.actions.refresh')}
         </ActionButton>
       </BackupActions>
 
       <BackupsList>
         <BackupsHeader>
-          <BackupsTitle>Available Backups</BackupsTitle>
+          <BackupsTitle>{t('backup.list.title')}</BackupsTitle>
           <div style={{ color: '#a4aabc', fontSize: '14px' }}>
-            {backups.length} backup{backups.length !== 1 ? 's' : ''}
+            {t('backup.list.count', { count: backups.length })}
           </div>
         </BackupsHeader>
 
         {backups.length === 0 ? (
           <EmptyState>
             <FiHardDrive size={48} style={{ marginBottom: '15px', opacity: 0.5 }} />
-            <h3 style={{ color: '#fff', marginBottom: '10px' }}>No Backups Found</h3>
-            <p>Create your first backup to get started.</p>
+            <h3 style={{ color: '#fff', marginBottom: '10px' }}>{t('backup.list.empty.title')}</h3>
+            <p>{t('backup.list.empty.description')}</p>
           </EmptyState>
         ) : (
           backups.map((backup) => (
@@ -569,7 +560,7 @@ function BackupServer() {
               </BackupName>
               
               <BackupSize>
-                {backup.size ? formatFileSize(backup.size) : 'Unknown'}
+                {backup.size ? formatFileSize(backup.size) : t('common.unknown')}
               </BackupSize>
               
               <BackupDate>
@@ -577,14 +568,14 @@ function BackupServer() {
               </BackupDate>
               
               <BackupStatus $status={backup.status || 'completed'}>
-                {backup.status || 'completed'}
+                {t(`backup.status.${backup.status || 'completed'}`)}
               </BackupStatus>
               
               <BackupActionsSmall>
                 <IconButton
                   onClick={() => handleRestoreBackup(backup.name)}
                   disabled={restoringBackup === backup.name || (backup.status && backup.status !== 'completed')}
-                  title="Restore Backup"
+                  title={t('backup.actions.restore')}
                 >
                   <FiUpload />
                 </IconButton>
@@ -592,7 +583,7 @@ function BackupServer() {
                 <IconButton
                   onClick={() => confirmDeleteBackup(backup.name)}
                   disabled={deletingBackup === backup.name}
-                  title="Delete Backup"
+                  title={t('backup.actions.delete')}
                 >
                   <FiTrash2 />
                 </IconButton>
@@ -602,14 +593,12 @@ function BackupServer() {
         )}
       </BackupsList>
 
-      {/* Delete Confirmation Modal */}
       {showDeleteModal && (
         <ModalOverlay onClick={() => setShowDeleteModal(false)}>
           <ModalContent onClick={(e) => e.stopPropagation()}>
-            <ModalTitle>Delete Backup</ModalTitle>
+            <ModalTitle>{t('backup.delete.confirm.title')}</ModalTitle>
             <p style={{ color: '#a4aabc', lineHeight: '1.5' }}>
-              Are you sure you want to delete backup "<strong>{backupToDelete}</strong>"? 
-              This action cannot be undone.
+              {t('backup.delete.confirm.message', { name: backupToDelete })}
             </p>
             
             <ModalActions>
@@ -620,7 +609,7 @@ function BackupServer() {
                   setBackupToDelete(null);
                 }}
               >
-                Cancel
+                {t('common.cancel')}
               </ActionButton>
               
               <ActionButton 
@@ -629,7 +618,7 @@ function BackupServer() {
                 disabled={deletingBackup}
               >
                 {deletingBackup ? <LoadingSpinner /> : <FiTrash2 />}
-                Delete
+                {t('backup.actions.delete')}
               </ActionButton>
             </ModalActions>
           </ModalContent>

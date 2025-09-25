@@ -256,6 +256,8 @@ export const translations = {
     'common.saving': 'Zapisywanie...',
     'common.save': 'Zapisz ustawienia',
     'common.edit': 'Edytuj',
+    'common.retry': 'Ponów',
+	'common.unknown': 'Nieznany',
 
 	// App info
 	'app.version': 'Wersja',
@@ -592,6 +594,43 @@ export const translations = {
     'user.manager.error.save.permissions': 'Błąd podczas zapisywania uprawnień',
     'user.manager.error.remove.permissions': 'Błąd podczas usuwania uprawnień',
     'user.manager.error.fetch.xuid': 'Nie można znaleźć XUID dla gamertag: {gamertag}',
+    
+    'backup.stats.total': 'Wszystkie kopie',
+	'backup.stats.completed': 'Ukończone',
+	'backup.stats.totalSize': 'Całkowity rozmiar',
+	'backup.stats.failed': 'Nieudane',
+
+	'backup.actions.create': 'Utwórz kopię',
+	'backup.actions.restore': 'Przywróć',
+	'backup.actions.delete': 'Usuń',
+	'backup.actions.refresh': 'Odśwież',
+
+	'backup.list.title': 'Dostępne kopie zapasowe',
+	'backup.list.count': '{count} kopii',
+	'backup.list.empty.title': 'Nie znaleziono kopii zapasowych',
+	'backup.list.empty.description': 'Utwórz pierwszą kopię zapasową aby rozpocząć.',
+
+	'backup.status.completed': 'Ukończono',
+	'backup.status.failed': 'Nieudane',
+	'backup.status.pending': 'W trakcie',
+	'backup.status.creating': 'Tworzenie...',
+
+	'backup.create.success': 'Rozpoczęto tworzenie kopii zapasowej',
+	'backup.create.error': 'Nie udało się utworzyć kopii zapasowej',
+
+	'backup.restore.confirm': 'Czy na pewno chcesz przywrócić kopię "{name}"? Zastąpi to obecny świat i pliki serwera.',
+	'backup.restore.success': 'Rozpoczęto przywracanie kopii zapasowej',
+	'backup.restore.error': 'Nie udało się przywrócić kopii zapasowej',
+
+	'backup.delete.confirm.title': 'Usuń kopię zapasową',
+	'backup.delete.confirm.message': 'Czy na pewno chcesz usunąć kopię zapasową "<strong>{name}</strong>"? Tej akcji nie można cofnąć.',
+	'backup.delete.success': 'Kopia zapasowa usunięta pomyślnie',
+	'backup.delete.error': 'Nie udało się usunąć kopii zapasowej',
+
+	'backup.error.fetch': 'Błąd podczas ładowania kopii zapasowych',
+
+	'backup.size.zero': '0 Bajtów',
+	'backup.size.units': ['Bajty', 'KB', 'MB', 'GB'],
   },
   
   en: {
@@ -851,6 +890,8 @@ export const translations = {
     'common.saving': 'Saving...',
     'common.save': 'Save Settings',
     'common.edit': 'Edit',
+    'common.retry': 'Retry',
+	'common.unknown': 'Unknown',
 
 	// App info
 	'app.version': 'Version',
@@ -1187,6 +1228,43 @@ export const translations = {
     'user.manager.error.save.permissions': 'Failed to save player permissions',
     'user.manager.error.remove.permissions': 'Failed to remove player permissions',
     'user.manager.error.fetch.xuid': 'Could not find XUID for gamertag: {gamertag}',
+    
+	'backup.stats.total': 'Total Backups',
+	'backup.stats.completed': 'Completed',
+	'backup.stats.totalSize': 'Total Size',
+	'backup.stats.failed': 'Failed',
+
+	'backup.actions.create': 'Create Backup',
+	'backup.actions.restore': 'Restore',
+	'backup.actions.delete': 'Delete',
+	'backup.actions.refresh': 'Refresh',
+
+	'backup.list.title': 'Available Backups',
+	'backup.list.count': '{count} backup{count, plural, one {} other {s}}',
+	'backup.list.empty.title': 'No Backups Found',
+	'backup.list.empty.description': 'Create your first backup to get started.',
+
+	'backup.status.completed': 'Completed',
+	'backup.status.failed': 'Failed',
+	'backup.status.pending': 'Pending',
+	'backup.status.creating': 'Creating...',
+
+	'backup.create.success': 'Backup creation started',
+	'backup.create.error': 'Failed to create backup',
+
+	'backup.restore.confirm': 'Are you sure you want to restore backup "{name}"? This will replace the current world and server files.',
+	'backup.restore.success': 'Backup restoration started',
+	'backup.restore.error': 'Failed to restore backup',
+
+	'backup.delete.confirm.title': 'Delete Backup',
+	'backup.delete.confirm.message': 'Are you sure you want to delete backup "<strong>{name}</strong>"? This action cannot be undone.',
+	'backup.delete.success': 'Backup deleted successfully',
+	'backup.delete.error': 'Failed to delete backup',
+
+	'backup.error.fetch': 'Failed to load backups',
+
+	'backup.size.zero': '0 Bytes',
+	'backup.size.units': ['Bytes', 'KB', 'MB', 'GB'],
   }
 };
 
