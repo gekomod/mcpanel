@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import styled from 'styled-components';
 import { FiX, FiUserPlus, FiEye, FiEyeOff } from 'react-icons/fi';
 import api from '../services/api';
+import { useLanguage } from '../context/LanguageContext';
 
 const DialogOverlay = styled.div`
   position: fixed;
@@ -178,6 +179,7 @@ function AddUserDialog({ isOpen, onClose, onUserAdded }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const { t } = useLanguage(); // Dodaj hook tłumaczeń
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -200,7 +202,7 @@ function AddUserDialog({ isOpen, onClose, onUserAdded }) {
     try {
       const response = await api.post('/auth/register', formData);
       
-      setSuccess('User created successfully!');
+      setSuccess(t('user.add.success') || 'User created successfully!');
       setFormData({ username: '', email: '', password: '' });
       
       // Callback to refresh users list
@@ -215,8 +217,9 @@ function AddUserDialog({ isOpen, onClose, onUserAdded }) {
       
     } catch (error) {
       console.error('Error creating user:', error);
-      const errorMessage = error.response?.data?.error || 'Failed to create user';
+      const errorMessage = error.response?.data?.error || t('user.add.error') || 'Failed to create user';
       setError(errorMessage);
+      toast.error(errorMessage); // Dodaj toast error
     } finally {
       setLoading(false);
     }
@@ -237,7 +240,7 @@ function AddUserDialog({ isOpen, onClose, onUserAdded }) {
         <DialogHeader>
           <DialogTitle>
             <FiUserPlus />
-            Add New User
+            {t('user.add.title') || 'Add New User'}
           </DialogTitle>
           <CloseButton onClick={handleClose}>
             <FiX />
@@ -246,7 +249,7 @@ function AddUserDialog({ isOpen, onClose, onUserAdded }) {
 
         <Form onSubmit={handleSubmit}>
           <FormGroup>
-            <Label htmlFor="username">Username *</Label>
+            <Label htmlFor="username">{t('user.username') || 'Username'} *</Label>
             <Input
               type="text"
               id="username"
@@ -255,12 +258,12 @@ function AddUserDialog({ isOpen, onClose, onUserAdded }) {
               onChange={handleInputChange}
               required
               disabled={loading}
-              placeholder="Enter username"
+              placeholder={t('user.username.placeholder') || 'Enter username'}
             />
           </FormGroup>
 
           <FormGroup>
-            <Label htmlFor="email">Email *</Label>
+            <Label htmlFor="email">{t('user.email') || 'Email'} *</Label>
             <Input
               type="email"
               id="email"
@@ -269,12 +272,12 @@ function AddUserDialog({ isOpen, onClose, onUserAdded }) {
               onChange={handleInputChange}
               required
               disabled={loading}
-              placeholder="user@example.com"
+              placeholder={t('user.email.placeholder') || 'user@example.com'}
             />
           </FormGroup>
 
           <FormGroup>
-            <Label htmlFor="password">Password *</Label>
+            <Label htmlFor="password">{t('user.password') || 'Password'} *</Label>
             <PasswordInputWrapper>
               <Input
                 type={showPassword ? 'text' : 'password'}
@@ -284,13 +287,14 @@ function AddUserDialog({ isOpen, onClose, onUserAdded }) {
                 onChange={handleInputChange}
                 required
                 disabled={loading}
-                placeholder="Enter password"
+                placeholder={t('user.password.placeholder') || 'Enter password'}
                 minLength="6"
               />
               <TogglePasswordButton
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
                 disabled={loading}
+                title={showPassword ? t('user.password.hide') || 'Hide password' : t('user.password.show') || 'Show password'}
               >
                 {showPassword ? <FiEyeOff /> : <FiEye />}
               </TogglePasswordButton>
@@ -306,16 +310,18 @@ function AddUserDialog({ isOpen, onClose, onUserAdded }) {
               onClick={handleClose}
               disabled={loading}
             >
-              <FiX /> Cancel
+              <FiX /> {t('common.cancel') || 'Cancel'}
             </Button>
             <Button
               type="submit"
               $variant="primary"
               disabled={loading || !formData.username || !formData.email || !formData.password}
             >
-              {loading ? 'Creating...' : (
+              {loading ? (
+                t('user.add.creating') || 'Creating...'
+              ) : (
                 <>
-                  <FiUserPlus /> Create User
+                  <FiUserPlus /> {t('user.add.create') || 'Create User'}
                 </>
               )}
             </Button>

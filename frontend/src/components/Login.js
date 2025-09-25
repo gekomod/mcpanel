@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import styled from 'styled-components';
 import { FiServer, FiLogIn } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
 import api from '../services/api';
 import { useNavigate } from 'react-router-dom';
 
@@ -154,6 +155,7 @@ function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
+  const { t } = useLanguage();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -170,7 +172,7 @@ function Login() {
       login(response.data.access_token, response.data.user);
       navigate('/dashboard');
     } catch (error) {
-      setError(error.response?.data?.error || 'Login failed');
+      setError(error.response?.data?.error || t('login.error'));
     } finally {
       setLoading(false);
     }
@@ -183,29 +185,29 @@ function Login() {
           <LogoIcon>
             <FiServer />
           </LogoIcon>
-          <Title>Minecraft Panel</Title>
-          <Subtitle>Sign in to manage your servers</Subtitle>
+          <Title>{t('app.name')}</Title>
+          <Subtitle>{t('login.subtitle')}</Subtitle>
         </Logo>
 
         <Form onSubmit={handleSubmit}>
           <FormGroup>
-            <Label>Username</Label>
+            <Label>{t('login.username')}</Label>
             <Input
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="Enter your username"
+              placeholder={t('login.username.placeholder')}
               required
             />
           </FormGroup>
 
           <FormGroup>
-            <Label>Password</Label>
+            <Label>{t('login.password')}</Label>
             <Input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter your password"
+              placeholder={t('login.password.placeholder')}
               required
             />
           </FormGroup>
@@ -214,12 +216,12 @@ function Login() {
 
           <Button type="submit" disabled={loading}>
             <FiLogIn />
-            {loading ? 'Signing in...' : 'Sign In'}
+            {loading ? t('login.loading') : t('login.button')}
           </Button>
         </Form>
 
         <CredentialsNote>
-          Default credentials: admin / admin
+          {t('login.credentials.note')}
         </CredentialsNote>
       </LoginCard>
     </LoginContainer>

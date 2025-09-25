@@ -10,6 +10,7 @@ import {
   FiRefreshCw
 } from 'react-icons/fi';
 import api from '../services/api';
+import { useLanguage } from '../context/LanguageContext';
 
 // Styled components with dark theme matching serwery.html
 const ModalOverlay = styled.div.attrs(props => ({
@@ -336,6 +337,7 @@ function AddServer({ isOpen, onClose, onServerAdded }) {
   const [loadingVersions, setLoadingVersions] = useState(false);
   const [checkingPort, setCheckingPort] = useState(false);
   const [portStatus, setPortStatus] = useState('unknown');
+  const { t } = useLanguage();
 
   useEffect(() => {
     if (isOpen) {
@@ -392,7 +394,8 @@ function AddServer({ isOpen, onClose, onServerAdded }) {
       
       setVersions(versionsData.slice(0, 20));
     } catch (error) {
-      setError('Failed to load versions');
+      const errorMsg = t('server.versions.error') || 'Failed to load versions';
+      setError(errorMsg);
       console.error('Error loading versions:', error);
     } finally {
       setLoadingVersions(false);
@@ -459,7 +462,8 @@ function AddServer({ isOpen, onClose, onServerAdded }) {
         setPortStatus('free');
       } else {
         setPortStatus('taken');
-        setError('Nie znaleziono wolnego portu w pobliżu. Spróbuj ręcznie.');
+        const errorMsg = t('server.port.not.found') || 'No available port found nearby. Try manually.';
+        setError(errorMsg);
       }
     } catch (error) {
       console.error('Error finding available port:', error);
@@ -481,17 +485,20 @@ function AddServer({ isOpen, onClose, onServerAdded }) {
     e.preventDefault();
     
     if (!serverName || !version) {
-      setError('Proszę wypełnić wszystkie wymagane pola');
+      const errorMsg = t('server.add.required') || 'Please fill all required fields';
+      setError(errorMsg);
       return;
     }
 
     if (portStatus === 'taken') {
-      setError('Port jest już zajęty. Znajdź wolny port przed kontynuacją.');
+      const errorMsg = t('server.port.taken') || 'Port is already taken. Find a free port before continuing.';
+      setError(errorMsg);
       return;
     }
 
     if (portStatus === 'checking') {
-      setError('Proszę poczekać na sprawdzenie portu');
+      const errorMsg = t('server.port.checking') || 'Please wait for port check';
+      setError(errorMsg);
       return;
     }
 
@@ -509,7 +516,8 @@ function AddServer({ isOpen, onClose, onServerAdded }) {
       onServerAdded(response.data);
       onClose();
     } catch (error) {
-      setError(error.response?.data?.error || 'Failed to create server');
+      const errorMsg = error.response?.data?.error || t('server.add.error') || 'Failed to create server';
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -522,7 +530,7 @@ function AddServer({ isOpen, onClose, onServerAdded }) {
       <Modal onClick={(e) => e.stopPropagation()}>
         <ModalHeader>
           <ModalTitle>
-            <FiPlus /> Dodaj nowy serwer
+            <FiPlus /> {t('server.add.title') || 'Add New Server'}
           </ModalTitle>
           <CloseButton onClick={onClose}>×</CloseButton>
         </ModalHeader>
@@ -531,7 +539,7 @@ function AddServer({ isOpen, onClose, onServerAdded }) {
           {error && <ErrorMessage>{error}</ErrorMessage>}
 
           <FormGroup>
-            <Label>Typ serwera</Label>
+            <Label>{t('server.type') || 'Server Type'}</Label>
             <ServerTypeSelector>
               <ServerTypeButton
                 type="button"
@@ -541,7 +549,7 @@ function AddServer({ isOpen, onClose, onServerAdded }) {
                 <ServerTypeIcon data-selected={serverType === 'java'}>
                   <FiCpu />
                 </ServerTypeIcon>
-                Java Edition
+                {t('server.type.java') || 'Java Edition'}
               </ServerTypeButton>
               
               <ServerTypeButton
@@ -552,24 +560,24 @@ function AddServer({ isOpen, onClose, onServerAdded }) {
                 <ServerTypeIcon data-selected={serverType === 'bedrock'}>
                   <FiHardDrive />
                 </ServerTypeIcon>
-                Bedrock Edition
+                {t('server.type.bedrock') || 'Bedrock Edition'}
               </ServerTypeButton>
             </ServerTypeSelector>
           </FormGroup>
 
           <FormGroup>
-            <Label>Nazwa serwera *</Label>
+            <Label>{t('server.name') || 'Server Name'} *</Label>
             <Input
               type="text"
               value={serverName}
               onChange={(e) => setServerName(e.target.value)}
-              placeholder="Nazwa twojego serwera"
+              placeholder={t('server.name.placeholder') || 'Your server name'}
               required
             />
           </FormGroup>
 
           <FormGroup>
-            <Label>Port *</Label>
+            <Label>{t('server.port') || 'Port'} *</Label>
             <PortControls>
               <Input
                 type="number"
@@ -584,28 +592,28 @@ function AddServer({ isOpen, onClose, onServerAdded }) {
                 type="button" 
                 onClick={findNextAvailablePort}
                 disabled={checkingPort}
-                title="Znajdź następny wolny port"
+                title={t('server.port.find') || 'Find next available port'}
               >
                 {checkingPort ? <LoadingSpinner /> : <FiRefreshCw />}
               </Button>
             </PortControls>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '5px' }}>
               <div style={{ fontSize: '0.8rem', color: '#a4aabc' }}>
-                Domyślny port: {serverType === 'java' ? '25565' : '19132'}
+                {t('server.port.default') || 'Default port'}: {serverType === 'java' ? '25565' : '19132'}
               </div>
               <PortStatus $status={portStatus}>
-                {portStatus === 'checking' && 'Sprawdzanie...'}
-                {portStatus === 'free' && 'Port wolny'}
-                {portStatus === 'taken' && 'Port zajęty'}
-                {portStatus === 'unknown' && 'Nie sprawdzono'}
+                {portStatus === 'checking' && (t('server.port.checking.status') || 'Checking...')}
+                {portStatus === 'free' && (t('server.port.free') || 'Port free')}
+                {portStatus === 'taken' && (t('server.port.taken.status') || 'Port taken')}
+                {portStatus === 'unknown' && (t('server.port.unknown') || 'Not checked')}
               </PortStatus>
             </div>
           </FormGroup>
 
           <FormGroup>
-            <Label>Wersja Minecraft *</Label>
+            <Label>{t('server.version') || 'Minecraft Version'} *</Label>
             {loadingVersions ? (
-              <LoadingText>Ładowanie wersji...</LoadingText>
+              <LoadingText>{t('server.versions.loading') || 'Loading versions...'}</LoadingText>
             ) : (
               <VersionGrid>
                 {versions.map((ver) => (
@@ -621,13 +629,13 @@ function AddServer({ isOpen, onClose, onServerAdded }) {
               </VersionGrid>
             )}
             <div style={{ fontSize: '0.8rem', color: '#a4aabc', marginTop: '5px' }}>
-              Wybrano: {version || 'Brak'}
+              {t('server.version.selected') || 'Selected'}: {version || (t('common.none') || 'None')}
             </div>
           </FormGroup>
 
           <ButtonGroup>
             <Button type="button" onClick={onClose}>
-              <FiX /> Anuluj
+              <FiX /> {t('common.cancel') || 'Cancel'}
             </Button>
             <Button 
               type="submit" 
@@ -635,7 +643,7 @@ function AddServer({ isOpen, onClose, onServerAdded }) {
               disabled={loading || portStatus === 'taken' || portStatus === 'checking'}
             >
               {loading ? <LoadingSpinner /> : <FiDownload />}
-              {loading ? 'Tworzenie...' : 'Utwórz serwer'}
+              {loading ? (t('server.add.creating') || 'Creating...') : (t('server.add.create') || 'Create Server')}
             </Button>
           </ButtonGroup>
         </Form>
@@ -643,5 +651,6 @@ function AddServer({ isOpen, onClose, onServerAdded }) {
     </ModalOverlay>
   );
 }
+
 
 export default AddServer;

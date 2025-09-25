@@ -30,6 +30,7 @@ export function AuthProvider({ children }) {
   const login = (token, userData) => {
     localStorage.setItem('access_token', token);
     localStorage.setItem('user', JSON.stringify(userData));
+    localStorage.setItem('preferred-language', userData.language);
     setUser(userData);
   };
 

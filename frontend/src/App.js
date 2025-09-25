@@ -18,6 +18,7 @@ import SettingsAdmin from './components/SettingsAdmin';
 import BackupServer from './components/BackupServer';
 import UserSettings from './components/UserSettings';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { LanguageProvider } from './context/LanguageContext';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import './App.css';
@@ -30,6 +31,7 @@ function ProtectedRoute({ children }) {
 function App() {
   return (
     <AuthProvider>
+     <LanguageProvider>
       <Router>
         <div className="App">
           <ToastContainer
@@ -76,6 +78,7 @@ function App() {
           </Routes>
         </div>
       </Router>
+     </LanguageProvider>
     </AuthProvider>
   );
 }

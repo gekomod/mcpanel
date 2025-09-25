@@ -31,6 +31,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import ProgressBar from './ProgressBar';
 import { toast } from 'react-toastify';
+import { useLanguage } from '../context/LanguageContext';
 
 const Container = styled.div`
   padding: 15px 20px;
@@ -665,6 +666,7 @@ const parseLogLine = (log) => {
 function ServerControl() {
   const { serverId } = useParams();
   const navigate = useNavigate();
+  const { t } = useLanguage();
   const [server, setServer] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -975,7 +977,7 @@ const startStatusPolling = (targetStatus) => {
       setDownloadProgress({
         status: 'error',
         progress: 0,
-        message: 'Pobieranie anulowane przez użytkownika'
+        message: t('dashboard.actions.stop.loading') || 'Pobieranie anulowane przez użytkownika'
       });
       
       try {
@@ -988,32 +990,32 @@ const startStatusPolling = (targetStatus) => {
       
     } catch (error) {
       console.error('Error cancelling download:', error);
-      alert('Failed to cancel download');
+      alert(t('dashboard.actions.stop.error') || 'Failed to cancel download');
     }
   };
 
   const handleCreateBackup = async () => {
     try {
       await api.post(`/servers/${serverId}/backups`);
-      toast.success('Backup created successfully');
+      toast.success(t('dashboard.backup.coming') || 'Backup created successfully');
       fetchBackups();
     } catch (error) {
       console.error('Error creating backup:', error);
-      toast.error('Failed to create backup');
+      toast.error(t('dashboard.delete.error') || 'Failed to create backup');
     }
   };
 
   const handleRestoreBackup = async (backupName) => {
-    if (!window.confirm(`Are you sure you want to restore backup "${backupName}"? This will replace the current world.`)) {
+    if (!window.confirm(t('dashboard.delete.confirm', { name: backupName }) || `Are you sure you want to restore backup "${backupName}"? This will replace the current world.`)) {
       return;
     }
 
     try {
       await api.post(`/servers/${serverId}/backups/${backupName}/restore`);
-      toast.success('Backup restored successfully');
+      toast.success(t('dashboard.add.server.success') || 'Backup restored successfully');
     } catch (error) {
       console.error('Error restoring backup:', error);
-      toast.error('Failed to restore backup');
+      toast.error(t('dashboard.delete.error') || 'Failed to restore backup');
     }
   };
 
@@ -1130,7 +1132,7 @@ useEffect(() => {
     
     try {
       await api.post(`/servers/${serverId}/install`);
-      toast.success('Rozpoczęto instalację serwera');
+      toast.success(t('server.add.success') || 'Rozpoczęto instalację serwera');
       
       // Rozpocznij śledzenie postępu instalacji
       startInstallationPolling();
@@ -1154,13 +1156,13 @@ useEffect(() => {
           setActionLoading(false);
           setCurrentAction(null);
           setHasFiles(true);
-          toast.success('Instalacja serwera zakończona pomyślnie');
+          toast.success(t('server.add.success') || 'Instalacja serwera zakończona pomyślnie');
           fetchServer(); // Odśwież dane serwera
         } else if (progress.status === 'error') {
           clearInterval(pollInterval);
           setActionLoading(false);
           setCurrentAction(null);
-          toast.error('Błąd podczas instalacji serwera');
+          toast.error(t('server.add.error') || 'Błąd podczas instalacji serwera');
         }
         
         // Aktualizuj postęp pobierania jeśli dostępny
@@ -1204,10 +1206,10 @@ useEffect(() => {
 	  if (!currentAction) return null;
 	  
 	  const messages = {
-		start: 'Trwa uruchamianie serwera, proszę czekać...',
-		install: 'Trwa instalacja serwera, proszę czekać...',
-		restart: 'Trwa restartowanie serwera, proszę czekać...',
-		stop: 'Trwa zatrzymywanie serwera, proszę czekać...'
+		start: t('dashboard.actions.start.loading') || 'Trwa uruchamianie serwera, proszę czekać...',
+		install: t('server.add.creating') || 'Trwa instalacja serwera, proszę czekać...',
+		restart: t('dashboard.actions.restart.loading') || 'Trwa restartowanie serwera, proszę czekać...',
+		stop: t('dashboard.actions.stop.loading') || 'Trwa zatrzymywanie serwera, proszę czekać...'
 	  };
 	  
 	  return messages[currentAction] || null;
@@ -1243,43 +1245,43 @@ useEffect(() => {
           $active={activeTab === 'overview'} 
           onClick={() => setActiveTab('overview')}
         >
-          <FiActivity /> Overview
+          <FiActivity /> {t('page.dashboard') || 'Overview'}
         </NavTab>
         <NavTab 
           $active={activeTab === 'console'} 
           onClick={() => navigate(`/servers/${serverId}/console`)}
         >
-          <FiTerminal /> Console
+          <FiTerminal /> {t('nav.console') || 'Console'}
         </NavTab>
         <NavTab 
           $active={activeTab === 'files'} 
           onClick={() => navigate(`/servers/${serverId}/files`)}
         >
-          <FiFolder /> Files
+          <FiFolder /> {t('page.files') || 'Files'}
         </NavTab>
         <NavTab 
           $active={activeTab === 'config'} 
           onClick={() => navigate(`/servers/${serverId}/settings`)}
         >
-          <FiSettings /> Config
+          <FiSettings /> {t('page.server.settings') || 'Config'}
         </NavTab>
         <NavTab 
           $active={activeTab === 'plugins'} 
           onClick={() => navigate(`/servers/${serverId}/plugins`)}
         >
-          <FiBox /> Plugins
+          <FiBox /> {t('page.plugins') || 'Plugins'}
         </NavTab>
         <NavTab 
           $active={activeTab === 'users'} 
           onClick={() => navigate(`/servers/${serverId}/users`)}
         >
-          <FiUser /> Users
+          <FiUser /> {t('page.server.users') || 'Users'}
         </NavTab>
         <NavTab 
           $active={activeTab === 'backups'} 
           onClick={() => navigate(`/servers/${serverId}/backups`)}
         >
-          <FiDownload /> Backups
+          <FiDownload /> {t('page.backups') || 'Backups'}
         </NavTab>
       </NavTabs>
       
@@ -1291,21 +1293,21 @@ useEffect(() => {
       <FiUsers />
     </PlayerIcon>
     <PlayerDetails>
-      <PlayerTitle>Gracze online</PlayerTitle>
+      <PlayerTitle>{t('dashboard.stats.players') || 'Gracze online'}</PlayerTitle>
       <PlayerCount>
         {playerStats ? playerStats.online : '0'}
         <PlayerMax> / {server.max_players || 20}</PlayerMax>
       </PlayerCount>
       {playerStats?.list && playerStats.list.length > 0 && (
         <div style={{ fontSize: '12px', color: '#a4aabc', marginTop: '5px' }}>
-          Online: {playerStats.list.join(', ')}
+          {t('server.players.onlineList') || 'Online'}: {playerStats.list.join(', ')}
         </div>
       )}
     </PlayerDetails>
   </PlayerInfo>
   <ServerStatusIndicator $online={playerStats && playerStats.online > 0}>
     <StatusDot $online={playerStats && playerStats.online > 0} />
-    {playerStats && playerStats.online > 0 ? 'Aktywni gracze' : 'Brak graczy'}
+    {playerStats && playerStats.online > 0 ? t('server.players.active') || 'Aktywni gracze' : t('server.players.none') || 'Brak graczy'}
   </ServerStatusIndicator>
 </PlayerStatus>
       )}
@@ -1327,7 +1329,7 @@ useEffect(() => {
 			<div>
 			  <div>{getActionMessage()}</div>
 			  <div style={{ fontSize: '12px', opacity: '0.8', marginTop: '5px' }}>
-				Status będzie automatycznie odświeżany...
+				{t('server.status.refreshing') || 'Status będzie automatycznie odświeżany...'}
 			  </div>
 			</div>
 		  </StatusMessage>
@@ -1341,7 +1343,7 @@ useEffect(() => {
             disabled={actionLoading || server.status === 'running'}
           >
             {actionLoading && currentAction === 'install' ? <LoadingSpinner /> : <FiDownload />}
-            Zainstaluj Serwer
+            {t('server.actions.install') || 'Zainstaluj Serwer'}
           </ActionButton>
         ) : (
           <ActionButton 
@@ -1350,7 +1352,7 @@ useEffect(() => {
             disabled={server.status === 'running' || actionLoading || (downloadProgress && downloadProgress.status !== 'complete')}
           >
             {actionLoading && currentAction === 'start' ? <LoadingSpinner /> : <FiPower />}
-            Uruchom Serwer
+            {t('dashboard.actions.start') || 'Uruchom Serwer'}
           </ActionButton>
         )}
         <ActionButton 
@@ -1359,14 +1361,14 @@ useEffect(() => {
           disabled={server.status === 'stopped' || actionLoading || !hasFiles}
         >
           {actionLoading && currentAction === 'restart' ? <LoadingSpinner /> : <FiRefreshCw />}
-          Restartuj Serwer
+          {t('dashboard.actions.restart') || 'Restartuj Serwer'}
         </ActionButton>
         <ActionButton 
           $variant="secondary" 
           onClick={() => navigate(`/servers/${serverId}/console`)} 
           disabled={server.status === 'stopped' || actionLoading || !hasFiles}
         >
-          <FiTerminal /> Konsola
+          <FiTerminal /> {t('nav.console') || 'Konsola'}
         </ActionButton>
         <ActionButton 
           $variant="danger" 
@@ -1374,7 +1376,7 @@ useEffect(() => {
           disabled={server.status === 'stopped' || actionLoading || !hasFiles}
         >
           {actionLoading && currentAction === 'stop' ? <LoadingSpinner /> : <FiStopCircle />}
-          Zatrzymaj Serwer
+          {t('dashboard.actions.stop') || 'Zatrzymaj Serwer'}
         </ActionButton>
       </ServerActions>
 
@@ -1385,12 +1387,12 @@ useEffect(() => {
               <ServerTitle>{server.name}</ServerTitle>
               <ServerStatus $status={server.status}>
                 <StatusIndicator $status={server.status} />
-                <span>{server.status === 'running' ? 'Online' : 'Offline'}</span>
+                <span>{server.status === 'running' ? t('dashboard.status.running') : t('dashboard.status.stopped')}</span>
               </ServerStatus>
             </ServerHeader>
             <ServerDetails>
               <DetailCard>
-                <DetailTitle>ADRES IP</DetailTitle>
+                <DetailTitle>{t('server.details.ip') || 'ADRES IP'}</DetailTitle>
                 <DetailValue>
                   <span>{server.ip || 'localhost'}:{server.port}</span>
                   <CopyButton onClick={() => copyToClipboard(`${server.ip || 'localhost'}:${server.port}`)}>
@@ -1399,22 +1401,22 @@ useEffect(() => {
                 </DetailValue>
               </DetailCard>
               <DetailCard>
-                <DetailTitle>WERSJA</DetailTitle>
+                <DetailTitle>{t('server.details.version') || 'WERSJA'}</DetailTitle>
                 <DetailValue>{server.version}</DetailValue>
               </DetailCard>
               <DetailCard>
-                <DetailTitle>OSTATNIA AKTYWNOŚĆ</DetailTitle>
+                <DetailTitle>{t('server.details.lastActivity') || 'OSTATNIA AKTYWNOŚĆ'}</DetailTitle>
                 <DetailValue>
                   {server.last_started 
                     ? new Date(server.last_started).toLocaleString() 
-                    : 'Nigdy'
+                    : t('common.never') || 'Nigdy'
                   }
                 </DetailValue>
               </DetailCard>
               <DetailCard>
-  <DetailTitle>PID PROCESU</DetailTitle>
+  <DetailTitle>{t('server.details.pid') || 'PID PROCESU'}</DetailTitle>
   <DetailValue>
-    {server.pid || server.process_id || 'N/A'}
+    {server.pid || server.process_id || t('common.none') || 'N/A'}
     {server.pid && (
       <CopyButton onClick={() => copyToClipboard(server.pid.toString())}>
         <FiCopy />
@@ -1423,7 +1425,7 @@ useEffect(() => {
   </DetailValue>
 </DetailCard>
               <DetailCard>
-                <DetailTitle>LOKALIZACJA</DetailTitle>
+                <DetailTitle>{t('server.details.location') || 'LOKALIZACJA'}</DetailTitle>
                 <DetailValue>{server.location || 'Europa (Frankfurt)'}</DetailValue>
               </DetailCard>
             </ServerDetails>
@@ -1431,25 +1433,25 @@ useEffect(() => {
 
           <InstanceContainer>
             <InstanceHeader>
-              <InstanceTitle>Aktywna Instancja</InstanceTitle>
+              <InstanceTitle>{t('server.instance.active') || 'Aktywna Instancja'}</InstanceTitle>
             </InstanceHeader>
             <InstanceDetails>
               <DetailCard>
-                <DetailTitle>NAZWA</DetailTitle>
+                <DetailTitle>{t('server.instance.name') || 'NAZWA'}</DetailTitle>
                 <DetailValue>{server.name}</DetailValue>
               </DetailCard>
               <DetailCard>
-                <DetailTitle>TYP</DetailTitle>
+                <DetailTitle>{t('server.instance.type') || 'TYP'}</DetailTitle>
                 <DetailValue>{server.type.toUpperCase()}</DetailValue>
               </DetailCard>
               <DetailCard>
-                <DetailTitle>WERSJA</DetailTitle>
+                <DetailTitle>{t('server.instance.version') || 'WERSJA'}</DetailTitle>
                 <DetailValue>{server.version}</DetailValue>
               </DetailCard>
               <DetailCard>
-  <DetailTitle>PID</DetailTitle>
+  <DetailTitle>{t('server.instance.pid') || 'PID'}</DetailTitle>
   <DetailValue>
-    {server.pid || server.process_id || 'Brak (serwer zatrzymany)'}
+    {server.pid || server.process_id || t('server.instance.stopped') || 'Brak (serwer zatrzymany)'}
   </DetailValue>
 </DetailCard>
             </InstanceDetails>
@@ -1457,23 +1459,23 @@ useEffect(() => {
 
           <QuickTasks>
             <TasksHeader>
-              <TasksTitle>Szybkie Zadania</TasksTitle>
+              <TasksTitle>{t('server.quickTasks.title') || 'Szybkie Zadania'}</TasksTitle>
             </TasksHeader>
 			<TaskButtons>
 			  <TaskButton onClick={handleCreateBackup} disabled={server.status === 'running'}>
-				<FiDownload /> Kopia zapasowa
+				<FiDownload /> {t('server.quickTasks.backup') || 'Kopia zapasowa'}
 			  </TaskButton>
 			  <TaskButton onClick={() => navigate(`/servers/${serverId}/backups`)}>
-                <FiDownload /> Backup Manager
+                <FiDownload /> {t('page.backups') || 'Backup Manager'}
               </TaskButton>
               <TaskButton onClick={() => navigate(`/servers/${serverId}/plugins`)}>
-                <FiBox /> Plugin Manager
+                <FiBox /> {t('server.quickTasks.plugins') || 'Plugin Manager'}
               </TaskButton>
-			  <TaskButton onClick={() => toast.info('Funkcja "Napraw serwer" jest w trakcie tworzenia')}>
-				<FaWrench /> Napraw serwer
+			  <TaskButton onClick={() => toast.info(t('server.quickTasks.repairComing') || 'Funkcja "Napraw serwer" jest w trakcie tworzenia')}>
+				<FaWrench /> {t('server.quickTasks.repair') || 'Napraw serwer'}
 			  </TaskButton>
 			  <TaskButton onClick={() => navigate(`/servers/${serverId}/users`)}>
-				<FiUsers /> Uprawnienia
+				<FiUsers /> {t('server.quickTasks.permissions') || 'Uprawnienia'}
 			  </TaskButton>
 			</TaskButtons>
           </QuickTasks>
@@ -1482,7 +1484,7 @@ useEffect(() => {
         <Column>
           <ConsoleContainer>
             <ConsoleHeader>
-              <ConsoleTitle>Konsola Serwera</ConsoleTitle>
+              <ConsoleTitle>{t('server.console.title') || 'Konsola Serwera'}</ConsoleTitle>
             </ConsoleHeader>
             
             <ConsoleTabs>
@@ -1490,25 +1492,25 @@ useEffect(() => {
                 $active={consoleFilter === 'ALL'} 
                 onClick={() => setConsoleFilter('ALL')}
               >
-                <FiTerminal /> All <TabBadge>{logCounts.ALL}</TabBadge>
+                <FiTerminal /> {t('server.console.all') || 'All'} <TabBadge>{logCounts.ALL}</TabBadge>
               </ConsoleTab>
               <ConsoleTab 
                 $active={consoleFilter === 'ERROR'} 
                 onClick={() => setConsoleFilter('ERROR')}
               >
-                <FiAlertCircle /> Errors <TabBadge $type="ERROR">{logCounts.ERROR}</TabBadge>
+                <FiAlertCircle /> {t('server.console.errors') || 'Errors'} <TabBadge $type="ERROR">{logCounts.ERROR}</TabBadge>
               </ConsoleTab>
               <ConsoleTab 
                 $active={consoleFilter === 'WARN'} 
                 onClick={() => setConsoleFilter('WARN')}
               >
-                <FiAlertTriangle /> Warnings <TabBadge $type="WARN">{logCounts.WARN}</TabBadge>
+                <FiAlertTriangle /> {t('server.console.warnings') || 'Warnings'} <TabBadge $type="WARN">{logCounts.WARN}</TabBadge>
               </ConsoleTab>
               <ConsoleTab 
                 $active={consoleFilter === 'INFO'} 
                 onClick={() => setConsoleFilter('INFO')}
               >
-                <FiInfo /> Info <TabBadge $type="INFO">{logCounts.INFO}</TabBadge>
+                <FiInfo /> {t('server.console.info') || 'Info'} <TabBadge $type="INFO">{logCounts.INFO}</TabBadge>
               </ConsoleTab>
             </ConsoleTabs>
             
@@ -1525,26 +1527,28 @@ useEffect(() => {
             <ConsoleInput>
               <input 
                 type="text" 
-                placeholder="Wpisz komendę..." 
+                placeholder={t('server.console.placeholder') || "Wpisz komendę..."} 
                 value={consoleInput}
                 onChange={(e) => setConsoleInput(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && handleConsoleSubmit()}
                 disabled={server.status !== 'running'}
               />
-              <button onClick={handleConsoleSubmit} disabled={server.status !== 'running'}>Wyślij</button>
+              <button onClick={handleConsoleSubmit} disabled={server.status !== 'running'}>
+                {t('server.console.send') || 'Wyślij'}
+              </button>
             </ConsoleInput>
           </ConsoleContainer>
 
           <UsageContainer>
             <UsageHeader>
-              <UsageTitle>Zasoby</UsageTitle>
+              <UsageTitle>{t('server.resources.title') || 'Zasoby'}</UsageTitle>
             </UsageHeader>
 <UsageMetrics>
   <MetricCard>
     <MetricHeader>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
         <MetricName style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: '100px' }}>
-          <span style={{ color: '#807bc3' }}>•</span> CPU
+          <span style={{ color: '#807bc3' }}>•</span> {t('server.resources.cpu') || 'CPU'}
         </MetricName>
         <MetricValue style={{ color: '#807bc3', minWidth: '40px' }}>
           {performanceStats ? `${performanceStats.cpu_percent}%` : '0%'}
@@ -1563,7 +1567,7 @@ useEffect(() => {
     <MetricHeader>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
         <MetricName style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: '100px' }}>
-          <span style={{ color: '#3881fc' }}>•</span> RAM
+          <span style={{ color: '#3881fc' }}>•</span> {t('server.resources.ram') || 'RAM'}
         </MetricName>
         <MetricValue style={{ color: '#3881fc', minWidth: '40px' }}>
           {performanceStats ? `${performanceStats.memory_percent}%` : '0%'}
@@ -1582,7 +1586,7 @@ useEffect(() => {
     <MetricHeader>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
         <MetricName style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: '100px' }}>
-          <span style={{ color: '#fb6158' }}>•</span> DYSK
+          <span style={{ color: '#fb6158' }}>•</span> {t('server.resources.disk') || 'DYSK'}
         </MetricName>
         <MetricValue style={{ color: '#fb6158', minWidth: 'auto', fontSize: '14px' }}>
           {performanceStats && discStats !== undefined && performanceStats.disk_total !== undefined 
@@ -1607,7 +1611,7 @@ useEffect(() => {
       </ContentLayout>
 
       <Footer>
-        © 2024 Minecraft Server Panel | Wersja 1.0.0
+        © 2024 Minecraft Server Panel | {t('app.version') || 'Wersja'} 1.0.0
       </Footer>
     </Container>
   );

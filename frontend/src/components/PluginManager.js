@@ -29,6 +29,7 @@ import {
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../services/api';
+import { useLanguage } from '../context/LanguageContext';
 
 const Container = styled.div`
   padding: 15px 20px;
@@ -454,18 +455,19 @@ const SmallIcon = styled.span`
 
 // Kategorie dostępne w systemie
 const CATEGORIES = [
-  { value: 'all', label: 'All Addons', icon: <FiPackage /> },
-  { value: 'plugin', label: 'Plugins', icon: <FiBox /> },
-  { value: 'addon', label: 'Addons', icon: <FiLayers /> },
-  { value: 'script', label: 'Scripts', icon: <FiCode /> },
-  { value: 'worlds', label: 'Worlds', icon: <FiGlobe /> },
-  { value: 'resourcepack', label: 'Resource Packs', icon: <FiDownload /> },
-  { value: 'behaviorpack', label: 'Behavior Packs', icon: <FiCpu /> }
+  { value: 'all', label: 'plugin.manager.category.all', icon: <FiPackage /> },
+  { value: 'plugin', label: 'plugin.manager.category.plugin', icon: <FiBox /> },
+  { value: 'addon', label: 'plugin.manager.category.addon', icon: <FiLayers /> },
+  { value: 'script', label: 'plugin.manager.category.script', icon: <FiCode /> },
+  { value: 'worlds', label: 'plugin.manager.category.worlds', icon: <FiGlobe /> },
+  { value: 'resourcepack', label: 'plugin.manager.category.resourcepack', icon: <FiDownload /> },
+  { value: 'behaviorpack', label: 'plugin.manager.category.behaviorpack', icon: <FiCpu /> }
 ];
 
 function PluginManager() {
   const { serverId } = useParams();
   const navigate = useNavigate();
+  const { t } = useLanguage();
   const [server, setServer] = useState(null);
   const [activeTab, setActiveTab] = useState('marketplace');
   const [searchTerm, setSearchTerm] = useState('');
@@ -489,7 +491,7 @@ function PluginManager() {
       setServer(response.data);
     } catch (error) {
       console.error('Error fetching server:', error);
-      setError('Failed to load server information');
+      setError(t('plugin.manager.error.server'));
     }
   };
 
@@ -506,7 +508,7 @@ function PluginManager() {
       
     } catch (error) {
       console.error('Error fetching addons:', error);
-      setError('Failed to load addons from database');
+      setError(t('plugin.manager.error.fetch'));
     } finally {
       setLoading(false);
     }
@@ -545,11 +547,15 @@ function PluginManager() {
       
       // Sprawdź kompatybilność
       if (!isAddonCompatible(addon)) {
-        toast.warning(`This ${addon.type} is for Minecraft ${addon.minecraft_version}, but your server is running ${server.version}`);
+        toast.warning(t('plugin.manager.compatibility.title', {
+          type: addon.type,
+          addonVersion: addon.minecraft_version,
+          serverVersion: server.version
+        }));
         return;
       }
       
-      toast.success(`Installing ${addon.name}...`);
+      toast.success(t('plugin.manager.installation.start', { name: addon.name }));
       
       // Wywołaj endpoint instalacji
       await api.post(`/servers/${serverId}/addons/${addon.id}/install`);
@@ -557,18 +563,21 @@ function PluginManager() {
       // Odśwież listę zainstalowanych
       await fetchInstalledAddons();
       
-      toast.success(`${addon.name} ${addon.type === 'worlds' ? 'world' : addon.type} installed successfully!`);
+      toast.success(t('plugin.manager.installation.success', { 
+        name: addon.name, 
+        type: addon.type === 'worlds' ? t('plugin.manager.addon.type.worlds') : t(`plugin.manager.addon.type.${addon.type}`)
+      }));
       
     } catch (error) {
       console.error('Error installing addon:', error);
-      toast.error(error.response?.data?.error || `Failed to install ${addon.name}`);
+      toast.error(error.response?.data?.error || t('plugin.manager.installation.error', { name: addon.name }));
     } finally {
       setInstalling(prev => ({ ...prev, [addon.id]: false }));
     }
   };
 
   const handleUninstallAddon = async (addonId) => {
-    if (!window.confirm('Are you sure you want to uninstall this addon?')) {
+    if (!window.confirm(t('plugin.manager.uninstallation.confirm'))) {
       return;
     }
     
@@ -581,11 +590,11 @@ function PluginManager() {
       // Odśwież listę zainstalowanych
       await fetchInstalledAddons();
       
-      toast.success('Addon uninstalled successfully');
+      toast.success(t('plugin.manager.uninstallation.success'));
       
     } catch (error) {
       console.error('Error uninstalling addon:', error);
-      toast.error(error.response?.data?.error || 'Failed to uninstall addon');
+      toast.error(error.response?.data?.error || t('plugin.manager.uninstallation.error'));
     } finally {
       setInstalling(prev => ({ ...prev, [addonId]: false }));
     }
@@ -601,11 +610,11 @@ function PluginManager() {
       // Odśwież listę zainstalowanych
       await fetchInstalledAddons();
       
-      toast.success(response.data.message);
+      toast.success(response.data.message || t('plugin.manager.toggle.success'));
       
     } catch (error) {
       console.error('Error toggling addon:', error);
-      toast.error(error.response?.data?.error || 'Failed to update addon status');
+      toast.error(error.response?.data?.error || t('plugin.manager.toggle.error'));
     } finally {
       setInstalling(prev => ({ ...prev, [addonId]: false }));
     }
@@ -617,14 +626,14 @@ function PluginManager() {
       if (addon.behavior_pack_url) {
         links.push({ 
           url: addon.behavior_pack_url, 
-          label: '📦 Behavior Pack',
+          label: t('plugin.manager.bedrock.behaviorPack'),
           type: 'behavior' 
         });
       }
       if (addon.resource_pack_url) {
         links.push({ 
           url: addon.resource_pack_url, 
-          label: '🎨 Resource Pack',
+          label: t('plugin.manager.bedrock.resourcePack'),
           type: 'resource' 
         });
       }
@@ -633,7 +642,7 @@ function PluginManager() {
     // Dla pluginów i skryptów użyj download_url
     return [{ 
       url: addon.download_url, 
-      label: '📥 Download',
+      label: t('plugin.manager.action.download'),
       type: 'download' 
     }];
   };
@@ -652,7 +661,7 @@ function PluginManager() {
         if (links.length > 0) {
           downloadUrl = links[0].url;
         } else {
-          toast.error('No download links available');
+          toast.error(t('plugin.manager.download.noLinks'));
           return;
         }
       }
@@ -662,9 +671,9 @@ function PluginManager() {
     
     if (downloadUrl) {
       window.open(downloadUrl, '_blank');
-      toast.info(`Downloading ${addon.name}`);
+      toast.info(t('plugin.manager.download.start', { name: addon.name }));
     } else {
-      toast.error('Download URL not available');
+      toast.error(t('plugin.manager.download.error'));
     }
   };
 
@@ -673,6 +682,20 @@ function PluginManager() {
       ...prev,
       [addonId]: !prev[addonId]
     }));
+  };
+
+  const getAddonPackInfo = (addon) => {
+    if (addon.type === 'addon') {
+      if (addon.behavior_pack_url && addon.resource_pack_url) {
+        return t('plugin.manager.bedrock.bothPacks');
+      } else if (addon.behavior_pack_url) {
+        return t('plugin.manager.bedrock.behaviorOnly');
+      } else if (addon.resource_pack_url) {
+        return t('plugin.manager.bedrock.resourceOnly');
+      }
+      return t('plugin.manager.bedrock.noPacksAvailable');
+    }
+    return '';
   };
 
   // Filtrowanie addonów na podstawie wyszukiwania i kategorii
@@ -707,53 +730,52 @@ function PluginManager() {
           $active={false} 
           onClick={() => navigate(`/servers/${serverId}`)}
         >
-          <SmallIcon><FiActivity /></SmallIcon> Overview
+          <SmallIcon><FiActivity /></SmallIcon> {t('plugin.manager.overview')}
         </NavTab>
         <NavTab 
           $active={false} 
           onClick={() => navigate(`/servers/${serverId}/console`)}
         >
-          <SmallIcon><FiTerminal /></SmallIcon> Console
+          <SmallIcon><FiTerminal /></SmallIcon> {t('plugin.manager.console')}
         </NavTab>
         <NavTab 
           $active={false} 
           onClick={() => navigate(`/servers/${serverId}/files`)}
         >
-          <SmallIcon><FiFolder /></SmallIcon> Files
+          <SmallIcon><FiFolder /></SmallIcon> {t('plugin.manager.files')}
         </NavTab>
         <NavTab 
           $active={false} 
           onClick={() => navigate(`/servers/${serverId}/settings`)}
         >
-          <SmallIcon><FiSettings /></SmallIcon> Config
+          <SmallIcon><FiSettings /></SmallIcon> {t('plugin.manager.config')}
         </NavTab>
         <NavTab 
           $active={true}
         >
-          <SmallIcon><FiBox /></SmallIcon> Plugins
+          <SmallIcon><FiBox /></SmallIcon> {t('plugin.manager.plugins')}
         </NavTab>
-                <NavTab 
-          $active={activeTab === 'users'} 
+        <NavTab 
+          $active={false} 
           onClick={() => navigate(`/servers/${serverId}/users`)}
         >
-          <FiUser /> Users
+          <FiUser /> {t('plugin.manager.users')}
         </NavTab>
-        
-          <NavTab 
-          $active={activeTab === 'backups'} 
+        <NavTab 
+          $active={false} 
           onClick={() => navigate(`/servers/${serverId}/backups`)}
         >
-          <FiDownload /> Backups
-          </NavTab>
+          <FiDownload /> {t('plugin.manager.backups')}
+        </NavTab>
       </NavTabs>
 
       <Header>
         <Title>
-          <SmallIcon><FiPackage /></SmallIcon> Addon Manager - {server?.name}
+          <SmallIcon><FiPackage /></SmallIcon> {t('plugin.manager.title')} - {server?.name}
           {server && (
             <ServerTypeBadge $type={server.type}>
               {server.type === 'java' ? <SmallIcon><FiCpu /></SmallIcon> : <SmallIcon><FiHardDrive /></SmallIcon>}
-              {server.type.toUpperCase()}
+              {t(`plugin.manager.server.type.${server.type}`)}
             </ServerTypeBadge>
           )}
         </Title>
@@ -763,7 +785,7 @@ function PluginManager() {
             <SearchIcon />
             <SearchInput
               type="text"
-              placeholder="Search addons..."
+              placeholder={t('plugin.manager.search.placeholder')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -775,13 +797,13 @@ function PluginManager() {
           >
             {CATEGORIES.map(category => (
               <option key={category.value} value={category.value}>
-                {category.label}
+                {t(category.label)}
               </option>
             ))}
           </CategoryFilter>
           
           <RefreshButton onClick={fetchAddons} disabled={loading}>
-            <SmallIcon><FiRefreshCw /></SmallIcon> Refresh
+            <SmallIcon><FiRefreshCw /></SmallIcon> {t('plugin.manager.refresh')}
           </RefreshButton>
         </HeaderActions>
       </Header>
@@ -798,13 +820,13 @@ function PluginManager() {
           $active={activeTab === 'marketplace'} 
           onClick={() => setActiveTab('marketplace')}
         >
-          Marketplace
+          {t('plugin.manager.tab.marketplace')}
         </Tab>
         <Tab 
           $active={activeTab === 'installed'} 
           onClick={() => setActiveTab('installed')}
         >
-          Installed Addons ({installedAddons.length})
+          {t('plugin.manager.tab.installed', { count: installedAddons.length })}
         </Tab>
       </Tabs>
 
@@ -812,7 +834,7 @@ function PluginManager() {
         {loading ? (
           <div style={{ textAlign: 'center', padding: '30px', color: '#a4aabc' }}>
             <LoadingSpinner style={{ marginRight: '8px' }} />
-            Loading addons...
+            {t('plugin.manager.loading')}
           </div>
         ) : activeTab === 'installed' ? (
           <>
@@ -839,18 +861,18 @@ function PluginManager() {
                   <PluginHeader>
                     <PluginName>{addon.name}</PluginName>
                     <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                      <PluginVersion>v{addon.version}</PluginVersion>
-                      <PluginType $type={addon.type}>{addon.type}</PluginType>
+                      <PluginVersion>{t('plugin.manager.addon.version', { version: addon.version })}</PluginVersion>
+                      <PluginType $type={addon.type}>{t(`plugin.manager.addon.type.${addon.type}`)}</PluginType>
                     </div>
                   </PluginHeader>
                   
                   <PluginDescription>
-                    {addon.description || 'No description available'}
+                    {addon.description || t('plugin.manager.addon.noDescription')}
                   </PluginDescription>
                   
                   <PluginMeta>
-                    <PluginAuthor>By {addon.author || 'Unknown'}</PluginAuthor>
-                    <span>MC {addon.minecraft_version}</span>
+                    <PluginAuthor>{t('plugin.manager.addon.author', { author: addon.author || t('plugin.manager.addon.author.unknown') })}</PluginAuthor>
+                    <span>{t('plugin.manager.addon.minecraft.version', { version: addon.minecraft_version })}</span>
                   </PluginMeta>
                   
                   <PluginMeta>
@@ -859,7 +881,7 @@ function PluginManager() {
                       fontWeight: '500',
                       fontSize: '0.75rem'
                     }}>
-                      {addon.enabled ? 'Enabled' : 'Disabled'}
+                      {addon.enabled ? t('plugin.manager.status.enabled') : t('plugin.manager.status.disabled')}
                     </span>
                   </PluginMeta>
                   
@@ -877,7 +899,7 @@ function PluginManager() {
                         ) : (
                           <SmallIcon><FiCheckCircle /></SmallIcon>
                         )}
-                        {addon.enabled ? 'Disable' : 'Enable'}
+                        {addon.enabled ? t('plugin.manager.action.disable') : t('plugin.manager.action.enable')}
                       </ActionButton>
                     )}
 
@@ -891,29 +913,29 @@ function PluginManager() {
                       ) : (
                         <SmallIcon><FiTrash2 /></SmallIcon>
                       )}
-                      Uninstall
+                      {t('plugin.manager.action.uninstall')}
                     </ActionButton>
                     
                     <ActionButton 
                       $variant="download"
                       onClick={() => handleDownloadAddon(addon)}
-                      title={addon.type === 'addon' ? 'Download main file' : 'Download'}
+                      title={addon.type === 'addon' ? t('plugin.manager.action.download') : t('plugin.manager.action.download')}
                     >
-                      <SmallIcon><FiExternalLink /></SmallIcon> Download
+                      <SmallIcon><FiExternalLink /></SmallIcon> {t('plugin.manager.action.download')}
                     </ActionButton>
                     
                     <ExpandButton onClick={() => toggleExpandAddon(addon.id)}>
                       <SmallIcon>
                         {expandedAddons[addon.id] ? <FiChevronUp /> : <FiChevronDown />}
                       </SmallIcon>
-                      Details
+                      {t('plugin.manager.action.details')}
                     </ExpandButton>
                   </PluginActions>
                   
                   <ExpandableSection $expanded={expandedAddons[addon.id]}>
                     {addon.type === 'addon' && (
                       <DownloadLinks>
-                        <strong style={{ color: '#fff', fontSize: '0.8rem' }}>Bedrock Addon Files:</strong>
+                        <strong style={{ color: '#fff', fontSize: '0.8rem' }}>{t('plugin.manager.bedrock.files')}</strong>
                         {getDownloadLinks(addon).map((link, index) => (
                           <DownloadLink 
                             key={index} 
@@ -931,7 +953,7 @@ function PluginManager() {
                         ))}
                         {getDownloadLinks(addon).length === 0 && (
                           <div style={{ color: '#ef4444', fontSize: '0.7rem' }}>
-                            No pack files available
+                            {t('plugin.manager.bedrock.noPacks')}
                           </div>
                         )}
                       </DownloadLinks>
@@ -944,8 +966,8 @@ function PluginManager() {
             {filteredInstalledAddons.length === 0 && (
               <div style={{ textAlign: 'center', padding: '30px', color: '#a4aabc' }}>
                 <SmallIcon><FiPackage size={36} style={{ marginBottom: '10px', opacity: 0.5 }} /></SmallIcon>
-                <h3>No Addons Installed</h3>
-                <p style={{ fontSize: '0.9rem' }}>Browse the marketplace to install addons, plugins, and scripts for your server.</p>
+                <h3>{t('plugin.manager.installed.empty.title')}</h3>
+                <p style={{ fontSize: '0.9rem' }}>{t('plugin.manager.installed.empty.description')}</p>
               </div>
             )}
           </>
@@ -974,24 +996,22 @@ function PluginManager() {
                   <PluginHeader>
                     <PluginName>{addon.name}</PluginName>
                     <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                      <PluginVersion>v{addon.version}</PluginVersion>
-                      <PluginType $type={addon.type}>{addon.type}</PluginType>
+                      <PluginVersion>{t('plugin.manager.addon.version', { version: addon.version })}</PluginVersion>
+                      <PluginType $type={addon.type}>{t(`plugin.manager.addon.type.${addon.type}`)}</PluginType>
                     </div>
                   </PluginHeader>
                   
                   <PluginDescription>
-                    {addon.description || 'No description available'}
+                    {addon.description || t('plugin.manager.addon.noDescription')}
                   </PluginDescription>
                   
                   <PluginMeta>
-                    <PluginAuthor>By {addon.author || 'Unknown'}</PluginAuthor>
+                    <PluginAuthor>{t('plugin.manager.addon.author', { author: addon.author || t('plugin.manager.addon.author.unknown') })}</PluginAuthor>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                      <span>MC {addon.minecraft_version}</span>
+                      <span>{t('plugin.manager.addon.minecraft.version', { version: addon.minecraft_version })}</span>
                       {addon.type === 'addon' && (
                         <span style={{ fontSize: '0.7rem', color: '#a4aabc' }}>
-                          {addon.behavior_pack_url && addon.resource_pack_url ? 'Both packs' : 
-                          addon.behavior_pack_url ? 'Behavior pack only' : 
-                          addon.resource_pack_url ? 'Resource pack only' : 'No packs'}
+                          {getAddonPackInfo(addon)}
                         </span>
                       )}
                     </div>
@@ -1006,7 +1026,7 @@ function PluginManager() {
                       fontSize: '0.7rem',
                       marginBottom: '10px'
                     }}>
-                      ⚠️ Incompatible with server version {server?.version}
+                      {t('plugin.manager.compatibility.warning', { version: server?.version })}
                     </div>
                   )}
                   
@@ -1015,40 +1035,45 @@ function PluginManager() {
                       $variant="install"
                       onClick={() => handleInstallAddon(addon)}
                       disabled={installing[addon.id] || !isAddonCompatible(addon)}
-                      title={!isAddonCompatible(addon) ? `Incompatible with server version ${server?.version}` : ''}
+                      title={!isAddonCompatible(addon) ? 
+                        t('plugin.manager.compatibility.title', {
+                          type: addon.type,
+                          addonVersion: addon.minecraft_version,
+                          serverVersion: server?.version
+                        }) : ''}
                     >
                       {installing[addon.id] ? (
                         <LoadingSpinner />
                       ) : (
                         <SmallIcon><FiDownload /></SmallIcon>
                       )}
-                      {installing[addon.id] ? 'Installing...' : 'Install'}
+                      {installing[addon.id] ? t('plugin.manager.action.installing') : t('plugin.manager.action.install')}
                     </ActionButton>
                     
                     <ActionButton 
                       $variant="download"
                       onClick={() => handleDownloadAddon(addon)}
                     >
-                      <SmallIcon><FiExternalLink /></SmallIcon> Download
+                      <SmallIcon><FiExternalLink /></SmallIcon> {t('plugin.manager.action.download')}
                     </ActionButton>
                     
                     <ExpandButton onClick={() => toggleExpandAddon(addon.id)}>
                       <SmallIcon>
                         {expandedAddons[addon.id] ? <FiChevronUp /> : <FiChevronDown />}
                       </SmallIcon>
-                      Details
+                      {t('plugin.manager.action.details')}
                     </ExpandButton>
                   </PluginActions>
                   
                   <ExpandableSection $expanded={expandedAddons[addon.id]}>
                     {addon.type === 'addon' && (
                       <DownloadLinks>
-                        <strong style={{ color: '#fff', fontSize: '0.8rem' }}>Bedrock Addon Files:</strong>
+                        <strong style={{ color: '#fff', fontSize: '0.8rem' }}>{t('plugin.manager.bedrock.files')}</strong>
                         <DownloadLink href={addon.behavior_pack_url} target="_blank" rel="noopener noreferrer">
-                          📦 Behavior Pack
+                          {t('plugin.manager.bedrock.behaviorPack')}
                         </DownloadLink>
                         <DownloadLink href={addon.resource_pack_url} target="_blank" rel="noopener noreferrer">
-                          🎨 Resource Pack
+                          {t('plugin.manager.bedrock.resourcePack')}
                         </DownloadLink>
                       </DownloadLinks>
                     )}
@@ -1062,14 +1087,14 @@ function PluginManager() {
                 {searchTerm || selectedCategory !== 'all' ? (
                   <>
                     <SmallIcon><FiSearch size={36} style={{ marginBottom: '10px', opacity: 0.5 }} /></SmallIcon>
-                    <h3>No Addons Found</h3>
-                    <p style={{ fontSize: '0.9rem' }}>No addons match your search criteria. Try a different search term or category.</p>
+                    <h3>{t('plugin.manager.marketplace.empty.search.title')}</h3>
+                    <p style={{ fontSize: '0.9rem' }}>{t('plugin.manager.marketplace.empty.search.description')}</p>
                   </>
                 ) : (
                   <>
                     <SmallIcon><FiPlus size={36} style={{ marginBottom: '10px', opacity: 0.5 }} /></SmallIcon>
-                    <h3>No Addons Available</h3>
-                    <p style={{ fontSize: '0.9rem' }}>No addons are currently available in the marketplace.</p>
+                    <h3>{t('plugin.manager.marketplace.empty.default.title')}</h3>
+                    <p style={{ fontSize: '0.9rem' }}>{t('plugin.manager.marketplace.empty.default.description')}</p>
                   </>
                 )}
               </div>

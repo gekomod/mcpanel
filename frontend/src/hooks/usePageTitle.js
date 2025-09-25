@@ -1,4 +1,3 @@
-// hooks/usePageTitle.js
 import { useLocation } from 'react-router-dom';
 import { 
   FiHome, 
@@ -14,117 +13,116 @@ import {
   FiBox
 } from 'react-icons/fi';
 import { ImQuestion } from "react-icons/im";
+import { useLanguage } from '../context/LanguageContext';
 
 const routeConfig = {
   '/': {
-    title: 'Dashboard',
+    translationKey: 'page.dashboard',
     icon: FiHome
   },
+  '/dashboard': {
+    translationKey: 'page.dashboard',
+    icon: FiGrid
+  },
   '/servers': {
-    title: 'Twoje Serwery',
+    translationKey: 'page.servers',
     icon: FiServer
   },
   '/servers/:id': {
-    title: 'Zarządzanie Serwerem',
+    translationKey: 'page.server.management',
     icon: FiServer
   },
   '/servers/:id/console': {
-    title: 'Konsola',
+    translationKey: 'page.console',
     icon: FiTerminal
   },
   '/servers/:id/files': {
-    title: 'Pliki',
+    translationKey: 'page.files',
     icon: FiFile
   },
   '/servers/:id/settings': {
-    title: 'Ustawienia',
+    translationKey: 'page.server.settings',
     icon: FiSettings
   },
   '/servers/:id/plugins': {
-    title: 'Pluginy',
+    translationKey: 'page.plugins',
     icon: FiPackage
   },
   '/servers/:id/users': {
-    title: 'Użytkownicy',
+    translationKey: 'page.server.users',
     icon: FiUsers
   },
   '/servers/:id/backups': {
-    title: 'Backup Manager',
+    translationKey: 'page.backups',
     icon: FiDownload
   },
-  '/dashboard': {
-    title: 'Panel Sterowania',
-    icon: FiGrid
-  },
-  '/settings': {
-    title: 'Ustawienia Systemu',
-    icon: FiSettings
-  },
-  '/plugins': {
-    title: 'Marketplace Pluginów',
-    icon: FiPackage
-  },
-  '/profile': {
-    title: 'Profil Użytkownika',
+  '/user-settings': {
+    translationKey: 'page.account',
     icon: FiUser
   },
   '/support': {
-    title: 'Support',
+    translationKey: 'page.support',
     icon: ImQuestion
   },
-  '/user-settings': {
-    title: 'Account Settings',
-    icon: FiUser
-  },
   '/admin/bedrock-versions': {
-    title: 'Zarządzanie Wersjami Bedrock',
+    translationKey: 'page.bedrock',
     icon: FiBox
   },
   '/admin/addons': {
-    title: 'Addon Manager',
+    translationKey: 'page.addons',
     icon: FiPackage
   },
   '/admin/users': {
-    title: 'Users',
+    translationKey: 'page.users',
     icon: FiUsers
   },
   '/admin/settings': {
-    title: 'Settings',
+    translationKey: 'page.settings',
     icon: FiSettings
   }
 };
 
+const defaultConfig = {
+  translationKey: 'page.dashboard',
+  icon: FiHome
+};
+
 export const usePageTitle = () => {
   const location = useLocation();
-  
-  // Znajdź pasującą ścieżkę
+  const { t } = useLanguage();
+
   const findMatchingPath = () => {
-    // Sprawdź dokładne dopasowanie
     if (routeConfig[location.pathname]) {
-      return routeConfig[location.pathname];
+      const config = routeConfig[location.pathname];
+      return {
+        title: t(config.translationKey),
+        icon: config.icon
+      };
     }
     
-    // Sprawdź ścieżki z parametrami (np. /servers/123)
     for (const path in routeConfig) {
       if (path.includes(':')) {
         const pathPattern = path.replace(/:\w+/g, '([^/]+)');
         const regex = new RegExp(`^${pathPattern}$`);
         if (regex.test(location.pathname)) {
-          return routeConfig[path];
+          const config = routeConfig[path];
+          return {
+            title: t(config.translationKey),
+            icon: config.icon
+          };
         }
       }
     }
     
     return {
-      title: 'Strona Główna',
-      icon: FiHome
+      title: t(defaultConfig.translationKey),
+      icon: defaultConfig.icon
     };
   };
 
   return findMatchingPath();
 };
 
-// Alternatywna wersja zwracająca tylko tytuł (dla kompatybilności wstecznej)
 export const usePageTitleOnly = () => {
   const { title } = usePageTitle();
   return title;

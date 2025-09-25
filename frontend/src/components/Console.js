@@ -15,6 +15,7 @@ import {
 } from 'react-icons/fi';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
+import { useLanguage } from '../context/LanguageContext';
 
 const Container = styled.div`
   padding: 15px 20px;
@@ -249,6 +250,7 @@ function Console() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [isBedrock, setIsBedrock] = useState(false);
   const consoleEndRef = useRef(null);
+  const { t } = useLanguage();
 
   useEffect(() => {
     fetchServer();
@@ -402,44 +404,44 @@ function Console() {
         <NavTab 
           onClick={() => navigate(`/servers/${serverId}`)}
         >
-          <FiActivity /> Overview
+          <FiActivity /> {t('page.dashboard') || 'Overview'}
         </NavTab>
         <NavTab 
           $active={true}
         >
-          <FiTerminal /> Console
+          <FiTerminal /> {t('nav.console') || 'Console'}
         </NavTab>
         <NavTab 
           onClick={() => navigate(`/servers/${serverId}/files`)}
         >
-          <FiFolder /> Files
+          <FiFolder /> {t('page.files') || 'Files'}
         </NavTab>
         <NavTab 
           onClick={() => navigate(`/servers/${serverId}/settings`)}
         >
-          <FiSettings /> Config
+          <FiSettings /> {t('page.server.settings') || 'Config'}
         </NavTab>
         <NavTab 
           onClick={() => navigate(`/servers/${serverId}/plugins`)}
         >
-          <FiBox /> Plugins
+          <FiBox /> {t('page.plugins') || 'Plugins'}
         </NavTab>
         <NavTab 
           onClick={() => navigate(`/servers/${serverId}/users`)}
         >
-          <FiUser /> Users
+          <FiUser /> {t('page.server.users') || 'Users'}
         </NavTab>
         
         <NavTab 
           onClick={() => navigate(`/servers/${serverId}/backups`)}
         >
-          <FiDownload /> Backups
+          <FiDownload /> {t('page.backups') || 'Backups'}
         </NavTab>
       </NavTabs>
 
       <Header>
         <Title>
-          <FiTerminal /> Console - {server.name} ({server.type.toUpperCase()})
+          <FiTerminal /> {t('server.console.title')} - {server.name} ({server.type.toUpperCase()})
         </Title>
         <StatusBadge $status={server.status}>
           {server.status.toUpperCase()}
@@ -449,28 +451,28 @@ function Console() {
       {server.status !== 'running' && (
         <ErrorMessage>
           <FiAlertCircle />
-          Server is not running. Start the server to access the console.
+          {t('server.console.notRunning')}
         </ErrorMessage>
       )}
 
       <ConsoleContainer>
         <ConsoleHeader>
-          <ConsoleTitle>Server Console {isBedrock && '(Real-time)'}</ConsoleTitle>
+          <ConsoleTitle>{t('server.console.title')} {isBedrock && '(Real-time)'}</ConsoleTitle>
           <ConsoleActions>
             <ConsoleButton 
               onClick={handleRefreshOutput}
               disabled={server.status !== 'running'}
-              title="Refresh output"
+              title={t('server.console.refreshOutput')}
             >
               <FiRefreshCw />
             </ConsoleButton>
             <ConsoleButton onClick={handleClearConsole}>
-              <FiTrash2 /> Clear
+              <FiTrash2 /> {t('common.clear')} 
             </ConsoleButton>
             <ConsoleButton 
               onClick={() => setAutoRefresh(!autoRefresh)}
               style={{ background: autoRefresh ? '#3b82f6' : '#4a5070', color: 'white' }}
-              title={autoRefresh ? 'Auto-refresh enabled' : 'Auto-refresh disabled'}
+              title={autoRefresh ? t('server.console.autoRefreshEnabled') : t('server.console.autoRefreshDisabled')}
             >
               Auto: {autoRefresh ? 'ON' : 'OFF'}
             </ConsoleButton>
@@ -481,9 +483,9 @@ function Console() {
           {output.length === 0 ? (
             <ConsoleLine>
               {server.status === 'running' 
-                ? 'No console output available. The server may be starting up...'
-                : 'Server is not running. Start the server to see console output.'
-              }
+				  ? t('server.console.noOutputStarting')
+				  : t('server.console.noOutputStopped')
+				}
             </ConsoleLine>
           ) : (
             output.map((line, index) => (
@@ -503,14 +505,14 @@ function Console() {
           value={command}
           onChange={(e) => setCommand(e.target.value)}
           onKeyPress={handleKeyPress}
-          placeholder={server.status === 'running' ? "Type a command..." : "Server is not running"}
+          placeholder={server.status === 'running' ? t('server.console.typeCommand') : t('server.console.serverNotRunning')}
           disabled={server.status !== 'running'}
         />
         <SendButton 
           onClick={handleSendCommand}
           disabled={server.status !== 'running' || !command.trim()}
         >
-          <FiSend /> Send
+          <FiSend /> {t('common.send')}
         </SendButton>
       </InputContainer>
     </Container>

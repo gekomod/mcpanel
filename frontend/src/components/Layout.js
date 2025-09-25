@@ -15,9 +15,12 @@ import {
   FiBox,
   FiShield,
   FiHelpCircle,
-  FiUser
+  FiMessageSquare,
+  FiUser,
+  FiGlobe
 } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { usePageTitle } from '../hooks/usePageTitle';
 
@@ -200,9 +203,26 @@ const PageTitle = styled.h2`
   margin: 0;
 `;
 
+const LanguageSelector = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  
+  &:hover {
+    background: #222b43;
+  }
+  
+  select {
+    cursor: pointer;
+  }
+`;
+
 function Layout({ children }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { user, logout } = useAuth();
+  const { t, language, languages, changeLanguage } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -218,24 +238,24 @@ function Layout({ children }) {
   const currentServerId = getCurrentServerId();
 
   const mainItems = [
-    { path: '/dashboard', icon: FiHome, label: 'Dashboard' },
-    { path: '/servers', icon: FiServer, label: 'Serwery' },
-    { path: `/servers/${currentServerId || ':serverId'}/console`, icon: FiTerminal, label: 'Konsola' },
+    { path: '/dashboard', icon: FiHome, label: t('nav.dashboard') },
+    { path: '/servers', icon: FiServer, label: t('nav.servers') },
+    { path: `/servers/${currentServerId || ':serverId'}/console`, icon: FiTerminal, label: t('nav.console') },
   ];
   
   const managementItems = [
-    { path: '/instances', icon: FiPackage, label: 'Instancje' },
-    { path: '/resources', icon: FiActivity, label: 'Zasoby' },
-    { path: '/tasks', icon: FiSettings, label: 'Zadania' },
+    { path: '/instances', icon: FiPackage, label: t('nav.instances') },
+    { path: '/resources', icon: FiActivity, label: t('nav.resources') },
+    { path: '/tasks', icon: FiSettings, label: t('nav.tasks') },
   ];
   
   const adminItems = [
-    { path: '/admin/users', icon: FiUsers, label: 'Użytkownicy' },
-    { path: '/admin/bedrock-versions', icon: FiBox, label: 'Bedrock Versions' },
-    { path: '/admin/addons', icon: FiPackage, label: 'Addon Manager' },
-    { path: '/permissions', icon: FiShield, label: 'Uprawnienia' },
-    { path: '/admin/settings', icon: FiSettings, label: 'Ustawienia' },
-    { path: '/support', icon: FiHelpCircle, label: 'Wsparcie' },
+    { path: '/admin/users', icon: FiUsers, label: t('nav.users') },
+    { path: '/admin/bedrock-versions', icon: FiBox, label: t('nav.bedrock') },
+    { path: '/admin/addons', icon: FiPackage, label: t('nav.addons') },
+    { path: '/permissions', icon: FiShield, label: t('nav.permissions') },
+    { path: '/admin/settings', icon: FiSettings, label: t('nav.settings') },
+    { path: '/support', icon: FiHelpCircle, label: t('nav.support') },
   ];
 
   const handleLogout = () => {
@@ -256,11 +276,11 @@ function Layout({ children }) {
           <LogoIcon>
             <FiServer />
           </LogoIcon>
-          <LogoText>MCpanel</LogoText>
+          <LogoText>{t('app.name')}</LogoText>
         </SidebarHeader>
         
         <Nav>
-          <MenuCategory>GŁÓWNE</MenuCategory>
+          <MenuCategory>{t('menu.main')}</MenuCategory>
           <MenuList>
             {mainItems.map((item) => (
               <MenuItem
@@ -277,7 +297,7 @@ function Layout({ children }) {
             ))}
           </MenuList>
 
-          <MenuCategory>ZARZĄDZANIE</MenuCategory>
+          <MenuCategory>{t('menu.management')}</MenuCategory>
           <MenuList>
             {managementItems.map((item) => (
               <MenuItem
@@ -294,7 +314,7 @@ function Layout({ children }) {
             ))}
           </MenuList>
 
-          <MenuCategory>ADMINISTRACJA</MenuCategory>
+          <MenuCategory>{t('menu.administration')}</MenuCategory>
           <MenuList>
             {adminItems.map((item) => (
               <MenuItem
@@ -322,6 +342,26 @@ function Layout({ children }) {
         <PageTitle>{Icon && <Icon style={{ marginRight: '10px' }} />}
         {title}</PageTitle>
 <UserInfo> 
+              <LanguageSelector>
+                <FiGlobe />
+                <select 
+                  value={language} 
+                  onChange={(e) => changeLanguage(e.target.value)}
+                  style={{ 
+                    background: 'transparent', 
+                    border: 'none', 
+                    color: '#a4aabc',
+                    outline: 'none'
+                  }}
+                >
+                  {languages.map((lang) => (
+                    <option key={lang.code} value={lang.code}>
+                      {lang.flag} {lang.name}
+                    </option>
+                  ))}
+                </select>
+              </LanguageSelector>
+
   <UserAvatar>{user?.username?.charAt(0)?.toUpperCase() || 'U'}</UserAvatar>
   <UserName>{user?.username || 'User'}</UserName>
   
@@ -330,12 +370,12 @@ function Layout({ children }) {
     style={{ background: 'transparent' }}
   >
     <FiUser />
-    Moje konto
+    {t('nav.account')}
   </LogoutButton>
   
   <LogoutButton onClick={handleLogout}>
     <FiLogOut />
-    Wyloguj
+    {t('nav.logout')}
   </LogoutButton>
 </UserInfo>
 	</Header>

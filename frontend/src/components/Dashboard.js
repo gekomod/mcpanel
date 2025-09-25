@@ -19,9 +19,11 @@ import {
 } from 'react-icons/fi';
 import { FaTimesCircle } from "react-icons/fa";
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'react-toastify'; 
 import api from '../services/api';
 import AddServer from './AddServer';
 import AddUserDialog from './AddUserDialog';
+import { useLanguage } from '../context/LanguageContext';
 
 const DashboardContainer = styled.div`
   padding: 20px;
@@ -421,6 +423,58 @@ const ActionText = styled.div`
   transition: all 0.2s ease;
 `;
 
+const ConfirmDialog = ({ onConfirm, onCancel, message }) => {
+  useEffect(() => {
+    const handleKeyPress = (e) => {
+      if (e.key === 'Escape') onCancel();
+      if (e.key === 'Enter') onConfirm();
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [onConfirm, onCancel]);
+
+  return (
+    <div style={{
+      background: '#2e3245',
+      padding: '20px',
+      borderRadius: '10px',
+      border: '1px solid #3a3f57',
+      color: '#fff'
+    }}>
+      <p style={{ margin: '0 0 20px 0', fontSize: '16px' }}>{message}</p>
+      <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+        <button
+          onClick={onCancel}
+          style={{
+            padding: '8px 16px',
+            background: 'transparent',
+            border: '1px solid #6b7293',
+            color: '#a4aabc',
+            borderRadius: '6px',
+            cursor: 'pointer'
+          }}
+        >
+          Cancel
+        </button>
+        <button
+          onClick={onConfirm}
+          style={{
+            padding: '8px 16px',
+            background: '#ef4444',
+            border: 'none',
+            color: 'white',
+            borderRadius: '6px',
+            cursor: 'pointer'
+          }}
+        >
+          Delete
+        </button>
+      </div>
+    </div>
+  );
+};
+
 function Dashboard() {
   const [servers, setServers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -430,6 +484,7 @@ function Dashboard() {
   const [serverSizes, setServerSizes] = useState({});
   const navigate = useNavigate();
   const [showAddUser, setShowAddUser] = useState(false);
+  const { t } = useLanguage(); 
 
   useEffect(() => {
     fetchServers();
@@ -508,6 +563,26 @@ function Dashboard() {
   const handleServerAction = async (serverId, action) => {
     setActionErrors(prev => ({ ...prev, [serverId]: null }));
     
+    const actionMessages = {
+      start: {
+        success: t('dashboard.actions.start.success') || 'Server started successfully',
+        error: t('dashboard.actions.start.error') || 'Failed to start server',
+        loading: t('dashboard.actions.start.loading') || 'Starting server...'
+      },
+      stop: {
+        success: t('dashboard.actions.stop.success') || 'Server stopped successfully',
+        error: t('dashboard.actions.stop.error') || 'Failed to stop server',
+        loading: t('dashboard.actions.stop.loading') || 'Stopping server...'
+      },
+      restart: {
+        success: t('dashboard.actions.restart.success') || 'Server restarted successfully',
+        error: t('dashboard.actions.restart.error') || 'Failed to restart server',
+        loading: t('dashboard.actions.restart.loading') || 'Restarting server...'
+      }
+    };
+
+    const toastId = toast.loading(actionMessages[action].loading);
+    
     try {
       await api.post(`/servers/${serverId}/${action}`);
       
@@ -541,6 +616,13 @@ function Dashboard() {
       console.error(`Error ${action} server:`, error);
       const errorMessage = error.response?.data?.error || error.message;
       
+      toast.update(toastId, {
+        render: `${actionMessages[action].error}: ${errorMessage}`,
+        type: 'error',
+        isLoading: false,
+        autoClose: 5000
+      });
+      
       setActionErrors(prev => ({ ...prev, [serverId]: errorMessage }));
       
       setTimeout(() => {
@@ -551,20 +633,32 @@ function Dashboard() {
   };
 
   const handleDeleteServer = async (serverId, serverName) => {
-    if (!window.confirm(`Are you sure you want to delete server "${serverName}"?`)) {
-      return;
-    }
-
-    try {
-      await api.delete(`/servers/${serverId}`);
-      fetchServers();
-    } catch (error) {
-      console.error('Error deleting server:', error);
-      alert('Failed to delete server');
-    }
+    const confirmMessage = t('dashboard.delete.confirm', { name: serverName }) || `Are you sure you want to delete server "${serverName}"?`;
+    
+    toast.warning(<ConfirmDialog 
+      message={confirmMessage}
+      onConfirm={async () => {
+        try {
+          await api.delete(`/servers/${serverId}`);
+          toast.success(t('dashboard.delete.success') || 'Server deleted successfully');
+          fetchServers();
+        } catch (error) {
+          console.error('Error deleting server:', error);
+          toast.error(t('dashboard.delete.error') || 'Failed to delete server');
+        }
+      }}
+      onCancel={() => toast.dismiss()}
+    />, {
+      position: 'top-center',
+      autoClose: false,
+      closeOnClick: false,
+      draggable: false,
+      closeButton: false
+    });
   };
 
   const handleServerAdded = () => {
+    toast.success(t('dashboard.add.server.success') || 'Server created successfully');
     fetchServers();
   };
 
@@ -607,25 +701,65 @@ function Dashboard() {
   }).length;
   
   const handleUserAdded = () => {
-    console.log('User added - refresh users list if needed');
+    toast.success(t('dashboard.add.user.success') || 'User added successfully');
+  };
+  
+  const handleQuickAction = (action) => {
+    const actions = {
+      restartAll: () => {
+        const runningCount = servers.filter(server => isServerReallyRunning(server)).length;
+        if (runningCount === 0) {
+          toast.info(t('dashboard.quick.actions.no.running') || 'No running servers to restart');
+          return;
+        }
+        
+        toast.info(t('dashboard.quick.actions.restarting.all', { count: runningCount }) || `Restarting ${runningCount} servers`);
+        servers.forEach(server => {
+          if (isServerReallyRunning(server)) {
+            handleServerAction(server.id, 'restart');
+          }
+        });
+      },
+      startAll: () => {
+        const stoppedCount = servers.filter(server => !isServerReallyRunning(server)).length;
+        if (stoppedCount === 0) {
+          toast.info(t('dashboard.quick.actions.no.stopped') || 'No stopped servers to start');
+          return;
+        }
+        
+        toast.info(t('dashboard.quick.actions.starting.all', { count: stoppedCount }) || `Starting ${stoppedCount} servers`);
+        servers.forEach(server => {
+          if (!isServerReallyRunning(server)) {
+            handleServerAction(server.id, 'start');
+          }
+        });
+      },
+      backup: () => {
+        toast.info(t('dashboard.backup.coming') || 'Backup functionality coming soon!', {
+          icon: '🔜'
+        });
+      }
+    };
+
+    actions[action]?.();
   };
 
   const totalStorageUsed = Object.values(serverSizes).reduce((total, size) => total + size, 0);
 
   if (loading) {
-    return <DashboardContainer>Loading servers...</DashboardContainer>;
+    return <DashboardContainer>{t('dashboard.loading') || 'Loading servers...'}</DashboardContainer>;
   }
 
   return (
     <DashboardContainer>
       <Header>
-        <Title>Dashboard</Title>
+        <Title>{t('dashboard.title') || 'Dashboard'}</Title>
         <ButtonGroup>
           <AddButton onClick={() => setShowAddUser(true)}>
-            <FiUserPlus /> Add User
+            <FiUserPlus /> {t('dashboard.add.user') || 'Add User'}
           </AddButton>
           <AddButton onClick={() => setShowAddServer(true)}>
-            <FiPlus /> Add Server
+            <FiPlus /> {t('dashboard.add.server') || 'Add Server'}
           </AddButton>
         </ButtonGroup>
       </Header>
@@ -633,46 +767,46 @@ function Dashboard() {
       <StatsGrid>
         <StatCard>
           <StatHeader>
-            <StatTitle>Total Servers</StatTitle>
+            <StatTitle>{t('dashboard.stats.total') || 'Total Servers'}</StatTitle>
             <StatIcon $bgColor="rgba(59, 130, 246, 0.2)" $color="#3b82f6">
               <FiServer />
             </StatIcon>
           </StatHeader>
           <StatValue>{servers.length}</StatValue>
-          <StatLabel>All your servers</StatLabel>
+          <StatLabel>{t('dashboard.stats.total.label') || 'All your servers'}</StatLabel>
         </StatCard>
         
         <StatCard>
           <StatHeader>
-            <StatTitle>Running Servers</StatTitle>
+            <StatTitle>{t('dashboard.stats.running') || 'Running Servers'}</StatTitle>
             <StatIcon $bgColor="rgba(16, 185, 129, 0.2)" $color="#10b981">
               <FiCheckCircle />
             </StatIcon>
           </StatHeader>
           <StatValue>{runningServers}</StatValue>
-          <StatLabel>Active servers</StatLabel>
+          <StatLabel>{t('dashboard.stats.running.label') || 'Active servers'}</StatLabel>
         </StatCard>
         
         <StatCard>
           <StatHeader>
-            <StatTitle>Stopped Servers</StatTitle>
+            <StatTitle>{t('dashboard.stats.stopped') || 'Stopped Servers'}</StatTitle>
             <StatIcon $bgColor="rgba(248, 113, 113, 0.2)" $color="#f87171">
               <FaTimesCircle />
             </StatIcon>
           </StatHeader>
           <StatValue>{servers.length - runningServers}</StatValue>
-          <StatLabel>Inactive servers</StatLabel>
+          <StatLabel>{t('dashboard.stats.stopped.label') || 'Inactive servers'}</StatLabel>
         </StatCard>
         
         <StatCard>
           <StatHeader>
-            <StatTitle>Players Online</StatTitle>
+            <StatTitle>{t('dashboard.stats.players') || 'Players Online'}</StatTitle>
             <StatIcon $bgColor="rgba(139, 92, 246, 0.2)" $color="#8b5cf6">
               <FiUsers />
             </StatIcon>
           </StatHeader>
           <StatValue>24</StatValue>
-          <StatLabel>Across all servers</StatLabel>
+          <StatLabel>{t('dashboard.stats.players.label') || 'Across all servers'}</StatLabel>
         </StatCard>
       </StatsGrid>
       
@@ -702,24 +836,24 @@ function Dashboard() {
                           checkServerRealStatus(server.id);
                           fetchServers();
                         }}
-                        title="Status mismatch - click to refresh"
+                        title={t('dashboard.status.mismatch') || "Status mismatch - click to refresh"}
                       />
                     )}
                   </ServerName>
                   <ServerDetails>
                     <span>{server.type.toUpperCase()} {server.version}</span>
-                    <span>Port: {server.port}</span>
-                    <span>Size: {serverSize.toFixed(1)}GB</span>
+                    <span>{t('dashboard.port') || 'Port'}: {server.port}</span>
+                    <span>{t('dashboard.size') || 'Size'}: {serverSize.toFixed(1)}GB</span>
                     <ServerStatus $status={realStatus}>
                       {realStatus === 'running' ? <FiCheckCircle /> : <FaTimesCircle />}
-                      {realStatus.toUpperCase()}
+                      {t(`dashboard.status.${realStatus}`) || realStatus.toUpperCase()}
                       {statusMismatch && ' *'}
                       {inTransition && '...'}
                     </ServerStatus>
                     {statusMismatch && (
-                      <StatusMismatchIndicator title="Status differs from database">
+                      <StatusMismatchIndicator title={t('dashboard.status.mismatch.details') || "Status differs from database"}>
                         <FiAlertCircle />
-                        (was: {server.status})
+                        ({t('dashboard.status.was') || 'was'}: {server.status})
                       </StatusMismatchIndicator>
                     )}
                   </ServerDetails>
@@ -730,40 +864,45 @@ function Dashboard() {
                     $variant="start"
                     onClick={() => handleServerAction(server.id, 'start')}
                     disabled={isReallyRunning || inTransition}
+                    title={t('dashboard.actions.start') || 'Start server'}
                   >
-                    <FiPlay /> Start
+                    <FiPlay /> {t('dashboard.actions.start') || 'Start'}
                   </ActionButton>
                   
                   <ActionButton
                     $variant="stop"
                     onClick={() => handleServerAction(server.id, 'stop')}
                     disabled={!isReallyRunning || inTransition}
+                    title={t('dashboard.actions.stop') || 'Stop server'}
                   >
-                    <FiStopCircle /> Stop
+                    <FiStopCircle /> {t('dashboard.actions.stop') || 'Stop'}
                   </ActionButton>
                   
                   <ActionButton
                     $variant="restart"
                     onClick={() => handleServerAction(server.id, 'restart')}
                     disabled={!isReallyRunning || inTransition}
+                    title={t('dashboard.actions.restart') || 'Restart server'}
                   >
-                    <FiRefreshCw /> Restart
+                    <FiRefreshCw /> {t('dashboard.actions.restart') || 'Restart'}
                   </ActionButton>
                   
                   <ActionButton
                     $variant="settings"
                     onClick={() => navigate(`/servers/${server.id}/settings`)}
                     disabled={inTransition}
+                    title={t('dashboard.actions.settings') || 'Server settings'}
                   >
-                    <FiSettings /> Settings
+                    <FiSettings /> {t('dashboard.actions.settings') || 'Settings'}
                   </ActionButton>
                   
                   <ActionButton
                     $variant="delete"
                     onClick={() => handleDeleteServer(server.id, server.name)}
                     disabled={inTransition}
+                    title={t('dashboard.actions.delete') || 'Delete server'}
                   >
-                    <FiTrash2 /> Delete
+                    <FiTrash2 /> {t('dashboard.actions.delete') || 'Delete'}
                   </ActionButton>
                 </ServerActions>
               </ServerItem>
@@ -783,9 +922,9 @@ function Dashboard() {
             <EmptyStateIcon>
               <FiServer />
             </EmptyStateIcon>
-            <EmptyStateText>No servers found</EmptyStateText>
+            <EmptyStateText>{t('dashboard.no.servers') || 'No servers found'}</EmptyStateText>
             <AddButton onClick={() => setShowAddServer(true)}>
-              <FiPlus /> Create Your First Server
+              <FiPlus /> {t('dashboard.create.first') || 'Create Your First Server'}
             </AddButton>
           </EmptyState>
         )}
@@ -793,44 +932,44 @@ function Dashboard() {
 
       <QuickActions>
         <ActionsHeader>
-          <ActionsTitle>Quick Actions</ActionsTitle>
+          <ActionsTitle>{t('dashboard.quick.actions') || 'Quick Actions'}</ActionsTitle>
         </ActionsHeader>
         <ActionsGrid>
-          <ActionButtonCard onClick={() => setShowAddServer(true)}>
+          <ActionButtonCard onClick={() => setShowAddServer(true)} title={t('dashboard.quick.add.server') || 'Add new server'}>
             <ActionIcon className="action-icon">
               <FiPlus />
             </ActionIcon>
-            <ActionText className="action-text">Add Server</ActionText>
+            <ActionText className="action-text">{t('dashboard.quick.add.server') || 'Add Server'}</ActionText>
           </ActionButtonCard>
-          <ActionButtonCard onClick={() => {
-            servers.forEach(server => {
-              if (isServerReallyRunning(server)) {
-                handleServerAction(server.id, 'restart');
-              }
-            });
-          }}>
+          
+          <ActionButtonCard 
+            onClick={() => handleQuickAction('restartAll')} 
+            title={t('dashboard.quick.restart.all') || 'Restart all running servers'}
+          >
             <ActionIcon className="action-icon">
               <FiRefreshCw />
             </ActionIcon>
-            <ActionText className="action-text">Restart All</ActionText>
+            <ActionText className="action-text">{t('dashboard.quick.restart.all') || 'Restart All'}</ActionText>
           </ActionButtonCard>
-          <ActionButtonCard onClick={() => {
-            servers.forEach(server => {
-              if (!isServerReallyRunning(server)) {
-                handleServerAction(server.id, 'start');
-              }
-            });
-          }}>
+          
+          <ActionButtonCard 
+            onClick={() => handleQuickAction('startAll')} 
+            title={t('dashboard.quick.start.all') || 'Start all stopped servers'}
+          >
             <ActionIcon className="action-icon">
               <FiPlay />
             </ActionIcon>
-            <ActionText className="action-text">Start All</ActionText>
+            <ActionText className="action-text">{t('dashboard.quick.start.all') || 'Start All'}</ActionText>
           </ActionButtonCard>
-          <ActionButtonCard onClick={() => alert('Backup functionality coming soon!')}>
+          
+          <ActionButtonCard 
+            onClick={() => handleQuickAction('backup')} 
+            title={t('dashboard.quick.backup') || 'Create backup'}
+          >
             <ActionIcon className="action-icon">
               <FiDownload />
             </ActionIcon>
-            <ActionText className="action-text">Backup</ActionText>
+            <ActionText className="action-text">{t('dashboard.quick.backup') || 'Backup'}</ActionText>
           </ActionButtonCard>
         </ActionsGrid>
       </QuickActions>

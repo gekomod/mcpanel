@@ -24,6 +24,7 @@ import {
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../services/api';
+import { useLanguage } from '../context/LanguageContext';
 
 const Container = styled.div`
   padding: 15px 20px;
@@ -418,6 +419,7 @@ function FileEditor() {
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('files');
+  const { t } = useLanguage();
 
   useEffect(() => {
     fetchServer();
@@ -453,8 +455,8 @@ function FileEditor() {
       setServer(response.data);
     } catch (error) {
       console.error('Error fetching server:', error);
-      setError('Failed to load server information');
-      showError('Failed to load server information');
+	  setError(t('files.errorLoadServer'));
+	  showError(t('files.errorLoadServer'));
     }
   };
   
@@ -529,18 +531,17 @@ function FileEditor() {
         setCurrentPath(path);
         
         if (path && response.data.length > 0) {
-          showInfo(`Loaded ${response.data.length} items from ${path}`);
+           showInfo(t('files.loadedItems', { count: response.data.length, path: path }));
         }
       } else {
-        setError('Invalid response format from server');
+        setError(t('files.invalidResponse'));
         showError('Received invalid data from server');
       }
     } catch (error) {
       console.error('Error loading files:', error);
-      const errorMsg = 'Failed to load files. Make sure you have permission to access this server.';
+      const errorMsg = t('files.errorLoadFiles');
       setError(errorMsg);
       showError(errorMsg);
-      // Ustaw puste listy w przypadku błędu
       setFiles([]);
       setFilteredFiles([]);
     } finally {
@@ -553,7 +554,7 @@ function FileEditor() {
       const newPath = currentPath ? `${currentPath}/${file.name}` : file.name;
       loadFiles(newPath);
       setSelectedFile(null);
-      showInfo(`Navigating to ${file.name}`);
+      showInfo(t('files.navigateTo', { name: file.name }));
       return;
     }
 
@@ -567,9 +568,9 @@ function FileEditor() {
       if (response.data && response.data.content !== undefined) {
         setFileContent(response.data.content);
         setSelectedFile(file);
-        showSuccess(`Loaded file: ${file.name}`);
+        showSuccess(t('files.loadedFile', { name: file.name }));
       } else {
-        const errorMsg = 'Failed to load file content: Invalid response format';
+        const errorMsg = t('files.invalidResponse');
         setError(errorMsg);
         showError(errorMsg);
       }
@@ -596,7 +597,7 @@ function FileEditor() {
         content: fileContent
       });
       
-      showSuccess('File saved successfully!');
+      showSuccess(t('files.savedSuccess'));
     } catch (error) {
       console.error('Error saving file:', error);
       const errorMsg = `Failed to save file: ${error.response?.data?.error || error.message}`;
@@ -609,7 +610,7 @@ function FileEditor() {
 
   const navigateUp = () => {
     if (currentPath === '') {
-      showInfo('Already at root directory');
+      showInfo(t('files.alreadyRoot'));
       return;
     }
     
@@ -617,11 +618,11 @@ function FileEditor() {
     const parentPath = pathParts.slice(0, -1).join('/');
     loadFiles(parentPath);
     setSelectedFile(null);
-    showInfo('Navigated to parent directory');
+    showInfo(t('files.navigateUp'));
   };
 
   const getBreadcrumbItems = () => {
-    const items = [{ name: 'Root', path: '', clickable: true }];
+    const items = [{ name: t('files.root'), path: '', clickable: true }];
     
     if (currentPath) {
       const parts = currentPath.split('/').filter(part => part);
@@ -641,10 +642,10 @@ function FileEditor() {
   };
 
   const formatFileSize = (bytes) => {
-    if (bytes === 0 || !bytes) return '0 B';
+    if (bytes === 0 || !bytes) return `0 ${t('files.bytes')}`;
     
     const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const sizes = [t('files.bytes'), t('files.kilobytes'), t('files.megabytes'), t('files.gigabytes')];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
@@ -666,37 +667,37 @@ function FileEditor() {
             $active={activeTab === 'overview'} 
             onClick={() => navigate(`/servers/${serverId}`)}
           >
-            <FiActivity /> Overview
+            <FiActivity /> {t('page.dashboard') || 'Overview'}
           </NavTab>
           <NavTab 
             $active={activeTab === 'console'} 
             onClick={() => navigate(`/servers/${serverId}/console`)}
           >
-            <FiTerminal /> Console
+            <FiTerminal /> {t('nav.console') || 'Console'}
           </NavTab>
           <NavTab 
             $active={activeTab === 'files'} 
             onClick={() => navigate(`/servers/${serverId}/files`)}
           >
-            <FiFolder /> Files
+            <FiFolder /> {t('page.files') || 'Files'}
           </NavTab>
           <NavTab 
             $active={activeTab === 'config'} 
             onClick={() => navigate(`/servers/${serverId}/settings`)}
           >
-            <FiSettings /> Config
+            <FiSettings /> {t('page.server.settings') || 'Config'}
           </NavTab>
           <NavTab 
             $active={activeTab === 'plugins'} 
             onClick={() => navigate(`/servers/${serverId}/plugins`)}
           >
-            <FiBox /> Plugins
+            <FiBox /> {t('page.plugins') || 'Plugins'}
           </NavTab>
           <NavTab 
           $active={activeTab === 'users'} 
           onClick={() => navigate(`/servers/${serverId}/users`)}
         >
-          <FiUser /> Users
+          <FiUser /> {t('page.server.users') || 'Users'}
           </NavTab>
           
         </NavTabs>
@@ -718,49 +719,49 @@ function FileEditor() {
           $active={activeTab === 'overview'} 
           onClick={() => navigate(`/servers/${serverId}`)}
         >
-          <FiActivity /> Overview
+          <FiActivity /> {t('page.dashboard') || 'Overview'}
         </NavTab>
         <NavTab 
           $active={activeTab === 'console'} 
           onClick={() => navigate(`/servers/${serverId}/console`)}
         >
-          <FiTerminal /> Console
+          <FiTerminal /> {t('nav.console') || 'Console'}
         </NavTab>
         <NavTab 
           $active={activeTab === 'files'} 
           onClick={() => navigate(`/servers/${serverId}/files`)}
         >
-          <FiFolder /> Files
+          <FiFolder /> {t('page.files') || 'Files'}
         </NavTab>
         <NavTab 
           $active={activeTab === 'config'} 
           onClick={() => navigate(`/servers/${serverId}/settings`)}
         >
-          <FiSettings /> Config
+          <FiSettings /> {t('page.server.settings') || 'Config'}
         </NavTab>
         <NavTab 
           $active={activeTab === 'plugins'} 
           onClick={() => navigate(`/servers/${serverId}/plugins`)}
         >
-          <FiBox /> Plugins
+          <FiBox /> {t('page.plugins') || 'Plugins'}
         </NavTab>
         <NavTab 
           $active={activeTab === 'users'} 
           onClick={() => navigate(`/servers/${serverId}/users`)}
         >
-          <FiUser /> Users
+          <FiUser /> {t('page.server.users') || 'Users'}
         </NavTab>
         
           <NavTab 
           $active={activeTab === 'backups'} 
           onClick={() => navigate(`/servers/${serverId}/backups`)}
         >
-          <FiDownload /> Backups
+          <FiDownload /> {t('page.backups') || 'Backups'}
           </NavTab>
       </NavTabs>
 
       <Header>
-        <Title>File Manager - {server?.name || 'Loading...'}</Title>
+         <Title>{t('files.title')} - {server?.name || t('files.loading')}</Title>
         <Breadcrumb>
           {getBreadcrumbItems().map((item, index) => (
             <BreadcrumbItem 
@@ -800,18 +801,18 @@ function FileEditor() {
             </SearchIcon>
             <SearchInput
               type="text"
-              placeholder="Search files..."
+              placeholder={t('files.searchPlaceholder')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </SearchBox>
 
           <FileActions>
-            <ActionButton disabled title="Upload file">
-              <FiUpload /> Upload
+            <ActionButton disabled title={t('files.upload')}>
+              <FiUpload /> {t('files.upload')}
             </ActionButton>
-            <ActionButton disabled title="Create new file">
-              <FiPlus /> New
+            <ActionButton disabled title={t('files.new')}>
+              <FiPlus /> {t('files.new')}
             </ActionButton>
           </FileActions>
 
@@ -819,7 +820,7 @@ function FileEditor() {
             {loading ? (
               <LoadingOverlay>
                 <FiLoader style={{ animation: 'spin 1s linear infinite' }} /> 
-                Loading files...
+                {t('files.loading')}
               </LoadingOverlay>
             ) : (
               <>
@@ -828,7 +829,7 @@ function FileEditor() {
                     key={file.name} 
                     onClick={() => loadFileContent(file)}
                     selected={selectedFile && selectedFile.name === file.name}
-                    title={file.is_dir ? "Directory" : `File: ${file.name}`}
+                    title={file.is_dir ? t('files.directory') : `${t('files.file')}: ${file.name}`}
                   >
                     <FileIcon $isDir={file.is_dir}>
                       {file.is_dir ? <FiFolder size={18} /> : <FiFile size={16} />}
@@ -850,7 +851,7 @@ function FileEditor() {
                 
                 {filteredFiles.length === 0 && (
                   <EmptyState>
-                    {searchQuery ? 'No files match your search' : 'No files found in this directory'}
+                    {searchQuery ? t('files.noSearchResults') : t('files.noFiles')}
                   </EmptyState>
                 )}
               </>
@@ -876,12 +877,12 @@ function FileEditor() {
                   <ActionButton 
                     onClick={saveFile} 
                     disabled={saving || fileLoading}
-                    title="Save changes"
+                    title={t('files.save')}
                   >
-                    <FiSave /> {saving ? 'Saving...' : 'Save'}
+                    <FiSave /> {saving ? t('files.saving') : t('files.save')}
                   </ActionButton>
-                  <ActionButton disabled title="Download file">
-                    <FiDownload /> Download
+                  <ActionButton disabled title={t('files.download')}>
+                    <FiDownload /> {t('files.download')}
                   </ActionButton>
                 </EditorActions>
               </EditorHeader>
@@ -890,13 +891,13 @@ function FileEditor() {
                 {fileLoading && (
                   <LoadingOverlay>
                     <FiLoader style={{ animation: 'spin 1s linear infinite' }} /> 
-                    Loading file content...
+                    {t('files.loadingContent')}
                   </LoadingOverlay>
                 )}
                 <TextArea
                   value={fileContent}
                   onChange={(e) => setFileContent(e.target.value)}
-                  placeholder="File content..."
+                  placeholder={`${t('files.file')} content...`}
                   spellCheck={false}
                   disabled={fileLoading || saving}
                 />
@@ -906,10 +907,10 @@ function FileEditor() {
             <NoFileSelected>
               <FiFile size={48} />
               <div>
-                {loading ? 'Loading...' : 'Select a file to edit or navigate through directories'}
+                {loading ? t('files.loading') : t('files.selectFile')}
               </div>
               <div style={{ fontSize: '0.9rem', color: '#a4aabc' }}>
-                Use the sidebar to browse files and folders
+                {t('files.useSidebar')}
               </div>
             </NoFileSelected>
           )}
