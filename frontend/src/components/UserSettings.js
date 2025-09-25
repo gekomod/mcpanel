@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import ChangePassword from './ChangePassword';
 import { useAuth } from '../context/AuthContext'; 
+import { useLanguage } from '../context/LanguageContext';
 import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import api from '../services/api';
@@ -321,6 +322,7 @@ const toastConfig = {
 
 function UserSettings() {
   const { user, token } = useAuth();
+  const { t } = useLanguage();
   const [profileData, setProfileData] = useState({
     fullName: '',
     email: '',
@@ -354,7 +356,7 @@ function UserSettings() {
         language: userData.language || 'pl'
       });
     } catch (error) {
-      toast.error('❌ Błąd podczas ładowania danych profilu', toastConfig);
+      toast.error(t('user.settings.error.loadProfile'), toastConfig);
     }
   };
 
@@ -393,9 +395,9 @@ function UserSettings() {
         username: profileData.username,
         language: profileData.language
       });
-      toast.success('✅ Zmiany profilu zostały zapisane!', toastConfig);
+      toast.success(t('user.settings.success.profileSaved'), toastConfig);
     } catch (error) {
-      const errorMessage = error.response?.data?.error || 'Błąd podczas zapisywania zmian';
+      const errorMessage = error.response?.data?.error || t('user.settings.error.saveProfile');
       toast.error(`❌ ${errorMessage}`, toastConfig);
     } finally {
       setLoading(false);
@@ -405,9 +407,9 @@ function UserSettings() {
   const handleNotificationSave = async () => {
     try {
       await api.put('/user/notifications', notificationSettings);
-      toast.success('🔔 Ustawienia powiadomień zostały zapisane!', toastConfig);
+      toast.success(t('user.settings.success.notificationsSaved'), toastConfig);
     } catch (error) {
-      const errorMessage = error.response?.data?.error || 'Błąd podczas zapisywania ustawień';
+      const errorMessage = error.response?.data?.error || t('user.settings.error.saveNotifications');
       toast.error(`❌ ${errorMessage}`, toastConfig);
     }
   };
@@ -420,33 +422,30 @@ function UserSettings() {
         autoClose: 5000
       });
     } catch (error) {
-      const errorMessage = error.response?.data?.error || 'Błąd podczas eksportu danych';
+      const errorMessage = error.response?.data?.error || t('user.settings.error.exportData');
       toast.error(`❌ ${errorMessage}`, toastConfig);
     }
   };
 
   const openDeleteAccountModal = () => {
-    toast.warning('🚧 Funkcja usuwania konta zostanie zaimplementowana w przyszłej wersji.', toastConfig);
+    toast.warning(t('user.settings.warning.deleteAccount'), toastConfig);
   };
 
   const open2FAModal = async () => {
     try {
       const response = await api.post('/user/generate-2fa-secret');
-      // Tutaj otwórz modal z kodem QR i sekretem
-      toast.info('🔐 Skonfiguruj uwierzytelnianie dwuskładnikowe', toastConfig);
-      // W rzeczywistej aplikacji tutaj otworzyłbyś modal z danymi 2FA
+      toast.info(t('user.settings.info.setup2FA'), toastConfig);
     } catch (error) {
-      toast.error('❌ Błąd podczas generowania sekretu 2FA', toastConfig);
+      toast.error(t('user.settings.error.generate2FA'), toastConfig);
     }
   };
 
   const openSessionsModal = async () => {
     try {
       const response = await api.get('/user/sessions');
-      // Tutaj otwórz modal z listą sesji
-      toast.info(`🔐 Masz ${response.data.length} aktywnych sesji`, toastConfig);
+      toast.info(t('user.settings.info.activeSessions', { count: response.data.length }), toastConfig);
     } catch (error) {
-      toast.error('❌ Błąd podczas pobierania sesji', toastConfig);
+      toast.error(t('user.settings.error.fetchSessions'), toastConfig);
     }
   };
 
@@ -465,12 +464,23 @@ function UserSettings() {
 
   return (
     <SettingsContainer>
+      <Header>
+        <Title>{t('user.settings.title')}</Title>
+        <UserInfo>
+          <UserAvatar>{getInitials(profileData.fullName)}</UserAvatar>
+          <div>
+            <div style={{ fontWeight: '600', color: '#fff' }}>{profileData.fullName || t('user.settings.anonymous')}</div>
+            <div style={{ fontSize: '14px' }}>{profileData.email}</div>
+          </div>
+        </UserInfo>
+      </Header>
+
       <SettingsGrid>
         <Row>
           <div className="section-column">
             <Section>
               <SectionHeader>
-                <SectionTitle>Profil</SectionTitle>
+                <SectionTitle>{t('user.settings.profile.title')}</SectionTitle>
                 <SectionIcon>
                   <FiUsers />
                 </SectionIcon>
@@ -478,7 +488,7 @@ function UserSettings() {
               
               <form onSubmit={handleProfileSubmit}>
                 <FormGroup>
-                  <FormLabel htmlFor="fullName">Imię i nazwisko</FormLabel>
+                  <FormLabel htmlFor="fullName">{t('user.settings.profile.fullName')}</FormLabel>
                   <FormInput 
                     type="text" 
                     id="fullName" 
@@ -486,11 +496,12 @@ function UserSettings() {
                     value={profileData.fullName}
                     onChange={handleProfileChange}
                     disabled={loading}
+                    placeholder={t('user.settings.profile.fullNamePlaceholder')}
                   />
                 </FormGroup>
                 
                 <FormGroup>
-                  <FormLabel htmlFor="email">Adres e-mail</FormLabel>
+                  <FormLabel htmlFor="email">{t('user.settings.profile.email')}</FormLabel>
                   <FormInput 
                     type="email" 
                     id="email" 
@@ -498,11 +509,12 @@ function UserSettings() {
                     value={profileData.email}
                     onChange={handleProfileChange}
                     disabled={loading}
+                    placeholder={t('user.settings.profile.emailPlaceholder')}
                   />
                 </FormGroup>
                 
                 <FormGroup>
-                  <FormLabel htmlFor="username">Nazwa użytkownika</FormLabel>
+                  <FormLabel htmlFor="username">{t('user.settings.profile.username')}</FormLabel>
                   <FormInput 
                     type="text" 
                     id="username" 
@@ -510,11 +522,12 @@ function UserSettings() {
                     value={profileData.username}
                     onChange={handleProfileChange}
                     disabled={loading}
+                    placeholder={t('user.settings.profile.usernamePlaceholder')}
                   />
                 </FormGroup>
                 
                 <FormGroup>
-                  <FormLabel htmlFor="language">Język</FormLabel>
+                  <FormLabel htmlFor="language">{t('user.settings.profile.language')}</FormLabel>
                   <FormSelect 
                     id="language" 
                     name="language"
@@ -522,17 +535,17 @@ function UserSettings() {
                     onChange={handleProfileChange}
                     disabled={loading}
                   >
-                    <option value="pl">Polski</option>
-                    <option value="en">English</option>
-                    <option value="de">Deutsch</option>
-                    <option value="fr">Français</option>
-                    <option value="es">Español</option>
+                    <option value="pl">{t('languages.polish')}</option>
+                    <option value="en">{t('languages.english')}</option>
+                    <option value="de">{t('languages.german')}</option>
+                    <option value="fr">{t('languages.french')}</option>
+                    <option value="es">{t('languages.spanish')}</option>
                   </FormSelect>
                 </FormGroup>
                 
                 <FormActions>
                   <Button $primary type="submit" disabled={loading}>
-                    {loading ? 'Zapisywanie...' : 'Zapisz zmiany'}
+                    {loading ? t('user.settings.saving') : t('user.settings.saveChanges')}
                   </Button>
                 </FormActions>
               </form>
@@ -542,7 +555,7 @@ function UserSettings() {
           <div className="section-column">
             <Section>
               <SectionHeader>
-                <SectionTitle>Bezpieczeństwo</SectionTitle>
+                <SectionTitle>{t('user.settings.security.title')}</SectionTitle>
                 <SectionIcon>
                   <FaShieldAlt />
                 </SectionIcon>
@@ -550,33 +563,33 @@ function UserSettings() {
               
               <SecurityItem>
                 <SecurityInfo>
-                  <SecurityTitle>Hasło</SecurityTitle>
-                  <SecurityDescription>Zaktualizuj swoje hasło regularnie, aby zachować bezpieczeństwo konta</SecurityDescription>
+                  <SecurityTitle>{t('user.settings.security.password')}</SecurityTitle>
+                  <SecurityDescription>{t('user.settings.security.passwordDescription')}</SecurityDescription>
                 </SecurityInfo>
                 <SecurityStatus>
-                  <StatusBadge $active>Aktywne</StatusBadge>
+                  <StatusBadge $active>{t('user.settings.status.active')}</StatusBadge>
                   <ChangePassword />
                 </SecurityStatus>
               </SecurityItem>
               
               <SecurityItem>
                 <SecurityInfo>
-                  <SecurityTitle>Uwierzytelnianie dwuskładnikowe (2FA)</SecurityTitle>
-                  <SecurityDescription>Dodatkowa warstwa bezpieczeństwa dla Twojego konta</SecurityDescription>
+                  <SecurityTitle>{t('user.settings.security.2fa')}</SecurityTitle>
+                  <SecurityDescription>{t('user.settings.security.2faDescription')}</SecurityDescription>
                 </SecurityInfo>
                 <SecurityStatus>
-                  <StatusBadge $inactive>Nieaktywne</StatusBadge>
-                  <Button $secondary onClick={open2FAModal}>Włącz</Button>
+                  <StatusBadge $inactive>{t('user.settings.status.inactive')}</StatusBadge>
+                  <Button $secondary onClick={open2FAModal}>{t('user.settings.security.enable')}</Button>
                 </SecurityStatus>
               </SecurityItem>
               
               <SecurityItem>
                 <SecurityInfo>
-                  <SecurityTitle>Sesje logowania</SecurityTitle>
-                  <SecurityDescription>Zarządzaj aktywnymi sesjami na różnych urządzeniach</SecurityDescription>
+                  <SecurityTitle>{t('user.settings.security.sessions')}</SecurityTitle>
+                  <SecurityDescription>{t('user.settings.security.sessionsDescription')}</SecurityDescription>
                 </SecurityInfo>
                 <SecurityStatus>
-                  <Button $secondary onClick={openSessionsModal}>Zarządzaj</Button>
+                  <Button $secondary onClick={openSessionsModal}>{t('user.settings.security.manage')}</Button>
                 </SecurityStatus>
               </SecurityItem>
             </Section>
@@ -587,7 +600,7 @@ function UserSettings() {
           <div className="section-column">
             <Section>
               <SectionHeader>
-                <SectionTitle>Powiadomienia</SectionTitle>
+                <SectionTitle>{t('user.settings.notifications.title')}</SectionTitle>
                 <SectionIcon>
                   <FaBell />
                 </SectionIcon>
@@ -600,9 +613,9 @@ function UserSettings() {
                   checked={notificationSettings.email_notifications}
                   onChange={() => handleNotificationChange('email_notifications')}
                 />
-                <CheckboxLabel htmlFor="emailNotifications">Powiadomienia e-mail</CheckboxLabel>
+                <CheckboxLabel htmlFor="emailNotifications">{t('user.settings.notifications.email')}</CheckboxLabel>
               </CheckboxGroup>
-              <CheckboxDescription>Otrzymuj powiadomienia o ważnych zdarzeniach na swoim serwerze</CheckboxDescription>
+              <CheckboxDescription>{t('user.settings.notifications.emailDescription')}</CheckboxDescription>
               
               <CheckboxGroup>
                 <input 
@@ -611,9 +624,9 @@ function UserSettings() {
                   checked={notificationSettings.server_status}
                   onChange={() => handleNotificationChange('server_status')}
                 />
-                <CheckboxLabel htmlFor="serverStatus">Status serwera</CheckboxLabel>
+                <CheckboxLabel htmlFor="serverStatus">{t('user.settings.notifications.serverStatus')}</CheckboxLabel>
               </CheckboxGroup>
-              <CheckboxDescription>Powiadomienia o zmianach statusu serwera (online/offline)</CheckboxDescription>
+              <CheckboxDescription>{t('user.settings.notifications.serverStatusDescription')}</CheckboxDescription>
               
               <CheckboxGroup>
                 <input 
@@ -622,9 +635,9 @@ function UserSettings() {
                   checked={notificationSettings.backup_notifications}
                   onChange={() => handleNotificationChange('backup_notifications')}
                 />
-                <CheckboxLabel htmlFor="backupNotifications">Powiadomienia o backupach</CheckboxLabel>
+                <CheckboxLabel htmlFor="backupNotifications">{t('user.settings.notifications.backup')}</CheckboxLabel>
               </CheckboxGroup>
-              <CheckboxDescription>Powiadomienia o ukończeniu backupów serwera</CheckboxDescription>
+              <CheckboxDescription>{t('user.settings.notifications.backupDescription')}</CheckboxDescription>
               
               <CheckboxGroup>
                 <input 
@@ -633,12 +646,12 @@ function UserSettings() {
                   checked={notificationSettings.security_alerts}
                   onChange={() => handleNotificationChange('security_alerts')}
                 />
-                <CheckboxLabel htmlFor="securityAlerts">Alerty bezpieczeństwa</CheckboxLabel>
+                <CheckboxLabel htmlFor="securityAlerts">{t('user.settings.notifications.securityAlerts')}</CheckboxLabel>
               </CheckboxGroup>
-              <CheckboxDescription>Powiadomienia o podejrzanych aktywnościach na koncie</CheckboxDescription>
+              <CheckboxDescription>{t('user.settings.notifications.securityAlertsDescription')}</CheckboxDescription>
               
               <FormActions>
-                <Button $primary onClick={handleNotificationSave}>Zapisz ustawienia</Button>
+                <Button $primary onClick={handleNotificationSave}>{t('user.settings.saveSettings')}</Button>
               </FormActions>
             </Section>
           </div>
@@ -646,26 +659,26 @@ function UserSettings() {
           <div className="section-column">
             <Section>
               <SectionHeader>
-                <SectionTitle>Zarządzanie kontem</SectionTitle>
+                <SectionTitle>{t('user.settings.account.title')}</SectionTitle>
                 <SectionIcon>
                   <FaCog />
                 </SectionIcon>
               </SectionHeader>
               
               <FormGroup>
-                <FormLabel>Eksport danych</FormLabel>
+                <FormLabel>{t('user.settings.account.exportData')}</FormLabel>
                 <p style={{marginBottom: '15px', fontSize: '14px', color: '#a4aabc'}}>
-                  Pobierz kopię wszystkich swoich danych związanych z kontem i serwerami.
+                  {t('user.settings.account.exportDataDescription')}
                 </p>
-                <Button $secondary onClick={exportData}>Eksportuj dane</Button>
+                <Button $secondary onClick={exportData}>{t('user.settings.account.export')}</Button>
               </FormGroup>
               
               <FormGroup>
-                <FormLabel>Usunięcie konta</FormLabel>
+                <FormLabel>{t('user.settings.account.deleteAccount')}</FormLabel>
                 <p style={{marginBottom: '15px', fontSize: '14px', color: '#a4aabc'}}>
-                  Usunięcie konta jest nieodwracalne. Wszystkie dane i serwery zostaną trwale usunięte.
+                  {t('user.settings.account.deleteAccountDescription')}
                 </p>
-                <Button $danger onClick={openDeleteAccountModal}>Usuń konto</Button>
+                <Button $danger onClick={openDeleteAccountModal}>{t('user.settings.account.delete')}</Button>
               </FormGroup>
             </Section>
           </div>

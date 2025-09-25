@@ -631,6 +631,72 @@ export const translations = {
 
 	'backup.size.zero': '0 Bajtów',
 	'backup.size.units': ['Bajty', 'KB', 'MB', 'GB'],
+	
+	'user.settings.title': 'Ustawienia Konta',
+	'user.settings.anonymous': 'Anonimowy',
+	'user.settings.saving': 'Zapisywanie...',
+	'user.settings.saveChanges': 'Zapisz zmiany',
+	'user.settings.saveSettings': 'Zapisz ustawienia',
+
+	'user.settings.profile.title': 'Profil',
+	'user.settings.profile.fullName': 'Imię i nazwisko',
+	'user.settings.profile.fullNamePlaceholder': 'Wprowadź imię i nazwisko',
+	'user.settings.profile.email': 'Adres e-mail',
+	'user.settings.profile.emailPlaceholder': 'Wprowadź adres e-mail',
+	'user.settings.profile.username': 'Nazwa użytkownika',
+	'user.settings.profile.usernamePlaceholder': 'Wprowadź nazwę użytkownika',
+	'user.settings.profile.language': 'Język',
+
+	'user.settings.security.title': 'Bezpieczeństwo',
+	'user.settings.security.password': 'Hasło',
+	'user.settings.security.passwordDescription': 'Zaktualizuj swoje hasło regularnie, aby zachować bezpieczeństwo konta',
+	'user.settings.security.2fa': 'Uwierzytelnianie dwuskładnikowe (2FA)',
+	'user.settings.security.2faDescription': 'Dodatkowa warstwa bezpieczeństwa dla Twojego konta',
+	'user.settings.security.sessions': 'Sesje logowania',
+	'user.settings.security.sessionsDescription': 'Zarządzaj aktywnymi sesjami na różnych urządzeniach',
+	'user.settings.security.enable': 'Włącz',
+	'user.settings.security.manage': 'Zarządzaj',
+
+	'user.settings.notifications.title': 'Powiadomienia',
+	'user.settings.notifications.email': 'Powiadomienia e-mail',
+	'user.settings.notifications.emailDescription': 'Otrzymuj powiadomienia o ważnych zdarzeniach na swoim serwerze',
+	'user.settings.notifications.serverStatus': 'Status serwera',
+	'user.settings.notifications.serverStatusDescription': 'Powiadomienia o zmianach statusu serwera (online/offline)',
+	'user.settings.notifications.backup': 'Powiadomienia o backupach',
+	'user.settings.notifications.backupDescription': 'Powiadomienia o ukończeniu backupów serwera',
+	'user.settings.notifications.securityAlerts': 'Alerty bezpieczeństwa',
+	'user.settings.notifications.securityAlertsDescription': 'Powiadomienia o podejrzanych aktywnościach na koncie',
+
+	'user.settings.account.title': 'Zarządzanie kontem',
+	'user.settings.account.exportData': 'Eksport danych',
+	'user.settings.account.exportDataDescription': 'Pobierz kopię wszystkich swoich danych związanych z kontem i serwerami.',
+	'user.settings.account.export': 'Eksportuj dane',
+	'user.settings.account.deleteAccount': 'Usunięcie konta',
+	'user.settings.account.deleteAccountDescription': 'Usunięcie konta jest nieodwracalne. Wszystkie dane i serwery zostaną trwale usunięte.',
+	'user.settings.account.delete': 'Usuń konto',
+
+	'user.settings.status.active': 'Aktywne',
+	'user.settings.status.inactive': 'Nieaktywne',
+
+	'user.settings.success.profileSaved': '✅ Zmiany profilu zostały zapisane!',
+	'user.settings.success.notificationsSaved': '🔔 Ustawienia powiadomień zostały zapisane!',
+
+	'user.settings.error.loadProfile': '❌ Błąd podczas ładowania danych profilu',
+	'user.settings.error.saveProfile': 'Błąd podczas zapisywania zmian',
+	'user.settings.error.saveNotifications': 'Błąd podczas zapisywania ustawień',
+	'user.settings.error.exportData': 'Błąd podczas eksportu danych',
+	'user.settings.error.generate2FA': '❌ Błąd podczas generowania sekretu 2FA',
+	'user.settings.error.fetchSessions': '❌ Błąd podczas pobierania sesji',
+
+	'user.settings.warning.deleteAccount': '🚧 Funkcja usuwania konta zostanie zaimplementowana w przyszłej wersji.',
+	'user.settings.info.setup2FA': '🔐 Skonfiguruj uwierzytelnianie dwuskładnikowe',
+	'user.settings.info.activeSessions': '🔐 Masz {count} aktywnych sesji',
+
+	'languages.polish': 'Polski',
+	'languages.english': 'English',
+	'languages.german': 'Deutsch',
+	'languages.french': 'Français',
+	'languages.spanish': 'Español',
   },
   
   en: {
@@ -1265,6 +1331,72 @@ export const translations = {
 
 	'backup.size.zero': '0 Bytes',
 	'backup.size.units': ['Bytes', 'KB', 'MB', 'GB'],
+	
+	'user.settings.title': 'Account Settings',
+	'user.settings.anonymous': 'Anonymous',
+	'user.settings.saving': 'Saving...',
+	'user.settings.saveChanges': 'Save Changes',
+	'user.settings.saveSettings': 'Save Settings',
+
+	'user.settings.profile.title': 'Profile',
+	'user.settings.profile.fullName': 'Full Name',
+	'user.settings.profile.fullNamePlaceholder': 'Enter your full name',
+	'user.settings.profile.email': 'Email Address',
+	'user.settings.profile.emailPlaceholder': 'Enter your email address',
+	'user.settings.profile.username': 'Username',
+	'user.settings.profile.usernamePlaceholder': 'Enter your username',
+	'user.settings.profile.language': 'Language',
+
+	'user.settings.security.title': 'Security',
+	'user.settings.security.password': 'Password',
+	'user.settings.security.passwordDescription': 'Update your password regularly to maintain account security',
+	'user.settings.security.2fa': 'Two-Factor Authentication (2FA)',
+	'user.settings.security.2faDescription': 'Additional security layer for your account',
+	'user.settings.security.sessions': 'Login Sessions',
+	'user.settings.security.sessionsDescription': 'Manage active sessions on different devices',
+	'user.settings.security.enable': 'Enable',
+	'user.settings.security.manage': 'Manage',
+
+	'user.settings.notifications.title': 'Notifications',
+	'user.settings.notifications.email': 'Email Notifications',
+	'user.settings.notifications.emailDescription': 'Receive notifications about important events on your server',
+	'user.settings.notifications.serverStatus': 'Server Status',
+	'user.settings.notifications.serverStatusDescription': 'Notifications about server status changes (online/offline)',
+	'user.settings.notifications.backup': 'Backup Notifications',
+	'user.settings.notifications.backupDescription': 'Notifications about completed server backups',
+	'user.settings.notifications.securityAlerts': 'Security Alerts',
+	'user.settings.notifications.securityAlertsDescription': 'Notifications about suspicious activities on your account',
+
+	'user.settings.account.title': 'Account Management',
+	'user.settings.account.exportData': 'Export Data',
+	'user.settings.account.exportDataDescription': 'Download a copy of all your account and server related data.',
+	'user.settings.account.export': 'Export Data',
+	'user.settings.account.deleteAccount': 'Account Deletion',
+	'user.settings.account.deleteAccountDescription': 'Account deletion is irreversible. All data and servers will be permanently deleted.',
+	'user.settings.account.delete': 'Delete Account',
+
+	'user.settings.status.active': 'Active',
+	'user.settings.status.inactive': 'Inactive',
+
+	'user.settings.success.profileSaved': '✅ Profile changes have been saved!',
+	'user.settings.success.notificationsSaved': '🔔 Notification settings have been saved!',
+
+	'user.settings.error.loadProfile': '❌ Error loading profile data',
+	'user.settings.error.saveProfile': 'Error saving changes',
+	'user.settings.error.saveNotifications': 'Error saving settings',
+	'user.settings.error.exportData': 'Error exporting data',
+	'user.settings.error.generate2FA': '❌ Error generating 2FA secret',
+	'user.settings.error.fetchSessions': '❌ Error fetching sessions',
+
+	'user.settings.warning.deleteAccount': '🚧 Account deletion feature will be implemented in a future version.',
+	'user.settings.info.setup2FA': '🔐 Set up two-factor authentication',
+	'user.settings.info.activeSessions': '🔐 You have {count} active sessions',
+
+	'languages.polish': 'Polish',
+	'languages.english': 'English',
+	'languages.german': 'German',
+	'languages.french': 'French',
+	'languages.spanish': 'Spanish'
   }
 };
 
