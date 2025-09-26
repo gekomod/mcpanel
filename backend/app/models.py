@@ -1,5 +1,5 @@
 from . import db
-from datetime import datetime
+from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
 import json
 
@@ -19,7 +19,7 @@ class User(db.Model):
     last_login = db.Column(db.DateTime, nullable=True)
     login_attempts = db.Column(db.Integer, default=0)
     locked_until = db.Column(db.DateTime, nullable=True)
-    preferences = db.Column(db.Text, default='{}')  # JSON preferences
+    preferences = db.Column(db.Text, default='{}')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -118,7 +118,7 @@ class User(db.Model):
         """Rejestruje nieudane logowanie i blokuje konto po 5 próbach"""
         self.login_attempts += 1
         if self.login_attempts >= 5:
-            self.locked_until = datetime.utcnow() + timedelta(minutes=30)  # Blokada na 30 minut
+            self.locked_until = datetime.utcnow() + timedelta(minutes=30)
         self.updated_at = datetime.utcnow()
         db.session.commit()
     
@@ -164,6 +164,110 @@ class User(db.Model):
             'created_at': self.created_at.isoformat()
         }
 
+class Agent(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False, unique=True)
+    url = db.Column(db.String(500), nullable=False)
+    auth_token = db.Column(db.String(128), nullable=False)
+    status = db.Column(db.String(20), default='offline')  # online, offline, starting, error
+    location = db.Column(db.String(100), nullable=True)
+    cpu_usage = db.Column(db.Float, default=0.0)
+    memory_usage = db.Column(db.Float, default=0.0)
+    disk_usage = db.Column(db.Float, default=0.0)
+    max_servers = db.Column(db.Integer, default=5)
+    running_servers = db.Column(db.Integer, default=0)
+    last_heartbeat = db.Column(db.DateTime, nullable=True)
+    is_active = db.Column(db.Boolean, default=True)
+    version = db.Column(db.String(32), nullable=True)
+    capabilities = db.Column(db.Text, default='{}')  # JSON z możliwościami agenta
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._ensure_capabilities_dict()
+    
+    def _ensure_capabilities_dict(self):
+        """Zapewnia, że capabilities jest poprawnym słownikiem JSON"""
+        if not self.capabilities or self.capabilities.strip() == '':
+            self.capabilities = '{}'
+        elif isinstance(self.capabilities, dict):
+            self.capabilities = json.dumps(self.capabilities)
+    
+    def get_capabilities(self):
+        """Zwraca słownik możliwości agenta"""
+        try:
+            if not self.capabilities or self.capabilities.strip() == '':
+                return {}
+            return json.loads(self.capabilities)
+        except (json.JSONDecodeError, TypeError):
+            return {}
+    
+    def set_capabilities(self, capabilities_dict):
+        """Ustawia możliwości agenta"""
+        if not isinstance(capabilities_dict, dict):
+            capabilities_dict = {}
+        self.capabilities = json.dumps(capabilities_dict)
+    
+    def update_heartbeat(self, metrics=None):
+        """Aktualizuje heartbeat agenta z metrykami"""
+        self.last_heartbeat = datetime.utcnow()
+        self.status = 'online'
+        
+        if metrics:
+            self.cpu_usage = metrics.get('cpu_usage', self.cpu_usage)
+            self.memory_usage = metrics.get('memory_usage', self.memory_usage)
+            self.disk_usage = metrics.get('disk_usage', self.disk_usage)
+            self.running_servers = metrics.get('running_servers', self.running_servers)
+            self.version = metrics.get('version', self.version)
+            
+            if 'capabilities' in metrics:
+                self.set_capabilities(metrics['capabilities'])
+        
+        self.updated_at = datetime.utcnow()
+        db.session.commit()
+    
+    def mark_offline(self):
+        """Oznacza agenta jako offline"""
+        self.status = 'offline'
+        self.cpu_usage = 0.0
+        self.memory_usage = 0.0
+        self.running_servers = 0
+        self.updated_at = datetime.utcnow()
+        db.session.commit()
+    
+    def is_online(self):
+        """Sprawdza czy agent jest online (ostatni heartbeat w ciągu 2 minut)"""
+        if not self.last_heartbeat:
+            return False
+        return (datetime.utcnow() - self.last_heartbeat) < timedelta(minutes=2)
+    
+    def can_host_more_servers(self):
+        """Sprawdza czy agent może hostować więcej serwerów"""
+        return self.running_servers < self.max_servers and self.is_online()
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'url': self.url,
+            'status': self.status,
+            'location': self.location,
+            'cpu_usage': self.cpu_usage,
+            'memory_usage': self.memory_usage,
+            'disk_usage': self.disk_usage,
+            'max_servers': self.max_servers,
+            'running_servers': self.running_servers,
+            'last_heartbeat': self.last_heartbeat.isoformat() if self.last_heartbeat else None,
+            'is_active': self.is_active,
+            'version': self.version,
+            'capabilities': self.get_capabilities(),
+            'is_online': self.is_online(),
+            'can_host_more': self.can_host_more_servers(),
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
 class Server(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(64), unique=True)
@@ -171,10 +275,16 @@ class Server(db.Model):
     path = db.Column(db.String(256))
     version = db.Column(db.String(32))
     port = db.Column(db.Integer)
-    status = db.Column(db.String(32), default='stopped')
+    status = db.Column(db.String(32), default='stopped')  # stopped, starting, running, stopping, error
     pid = db.Column(db.Integer, nullable=True)
+    agent_id = db.Column(db.Integer, db.ForeignKey('agent.id'), nullable=True)
+    address = db.Column(db.String(100), nullable=True)
+    player_count = db.Column(db.Integer, default=0)
+    max_players = db.Column(db.Integer, default=20)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_started = db.Column(db.DateTime, nullable=True)
+    
+    agent = db.relationship('Agent', backref=db.backref('servers', lazy=True))
     
     def to_dict(self):
         return {
@@ -186,9 +296,25 @@ class Server(db.Model):
             'port': self.port,
             'status': self.status,
             'pid': self.pid,
+            'agent_id': self.agent_id,
+            'address': self.address,
+            'player_count': self.player_count,
+            'max_players': self.max_players,
+            'agent': self.agent.to_dict() if self.agent else None,
             'created_at': self.created_at.isoformat(),
             'last_started': self.last_started.isoformat() if self.last_started else None
         }
+    
+    def update_real_status(self, status_data):
+        """Aktualizuje rzeczywisty status serwera z danych z agenta"""
+        self.status = status_data.get('status', self.status)
+        self.player_count = status_data.get('player_count', self.player_count)
+        self.pid = status_data.get('pid', self.pid)
+        
+        if status_data.get('status') == 'running' and not self.last_started:
+            self.last_started = datetime.utcnow()
+        
+        db.session.commit()
 
 class Permission(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -204,7 +330,6 @@ class Permission(db.Model):
     user = db.relationship('User', backref=db.backref('permissions', lazy=True))
     server = db.relationship('Server', backref=db.backref('permissions', lazy=True))
 
-# Dodaj model dla wersji Bedrock
 class BedrockVersion(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     version = db.Column(db.String(32), unique=True, nullable=False)
@@ -241,14 +366,13 @@ class Addon(db.Model):
     behavior_pack_version = db.Column(db.String(20), nullable=True)
     resource_pack_uuid = db.Column(db.String(36), nullable=True)
     resource_pack_version = db.Column(db.String(20), nullable=True)
-    installed_on_servers = db.Column(db.Text, default='[]')  # ZMIENIONE: db.Text zamiast db.JSON
+    installed_on_servers = db.Column(db.Text, default='[]')
     enabled = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # Zapewnij, że installed_on_servers zawsze jest poprawną listą
         self._ensure_installed_servers_list()
     
     def _ensure_installed_servers_list(self):
@@ -256,10 +380,8 @@ class Addon(db.Model):
         if not self.installed_on_servers or self.installed_on_servers.strip() == '':
             self.installed_on_servers = '[]'
         elif isinstance(self.installed_on_servers, list):
-            # Jeśli to lista, serializuj do JSON
             self.installed_on_servers = json.dumps(self.installed_on_servers)
         elif isinstance(self.installed_on_servers, dict):
-            # Jeśli to słownik, konwertuj wartości na listę i serializuj
             self.installed_on_servers = json.dumps(list(self.installed_on_servers.values()))
     
     def get_installed_servers(self):
@@ -310,17 +432,17 @@ class Addon(db.Model):
             'behavior_pack_version': self.behavior_pack_version,
             'resource_pack_uuid': self.resource_pack_uuid,
             'resource_pack_version': self.resource_pack_version,
-            'installed_on_servers': self.get_installed_servers(),  # Użyj metody getter
+            'installed_on_servers': self.get_installed_servers(),
             'enabled': self.enabled,
             'created_at': self.created_at.isoformat(),
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
-        
+
 class UserSession(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     session_token = db.Column(db.String(64), unique=True, nullable=False)
-    ip_address = db.Column(db.String(45))  # IPv6 support
+    ip_address = db.Column(db.String(45))
     user_agent = db.Column(db.Text)
     expires_at = db.Column(db.DateTime, nullable=False)
     is_active = db.Column(db.Boolean, default=True)
@@ -343,4 +465,27 @@ class UserSession(db.Model):
             'is_active': self.is_active,
             'created_at': self.created_at.isoformat(),
             'last_used': self.last_used.isoformat() if self.last_used else None
+        }
+
+class AgentHeartbeat(db.Model):
+    """Model do przechowywania historii heartbeatów agentów"""
+    id = db.Column(db.Integer, primary_key=True)
+    agent_id = db.Column(db.Integer, db.ForeignKey('agent.id'), nullable=False)
+    cpu_usage = db.Column(db.Float)
+    memory_usage = db.Column(db.Float)
+    disk_usage = db.Column(db.Float)
+    running_servers = db.Column(db.Integer)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    agent = db.relationship('Agent', backref=db.backref('heartbeats', lazy=True))
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'agent_id': self.agent_id,
+            'cpu_usage': self.cpu_usage,
+            'memory_usage': self.memory_usage,
+            'disk_usage': self.disk_usage,
+            'running_servers': self.running_servers,
+            'timestamp': self.timestamp.isoformat()
         }

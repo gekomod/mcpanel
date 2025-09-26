@@ -12,6 +12,7 @@ import {
   FiDownload,
   FiBox
 } from 'react-icons/fi';
+import { FaMemory } from "react-icons/fa6";
 import { ImQuestion } from "react-icons/im";
 import { useLanguage } from '../context/LanguageContext';
 
@@ -79,6 +80,10 @@ const routeConfig = {
   '/admin/settings': {
     translationKey: 'page.settings',
     icon: FiSettings
+  },
+  '/admin/agents': {
+    translationKey: 'page.agents',
+    icon: FaMemory
   }
 };
 

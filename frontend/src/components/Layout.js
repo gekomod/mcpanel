@@ -251,6 +251,7 @@ function Layout({ children }) {
   
   const adminItems = [
     { path: '/admin/users', icon: FiUsers, label: t('nav.users') },
+    { path: '/admin/agents', icon: FiServer, label: t('nav.agents') },
     { path: '/admin/bedrock-versions', icon: FiBox, label: t('nav.bedrock') },
     { path: '/admin/addons', icon: FiPackage, label: t('nav.addons') },
     { path: '/permissions', icon: FiShield, label: t('nav.permissions') },

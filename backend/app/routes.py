@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from .models import db, User, Server, Permission, BedrockVersion, Addon, UserSession
+from .models import db, User, Server, Permission, BedrockVersion, Addon, UserSession, Agent
 from .managers import server_manager, file_manager
 from .bedrock_manager import BedrockAddonManager
 from datetime import datetime
@@ -1933,6 +1933,399 @@ def generate_2fa_secret():
         'secret': secret,
         'qr_code_url': f'otpauth://totp/Shockbyte:{user.username}?secret={secret}&issuer=Shockbyte'
     })
+    
+# Endpointy do zarządzania agentami
+@main.route('/agents', methods=['GET'])
+@jwt_required()
+def get_agents():
+    """Pobiera listę wszystkich agentów"""
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    # Tylko admini mogą zarządzać agentami
+    if user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    agents = Agent.query.all()
+    return jsonify([agent.to_dict() for agent in agents])
+
+@main.route('/agents', methods=['POST'])
+@jwt_required()
+def create_agent():
+    """Tworzy nowego agenta"""
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    if user.role != 'admin':
+        return jsonify({'error': 'Only admins can create agents'}), 403
+    
+    data = request.get_json()
+    
+    required_fields = ['name', 'url', 'token']
+    for field in required_fields:
+        if not data.get(field):
+            return jsonify({'error': f'Missing required field: {field}'}), 400
+    
+    # Sprawdź czy agent o tej nazwie już istnieje
+    if Agent.query.filter_by(name=data['name']).first():
+        return jsonify({'error': 'Agent with this name already exists'}), 400
+    
+    # Sprawdź czy URL jest unikalny
+    if Agent.query.filter_by(url=data['url']).first():
+        return jsonify({'error': 'Agent with this URL already exists'}), 400
+    
+    agent = Agent(
+        name=data['name'],
+        url=data['url'],
+        auth_token=data['token'],
+        location=data.get('location', 'Unknown'),
+        max_servers=data.get('capacity', 5),
+        status='offline'
+    )
+    
+    db.session.add(agent)
+    db.session.commit()
+    
+    return jsonify(agent.to_dict()), 201
+
+@main.route('/agents/<int:agent_id>', methods=['GET'])
+@jwt_required()
+def get_agent(agent_id):
+    """Pobiera szczegóły agenta"""
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    if user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    agent = Agent.query.get_or_404(agent_id)
+    return jsonify(agent.to_dict())
+
+@main.route('/agents/<int:agent_id>', methods=['PUT'])
+@jwt_required()
+def update_agent(agent_id):
+    """Aktualizuje agenta"""
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    if user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    agent = Agent.query.get_or_404(agent_id)
+    data = request.get_json()
+    
+    if 'name' in data and data['name'] != agent.name:
+        # Sprawdź unikalność nazwy
+        existing = Agent.query.filter_by(name=data['name']).first()
+        if existing and existing.id != agent_id:
+            return jsonify({'error': 'Agent with this name already exists'}), 400
+        agent.name = data['name']
+    
+    if 'url' in data and data['url'] != agent.url:
+        # Sprawdź unikalność URL
+        existing = Agent.query.filter_by(url=data['url']).first()
+        if existing and existing.id != agent_id:
+            return jsonify({'error': 'Agent with this URL already exists'}), 400
+        agent.url = data['url']
+    
+    if 'token' in data:
+        agent.token = data['token']
+    
+    if 'location' in data:
+        agent.location = data['location']
+    
+    if 'capacity' in data:
+        agent.capacity = data['capacity']
+        agent.max_servers = data['capacity']
+    
+    db.session.commit()
+    
+    return jsonify(agent.to_dict())
+
+@main.route('/agents/<int:agent_id>', methods=['DELETE'])
+@jwt_required()
+def delete_agent(agent_id):
+    """Usuwa agenta"""
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    if user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    agent = Agent.query.get_or_404(agent_id)
+    
+    # Sprawdź czy agent nie hostuje żadnych serwerów
+    if agent.servers:
+        server_names = [server.name for server in agent.servers]
+        return jsonify({
+            'error': 'Cannot delete agent with assigned servers',
+            'servers': server_names
+        }), 400
+    
+    db.session.delete(agent)
+    db.session.commit()
+    
+    return jsonify({'message': 'Agent deleted successfully'})
+
+@main.route('/agents/<int:agent_id>/restart', methods=['POST'])
+@jwt_required()
+def restart_agent(agent_id):
+    """Wysyła komendę restartu do agenta"""
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    if user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    agent = Agent.query.get_or_404(agent_id)
+    
+    try:
+        # Wyślij komendę restartu do agenta
+        import requests
+        response = requests.post(
+            f"{agent.url}/restart",
+            headers={'Authorization': f'Bearer {agent.token}'},
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            agent.status = 'restarting'
+            db.session.commit()
+            return jsonify({'message': 'Restart command sent to agent'})
+        else:
+            return jsonify({'error': f'Agent responded with status {response.status_code}'}), 400
+            
+    except requests.exceptions.RequestException as e:
+        return jsonify({'error': f'Failed to connect to agent: {str(e)}'}), 400
+
+@main.route('/agents/<int:agent_id>/servers', methods=['GET'])
+@jwt_required()
+def get_agent_servers(agent_id):
+    """Pobiera serwery przypisane do agenta"""
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    if user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    agent = Agent.query.get_or_404(agent_id)
+    servers = Server.query.filter_by(agent_id=agent_id).all()
+    
+    return jsonify([server.to_dict() for server in servers])
+
+@main.route('/servers/<int:server_id>/assign-to-agent', methods=['POST'])
+@jwt_required()
+def assign_server_to_agent(server_id):
+    """Przypisuje serwer do agenta"""
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    if user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    data = request.get_json()
+    agent_id = data.get('agent_id')
+    
+    if not agent_id:
+        return jsonify({'error': 'agent_id is required'}), 400
+    
+    server = Server.query.get_or_404(server_id)
+    agent = Agent.query.get_or_404(agent_id)
+    
+    # Sprawdź czy agent ma wystarczającą pojemność
+    current_servers = Server.query.filter_by(agent_id=agent_id).count()
+    if current_servers >= agent.capacity:
+        return jsonify({'error': 'Agent has reached maximum capacity'}), 400
+    
+    server.agent_id = agent_id
+    db.session.commit()
+    
+    return jsonify({'message': f'Server assigned to agent {agent.name}'})
+
+# Endpointy dla komunikacji agent-panel
+@main.route('/api/agent/status', methods=['POST'])
+def report_agent_status():
+    """Endpoint dla agentów do raportowania statusu"""
+    data = request.get_json()
+    
+    # Weryfikacja tokena agenta
+    agent_token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    if not agent_token:
+        return jsonify({'error': 'Missing authorization token'}), 401
+    
+    agent = Agent.query.filter_by(token=agent_token).first()
+    if not agent:
+        return jsonify({'error': 'Invalid agent token'}), 401
+    
+    # Aktualizuj status agenta
+    agent.status = 'online'
+    agent.last_seen = datetime.utcnow()
+    
+    if 'cpu_usage' in data:
+        agent.cpu_usage = data['cpu_usage']
+    
+    if 'memory_usage' in data:
+        agent.memory_usage = data['memory_usage']
+    
+    if 'disk_usage' in data:
+        agent.disk_usage = data['disk_usage']
+    
+    if 'running_servers' in data:
+        agent.running_servers = data['running_servers']
+    
+    db.session.commit()
+    
+    return jsonify({'message': 'Status received', 'agent_id': agent.id})
+
+@main.route('/api/agent/servers', methods=['GET'])
+def get_agent_servers_api():
+    """Pobiera listę serwerów dla agenta"""
+    # Weryfikacja tokena agenta
+    agent_token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    if not agent_token:
+        return jsonify({'error': 'Missing authorization token'}), 401
+    
+    agent = Agent.query.filter_by(token=agent_token).first()
+    if not agent:
+        return jsonify({'error': 'Invalid agent token'}), 401
+    
+    # Pobierz serwery przypisane do tego agenta
+    servers = Server.query.filter_by(agent_id=agent.id).all()
+    
+    return jsonify([{
+        'id': server.id,
+        'name': server.name,
+        'type': server.type,
+        'version': server.version,
+        'status': server.status,
+        'path': server.path,
+        'port': server.port
+    } for server in servers])
+
+@main.route('/api/agent/servers/<int:server_id>/status', methods=['POST'])
+def update_server_status(server_id):
+    """Aktualizuje status serwera od agenta"""
+    # Weryfikacja tokena agenta
+    agent_token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    if not agent_token:
+        return jsonify({'error': 'Missing authorization token'}), 401
+    
+    agent = Agent.query.filter_by(token=agent_token).first()
+    if not agent:
+        return jsonify({'error': 'Invalid agent token'}), 401
+    
+    data = request.get_json()
+    status = data.get('status')
+    pid = data.get('pid')
+    
+    if status not in ['running', 'stopped', 'starting', 'stopping']:
+        return jsonify({'error': 'Invalid status'}), 400
+    
+    server = Server.query.get_or_404(server_id)
+    
+    # Sprawdź czy serwer należy do tego agenta
+    if server.agent_id != agent.id:
+        return jsonify({'error': 'Server not assigned to this agent'}), 403
+    
+    server.status = status
+    if pid is not None:
+        server.pid = pid
+    server.updated_at = datetime.utcnow()
+    
+    db.session.commit()
+    
+    return jsonify({'message': 'Status updated'})
+
+@main.route('/agents/<int:agent_id>/test-connection', methods=['POST'])
+@jwt_required()
+def test_agent_connection(agent_id):
+    """Testuje połączenie z agentem"""
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    if user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    agent = Agent.query.get_or_404(agent_id)
+    
+    try:
+        # Spróbuj wysłać testowe zapytanie do agenta
+        import requests
+        response = requests.get(
+            f"{agent.url}/status",
+            headers={'Authorization': f'Bearer {agent.token}'},
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            agent_data = response.json()
+            return jsonify({
+                'success': True,
+                'message': 'Connection successful',
+                'agent_status': agent_data
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': f'Agent responded with status {response.status_code}'
+            }), 400
+            
+    except requests.exceptions.RequestException as e:
+        return jsonify({
+            'success': False,
+            'message': f'Connection failed: {str(e)}'
+        }), 400
+
+@main.route('/agents/<int:agent_id>/deploy-server', methods=['POST'])
+@jwt_required()
+def deploy_server_to_agent(agent_id):
+    """Wdraża serwer na agencie"""
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    if user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    agent = Agent.query.get_or_404(agent_id)
+    data = request.get_json()
+    server_id = data.get('server_id')
+    
+    if not server_id:
+        return jsonify({'error': 'server_id is required'}), 400
+    
+    server = Server.query.get_or_404(server_id)
+    
+    try:
+        # Wyślij komendę wdrożenia do agenta
+        import requests
+        response = requests.post(
+            f"{agent.url}/servers/deploy",
+            headers={'Authorization': f'Bearer {agent.token}'},
+            json=server.to_dict(),
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            # Przypisz serwer do agenta
+            server.agent_id = agent_id
+            db.session.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': 'Server deployment command sent to agent',
+                'response': response.json()
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': f'Agent deployment failed: {response.status_code}'
+            }), 400
+            
+    except requests.exceptions.RequestException as e:
+        return jsonify({
+            'success': False,
+            'message': f'Failed to deploy to agent: {str(e)}'
+        }), 400
 
 def _check_permission(user_id, server_id, permission):
     user = User.query.get(user_id)
