@@ -7,6 +7,9 @@ import {
   FiHardDrive,
   FiRefreshCw,
   FiSettings,
+  FiEdit,
+  FiTrash2,
+  FiSave,
   FiX
 } from 'react-icons/fi';
 import { FaMemory } from "react-icons/fa6";
@@ -376,6 +379,7 @@ function Agents() {
   const [loading, setLoading] = useState(true);
   const [showAddAgent, setShowAddAgent] = useState(false);
   const navigate = useNavigate();
+  const [editingAgent, setEditingAgent] = useState(null);
 
   useEffect(() => {
     fetchAgents();
@@ -384,16 +388,31 @@ function Agents() {
     return () => clearInterval(interval);
   }, []);
 
-  const fetchAgents = async () => {
-    try {
-      const response = await api.get('/agents');
-      setAgents(response.data);
-    } catch (error) {
-      console.error('Error fetching agents:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+const fetchAgents = async () => {
+  try {
+    const response = await api.get('/agents');
+    // Mapowanie danych z API na format używany w komponencie
+    const mappedAgents = response.data.map(agent => ({
+      id: agent.id,
+      name: agent.name,
+      status: agent.status || 'offline',
+      location: agent.location,
+      url: agent.url,
+      cpuUsage: Math.round(agent.cpu_usage || 0),
+      memoryUsage: Math.round(agent.memory_usage || 0),
+      diskUsage: Math.round(agent.disk_usage || 0),
+      runningServers: agent.running_servers,
+      maxServers: agent.max_servers,
+      is_active: agent.is_active,
+      last_update: agent.last_update
+    }));
+    setAgents(mappedAgents);
+  } catch (error) {
+    console.error('Error fetching agents:', error);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleAddAgent = async (e) => {
     e.preventDefault();
@@ -402,7 +421,7 @@ function Agents() {
     const agentData = {
       name: formData.get('name'),
       url: formData.get('url'),
-      token: formData.get('token'),
+      auth_token: formData.get('token'),
       capacity: parseInt(formData.get('capacity'))
     };
     
@@ -428,6 +447,50 @@ function Agents() {
       }
     }
   };
+  
+	const handleDeleteAgent = async (agentId) => {
+	  if (window.confirm('Czy na pewno chcesz usunąć tego agenta? Ta operacja jest nieodwracalna.')) {
+		try {
+		  await api.delete(`/agents/${agentId}`);
+		  fetchAgents();
+		} catch (error) {
+		  console.error('Error deleting agent:', error);
+		  alert('Błąd podczas usuwania agenta');
+		}
+	  }
+	};
+	
+	const handleEditAgent = (agent) => {
+	  setEditingAgent(agent);
+	};
+
+const handleUpdateAgent = async (e) => {
+  e.preventDefault();
+  
+  const formData = new FormData(e.target);
+  const agentData = {
+    name: formData.get('name'),
+    url: formData.get('url'),
+    location: formData.get('location'),
+    capacity: parseInt(formData.get('capacity')),
+    is_active: formData.get('is_active') === 'true'
+  };
+  
+  // Dodaj token tylko jeśli został podany
+  const token = formData.get('token');
+  if (token) {
+    agentData.token = token;
+  }
+  
+  try {
+    await api.put(`/agents/${editingAgent.id}`, agentData);
+    setEditingAgent(null);
+    fetchAgents();
+  } catch (error) {
+    console.error('Error updating agent:', error);
+    alert('Błąd podczas aktualizacji agenta: ' + (error.response?.data?.error || error.message));
+  }
+};
 
   const handleManageAgent = (agentId) => {
     navigate(`/agents/${agentId}`);
@@ -465,7 +528,22 @@ function Agents() {
             </AgentCardHeader>
             
             <AgentCardDetails>
-              <AgentDetail>
+              
+<AgentDetail>
+  <AgentDetailLabel>Ostatnia aktualizacja</AgentDetailLabel>
+  <AgentDetailValue>
+    {agent.last_update 
+      ? new Date(agent.last_update).toLocaleString('pl-PL')
+      : 'Nigdy'
+    }
+  </AgentDetailValue>
+</AgentDetail>
+<AgentDetail>
+  <AgentDetailLabel>Status z API</AgentDetailLabel>
+  <AgentDetailValue>{agent.status}</AgentDetailValue>
+</AgentDetail>
+
+<AgentDetail>
                 <AgentDetailLabel>Lokalizacja</AgentDetailLabel>
                 <AgentDetailValue>{agent.location || 'Nieznana'}</AgentDetailValue>
               </AgentDetail>
@@ -478,11 +556,11 @@ function Agents() {
                   <FiCpu style={{ marginRight: '4px' }} />
                   CPU
                 </AgentDetailLabel>
-                <AgentDetailValue>{agent.cpuUsage || 0}%</AgentDetailValue>
+                <AgentDetailValue>{agent.cpuUsage}%</AgentDetailValue>
                 <ProgressBar>
                   <ProgressFill 
                     $type="cpu" 
-                    style={{ width: `${agent.cpuUsage || 0}%` }} 
+                    style={{ width: `${agent.cpuUsage}%` }} 
                   />
                 </ProgressBar>
               </AgentDetail>
@@ -491,11 +569,11 @@ function Agents() {
                   <FaMemory style={{ marginRight: '4px' }} />
                   Pamięć
                 </AgentDetailLabel>
-                <AgentDetailValue>{agent.memoryUsage || 0}%</AgentDetailValue>
+                <AgentDetailValue>{agent.memoryUsage}%</AgentDetailValue>
                 <ProgressBar>
                   <ProgressFill 
                     $type="memory" 
-                    style={{ width: `${agent.memoryUsage || 0}%` }} 
+                    style={{ width: `${agent.memoryUsage}%` }} 
                   />
                 </ProgressBar>
               </AgentDetail>
@@ -504,18 +582,18 @@ function Agents() {
                   <FiHardDrive style={{ marginRight: '4px' }} />
                   Dysk
                 </AgentDetailLabel>
-                <AgentDetailValue>{agent.diskUsage || 0}%</AgentDetailValue>
+                <AgentDetailValue>{agent.diskUsage}%</AgentDetailValue>
                 <ProgressBar>
                   <ProgressFill 
                     $type="disk" 
-                    style={{ width: `${agent.diskUsage || 0}%` }} 
+                    style={{ width: `${agent.diskUsage}%` }} 
                   />
                 </ProgressBar>
               </AgentDetail>
               <AgentDetail>
                 <AgentDetailLabel>Serwery</AgentDetailLabel>
                 <AgentDetailValue>
-                  {agent.runningServers || 0}/{agent.maxServers || 5}
+                  {agent.runningServers}/{agent.maxServers}
                 </AgentDetailValue>
               </AgentDetail>
             </AgentCardDetails>
@@ -523,22 +601,28 @@ function Agents() {
             <AgentCardFooter>
               <AgentServers>
                 <FiServer />
-                <span>{agent.runningServers || 0} aktywnych serwerów</span>
+                <span>{agent.runningServers} aktywnych serwerów</span>
               </AgentServers>
-              <AgentActions>
-                <AgentButton onClick={() => handleRestartAgent(agent.id)}>
-                  <FiRefreshCw />
-                  Restart
-                </AgentButton>
-                <AgentButton 
-                  $primary 
-                  onClick={() => handleManageAgent(agent.id)}
-                >
-                  <FiSettings />
-                  Zarządzaj
-                </AgentButton>
-              </AgentActions>
             </AgentCardFooter>
+            
+            <AgentActions>
+  <AgentButton onClick={() => handleEditAgent(agent)}>
+    <FiEdit />
+    Edytuj
+  </AgentButton>
+  <AgentButton onClick={() => handleDeleteAgent(agent.id)}>
+    <FiTrash2 />
+    Usuń
+  </AgentButton>
+  <AgentButton onClick={() => handleRestartAgent(agent.id)}>
+    <FiRefreshCw />
+    Restart
+  </AgentButton>
+  <AgentButton $primary onClick={() => handleManageAgent(agent.id)}>
+    <FiSettings />
+    Zarządzaj
+  </AgentButton>
+</AgentActions>
           </AgentCard>
         ))}
         
@@ -621,6 +705,132 @@ function Agents() {
           </form>
         </ModalContent>
       </Modal>
+      
+      {/* Modal edycji agenta */}
+<Modal $isOpen={!!editingAgent}>
+  <ModalContent>
+    <ModalHeader>
+      <ModalTitle>Edytuj agenta</ModalTitle>
+      <CloseModal onClick={() => setEditingAgent(null)}>
+        <FiX />
+      </CloseModal>
+    </ModalHeader>
+    
+    <form onSubmit={handleUpdateAgent}>
+      <FormGroup>
+        <FormLabel htmlFor="editAgentName">Nazwa agenta</FormLabel>
+        <FormInput 
+          type="text" 
+          id="editAgentName" 
+          name="name"
+          placeholder="Nazwa agenta" 
+          defaultValue={editingAgent?.name || ''}
+          required 
+        />
+      </FormGroup>
+      
+      <FormGroup>
+        <FormLabel htmlFor="editAgentUrl">URL agenta</FormLabel>
+        <FormInput 
+          type="url" 
+          id="editAgentUrl" 
+          name="url"
+          placeholder="http://ip-agent:8080" 
+          defaultValue={editingAgent?.url || ''}
+          required 
+        />
+      </FormGroup>
+      
+      <FormGroup>
+        <FormLabel htmlFor="editAgentToken">Token autoryzacji</FormLabel>
+        <FormInput 
+          type="password" 
+          id="editAgentToken" 
+          name="token"
+          placeholder="Wpisz nowy token lub pozostaw puste, aby zachować obecny" 
+          defaultValue=""
+        />
+        <small style={{color: '#a4aabc', fontSize: '12px', marginTop: '5px'}}>
+          Pozostaw puste, jeśli nie chcesz zmieniać tokenu
+        </small>
+      </FormGroup>
+      
+      <FormGroup>
+        <FormLabel htmlFor="editAgentLocation">Lokalizacja</FormLabel>
+        <FormInput 
+          type="text" 
+          id="editAgentLocation" 
+          name="location"
+          placeholder="np. Warszawa, DC1" 
+          defaultValue={editingAgent?.location || ''}
+        />
+      </FormGroup>
+      
+      <FormGroup>
+        <FormLabel htmlFor="editAgentCapacity">Maksymalna liczba serwerów</FormLabel>
+        <FormInput 
+          type="number" 
+          id="editAgentCapacity" 
+          name="capacity"
+          defaultValue={editingAgent?.maxServers || 5} 
+          min="1" 
+          max="50" 
+          required 
+        />
+      </FormGroup>
+      
+      <FormGroup>
+        <FormLabel htmlFor="editAgentStatus">Status</FormLabel>
+        <FormInput 
+          as="select"
+          id="editAgentStatus" 
+          name="is_active"
+          defaultValue={editingAgent?.is_active ? 'true' : 'false'}
+        >
+          <option value="true">Aktywny</option>
+          <option value="false">Nieaktywny</option>
+        </FormInput>
+      </FormGroup>
+      
+      {/* Sekcja informacji o agencie */}
+      {editingAgent && (
+        <div style={{
+          background: '#35394e',
+          padding: '15px',
+          borderRadius: '6px',
+          marginBottom: '20px',
+          border: '1px solid #3a3f57'
+        }}>
+          <h4 style={{color: '#fff', margin: '0 0 10px 0', fontSize: '14px'}}>Informacje o agencie</h4>
+          <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '12px'}}>
+            <div>
+              <span style={{color: '#a4aabc'}}>ID:</span> {editingAgent.id}
+            </div>
+            <div>
+              <span style={{color: '#a4aabc'}}>Status:</span> {editingAgent.status}
+            </div>
+            <div>
+              <span style={{color: '#a4aabc'}}>Serwery:</span> {editingAgent.runningServers}/{editingAgent.maxServers}
+            </div>
+            <div>
+              <span style={{color: '#a4aabc'}}>Ostatnia aktualizacja:</span> {editingAgent.last_update ? new Date(editingAgent.last_update).toLocaleString('pl-PL') : 'Nigdy'}
+            </div>
+          </div>
+        </div>
+      )}
+      
+      <FormActions>
+        <SecondaryButton type="button" onClick={() => setEditingAgent(null)}>
+          Anuluj
+        </SecondaryButton>
+        <PrimaryButton type="submit">
+          <FiSave style={{marginRight: '5px'}} />
+          Zapisz zmiany
+        </PrimaryButton>
+      </FormActions>
+    </form>
+  </ModalContent>
+</Modal>
 
       <Footer>
         <p>© 2025 MCPanel | Wersja 1.0.1 | {agents.length} agentów | {

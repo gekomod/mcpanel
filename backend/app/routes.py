@@ -3,7 +3,9 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from .models import db, User, Server, Permission, BedrockVersion, Addon, UserSession, Agent
 from .managers import server_manager, file_manager
 from .bedrock_manager import BedrockAddonManager
-from datetime import datetime
+from zoneinfo import ZoneInfo
+from datetime import datetime, timedelta
+from functools import wraps
 import os
 
 main = Blueprint('main', __name__)
@@ -1933,21 +1935,60 @@ def generate_2fa_secret():
         'secret': secret,
         'qr_code_url': f'otpauth://totp/Shockbyte:{user.username}?secret={secret}&issuer=Shockbyte'
     })
+
+def agent_token_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Pobierz token z nagłówka Authorization
+        auth_header = request.headers.get('Authorization', '')
+        if not auth_header.startswith('Bearer '):
+            return jsonify({'error': 'Missing or invalid Authorization header'}), 401
+        
+        agent_token = auth_header.replace('Bearer ', '').strip()
+        if not agent_token:
+            return jsonify({'error': 'Missing agent token'}), 401
+        
+        # Znajdź agenta po tokenie
+        agent = Agent.query.filter_by(auth_token=agent_token).first()
+        if not agent:
+            return jsonify({'error': 'Invalid agent token'}), 401
+        
+        # Dodaj agenta do kontekstu requesta
+        request.agent = agent
+        return f(*args, **kwargs)
+    return decorated_function
     
 # Endpointy do zarządzania agentami
 @main.route('/agents', methods=['GET'])
 @jwt_required()
 def get_agents():
-    """Pobiera listę wszystkich agentów"""
-    current_user_id = get_jwt_identity()
-    user = User.query.get(current_user_id)
-    
-    # Tylko admini mogą zarządzać agentami
-    if user.role != 'admin':
-        return jsonify({'error': 'Access denied'}), 403
-    
     agents = Agent.query.all()
-    return jsonify([agent.to_dict() for agent in agents])
+    
+    # Sprawdzamy które agenty są online (aktualizowane w ciągu 5 minut)
+    current_time = datetime.utcnow()
+    
+    agents_data = []
+    for agent in agents:
+        is_online = agent.updated_at and (current_time - agent.updated_at) < timedelta(minutes=5)
+        
+        agents_data.append({
+            'id': agent.id,
+            'name': agent.name,
+            'url': agent.url,
+            'status': 'online' if is_online else 'offline',
+            'location': agent.location,
+            'cpu_usage': agent.cpu_usage,
+            'memory_usage': agent.memory_usage,
+            'disk_usage': agent.disk_usage,
+            'max_servers': agent.max_servers,
+            'running_servers': agent.running_servers,
+            'last_update': agent.updated_at.isoformat() if agent.updated_at else None,
+            'is_active': agent.is_active,
+            'version': agent.version,
+            'created_at': agent.created_at.isoformat() if agent.created_at else None,
+        })
+    
+    return jsonify(agents_data)
 
 @main.route('/agents', methods=['POST'])
 @jwt_required()
@@ -2014,29 +2055,33 @@ def update_agent(agent_id):
     agent = Agent.query.get_or_404(agent_id)
     data = request.get_json()
     
+    # Walidacja unikalności nazwy
     if 'name' in data and data['name'] != agent.name:
-        # Sprawdź unikalność nazwy
         existing = Agent.query.filter_by(name=data['name']).first()
         if existing and existing.id != agent_id:
             return jsonify({'error': 'Agent with this name already exists'}), 400
         agent.name = data['name']
     
+    # Walidacja unikalności URL
     if 'url' in data and data['url'] != agent.url:
-        # Sprawdź unikalność URL
         existing = Agent.query.filter_by(url=data['url']).first()
         if existing and existing.id != agent_id:
             return jsonify({'error': 'Agent with this URL already exists'}), 400
         agent.url = data['url']
     
-    if 'token' in data:
-        agent.token = data['token']
+    # Aktualizacja tokenu (tylko jeśli podany)
+    if 'token' in data and data['token']:
+        agent.auth_token = data['token']
     
+    # Pozostałe pola
     if 'location' in data:
         agent.location = data['location']
     
     if 'capacity' in data:
-        agent.capacity = data['capacity']
         agent.max_servers = data['capacity']
+    
+    if 'is_active' in data:
+        agent.is_active = data['is_active']
     
     db.session.commit()
     
@@ -2142,99 +2187,220 @@ def assign_server_to_agent(server_id):
     
     return jsonify({'message': f'Server assigned to agent {agent.name}'})
 
-# Endpointy dla komunikacji agent-panel
 @main.route('/api/agent/status', methods=['POST'])
+@agent_token_required
 def report_agent_status():
     """Endpoint dla agentów do raportowania statusu"""
-    data = request.get_json()
-    
-    # Weryfikacja tokena agenta
-    agent_token = request.headers.get('Authorization', '').replace('Bearer ', '')
-    if not agent_token:
-        return jsonify({'error': 'Missing authorization token'}), 401
-    
-    agent = Agent.query.filter_by(token=agent_token).first()
-    if not agent:
-        return jsonify({'error': 'Invalid agent token'}), 401
-    
-    # Aktualizuj status agenta
-    agent.status = 'online'
-    agent.last_seen = datetime.utcnow()
-    
-    if 'cpu_usage' in data:
-        agent.cpu_usage = data['cpu_usage']
-    
-    if 'memory_usage' in data:
-        agent.memory_usage = data['memory_usage']
-    
-    if 'disk_usage' in data:
-        agent.disk_usage = data['disk_usage']
-    
-    if 'running_servers' in data:
-        agent.running_servers = data['running_servers']
-    
-    db.session.commit()
-    
-    return jsonify({'message': 'Status received', 'agent_id': agent.id})
+    try:
+        data = request.get_json()
+        agent = request.agent
+        
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        print(f"Received status from agent {agent.name}: {data}")
+
+        berlin_tz = ZoneInfo('Europe/Berlin')
+        
+        # Aktualizuj status agenta
+        agent.status = 'online'
+        agent.last_seen = datetime.now(berlin_tz)
+        agent.updated_at = datetime.now(berlin_tz)
+        print(f"Update Date {agent.updated_at}")
+
+        # DEBUG: Sprawdź jakie dane przychodzą
+        print(f"DEBUG - Data received: {data}")
+        
+        # Aktualizuj metryki (upewnij się, że klucze się zgadzają)
+        if 'cpu_usage' in data:
+            agent.cpu_usage = float(data['cpu_usage'])
+            print(f"DEBUG - Updated CPU: {agent.cpu_usage}%")
+        
+        if 'memory_usage' in data:
+            agent.memory_usage = float(data['memory_usage'])
+            print(f"DEBUG - Updated Memory: {agent.memory_usage}%")
+        
+        if 'disk_usage' in data:
+            agent.disk_usage = float(data['disk_usage'])
+            print(f"DEBUG - Updated Disk: {agent.disk_usage}%")
+        
+        if 'running_servers' in data:
+            agent.running_servers = int(data['running_servers'])
+            print(f"DEBUG - Updated running servers: {agent.running_servers}")
+        
+        db.session.commit()
+        
+        # Sprawdź czy dane zostały zapisane
+        db.session.refresh(agent)
+        print(f"DEBUG - After commit - CPU: {agent.cpu_usage}%, Memory: {agent.memory_usage}%, Disk: {agent.disk_usage}%")
+        
+        print(f"Agent {agent.name} status updated successfully")
+        return jsonify({
+            'message': 'Status received', 
+            'agent_id': agent.id,
+            'agent_name': agent.name,
+            'updated_metrics': {
+                'cpu': agent.cpu_usage,
+                'memory': agent.memory_usage,
+                'disk': agent.disk_usage
+            }
+        })
+        
+    except Exception as e:
+        print(f"Error in report_agent_status: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 @main.route('/api/agent/servers', methods=['GET'])
+@agent_token_required
 def get_agent_servers_api():
     """Pobiera listę serwerów dla agenta"""
-    # Weryfikacja tokena agenta
-    agent_token = request.headers.get('Authorization', '').replace('Bearer ', '')
-    if not agent_token:
-        return jsonify({'error': 'Missing authorization token'}), 401
-    
-    agent = Agent.query.filter_by(token=agent_token).first()
-    if not agent:
-        return jsonify({'error': 'Invalid agent token'}), 401
-    
-    # Pobierz serwery przypisane do tego agenta
-    servers = Server.query.filter_by(agent_id=agent.id).all()
-    
-    return jsonify([{
-        'id': server.id,
-        'name': server.name,
-        'type': server.type,
-        'version': server.version,
-        'status': server.status,
-        'path': server.path,
-        'port': server.port
-    } for server in servers])
+    try:
+        agent = request.agent
+        print(f"Getting servers for agent: {agent.name}")
+        
+        # Pobierz serwery przypisane do tego agenta
+        servers = Server.query.filter_by(agent_id=agent.id).all()
+        
+        server_list = []
+        for server in servers:
+            server_list.append({
+                'id': server.id,
+                'name': server.name,
+                'type': server.type,
+                'version': server.version,
+                'status': server.status,
+                'path': server.path,
+                'port': server.port
+            })
+        
+        print(f"Returning {len(server_list)} servers for agent {agent.name}")
+        return jsonify(server_list)
+        
+    except Exception as e:
+        print(f"Error in get_agent_servers_api: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @main.route('/api/agent/servers/<int:server_id>/status', methods=['POST'])
+@agent_token_required
 def update_server_status(server_id):
     """Aktualizuje status serwera od agenta"""
-    # Weryfikacja tokena agenta
-    agent_token = request.headers.get('Authorization', '').replace('Bearer ', '')
-    if not agent_token:
-        return jsonify({'error': 'Missing authorization token'}), 401
+    try:
+        agent = request.agent
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        status = data.get('status')
+        pid = data.get('pid')
+        
+        if status not in ['running', 'stopped', 'starting', 'stopping']:
+            return jsonify({'error': 'Invalid status'}), 400
+        
+        server = Server.query.get(server_id)
+        if not server:
+            return jsonify({'error': 'Server not found'}), 404
+        
+        # Sprawdź czy serwer należy do tego agenta
+        if server.agent_id != agent.id:
+            return jsonify({'error': 'Server not assigned to this agent'}), 403
+        
+        print(f"Updating server {server.name} status to {status} (PID: {pid})")
+        
+        server.status = status
+        if pid is not None:
+            server.pid = pid
+        server.updated_at = datetime.utcnow()
+        
+        db.session.commit()
+        
+        return jsonify({'message': 'Status updated'})
+        
+    except Exception as e:
+        print(f"Error in update_server_status: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# Endpoint do pobierania szczegółów serwera (dla agenta)
+@main.route('/api/agent/servers/<int:server_id>', methods=['GET'])
+@agent_token_required
+def get_server_details(server_id):
+    """Pobiera szczegóły serwera dla agenta"""
+    try:
+        agent = request.agent
+        
+        server = Server.query.get(server_id)
+        if not server:
+            return jsonify({'error': 'Server not found'}), 404
+        
+        if server.agent_id != agent.id:
+            return jsonify({'error': 'Server not assigned to this agent'}), 403
+        
+        return jsonify(server.to_dict())
+        
+    except Exception as e:
+        print(f"Error in get_server_details: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# Endpoint do testowania połączenia z agentem (dla panelu)
+@main.route('/agents/<int:agent_id>/ping', methods=['POST'])
+@jwt_required()
+def ping_agent(agent_id):
+    """Testuje połączenie z agentem (dla panelu)"""
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
     
-    agent = Agent.query.filter_by(token=agent_token).first()
-    if not agent:
-        return jsonify({'error': 'Invalid agent token'}), 401
+    if user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
     
-    data = request.get_json()
-    status = data.get('status')
-    pid = data.get('pid')
+    agent = Agent.query.get_or_404(agent_id)
     
-    if status not in ['running', 'stopped', 'starting', 'stopping']:
-        return jsonify({'error': 'Invalid status'}), 400
+    try:
+        response = requests.get(
+            f"{agent.url}/status",
+            headers={'Authorization': f'Bearer {agent.token}'},
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            return jsonify({
+                'success': True,
+                'message': 'Agent is responding',
+                'agent_status': response.json()
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': f'Agent responded with status {response.status_code}'
+            }), 400
+            
+    except requests.exceptions.RequestException as e:
+        return jsonify({
+            'success': False,
+            'message': f'Failed to connect to agent: {str(e)}'
+        }), 400
+
+# Endpoint do pobierania plików serwera (dla agenta)
+@main.route('/api/agent/servers/<int:server_id>/download', methods=['GET'])
+@agent_token_required
+def download_server_files(server_id):
+    """Pobiera pliki serwera (jeśli potrzebne dla agenta)"""
+    agent = request.agent
     
-    server = Server.query.get_or_404(server_id)
+    server = Server.query.get(server_id)
+    if not server:
+        return jsonify({'error': 'Server not found'}), 404
     
-    # Sprawdź czy serwer należy do tego agenta
     if server.agent_id != agent.id:
         return jsonify({'error': 'Server not assigned to this agent'}), 403
     
-    server.status = status
-    if pid is not None:
-        server.pid = pid
-    server.updated_at = datetime.utcnow()
-    
-    db.session.commit()
-    
-    return jsonify({'message': 'Status updated'})
+    # Tutaj logika zwracania plików serwera
+    # Na razie zwracamy tylko informacje
+    return jsonify({
+        'server': server.to_dict(),
+        'files_available': True
+    })
 
 @main.route('/agents/<int:agent_id>/test-connection', methods=['POST'])
 @jwt_required()
