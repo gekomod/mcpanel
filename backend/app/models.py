@@ -272,6 +272,7 @@ class Server(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(64), unique=True)
     type = db.Column(db.String(32))  # java or bedrock
+    implementation = db.Column(db.String(32), default='vanilla')  # DODAJ TE LINIĘ: vanilla, paper, purpur, fabric
     path = db.Column(db.String(256))
     version = db.Column(db.String(32))
     port = db.Column(db.Integer)
@@ -291,6 +292,7 @@ class Server(db.Model):
             'id': self.id,
             'name': self.name,
             'type': self.type,
+            'implementation': self.implementation,
             'path': self.path,
             'version': self.version,
             'port': self.port,

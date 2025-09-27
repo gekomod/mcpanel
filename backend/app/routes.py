@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from functools import wraps
 import os
 import requests
+import shutil
 
 main = Blueprint('main', __name__)
 
@@ -45,6 +46,7 @@ def create_server():
     server_type = data.get('type')
     version = data.get('version')
     port = data.get('port')
+    implementation = data.get('implementation', 'vanilla')
     
     if not name or not server_type or not version:
         return jsonify({'error': 'Missing required fields'}), 400
@@ -82,6 +84,7 @@ def create_server():
     server = Server(
         name=name,
         type=server_type,
+        implementation=implementation,
         version=version,
         port=port,
         path=server_path,
@@ -90,19 +93,6 @@ def create_server():
     
     db.session.add(server)
     db.session.commit()
-
-    if server_type == 'java':
-        try:
-            properties_file = os.path.join(server_path, 'server.properties')
-            with open(properties_file, 'w') as f:
-                f.write(f"#Minecraft server properties\n")
-                f.write(f"server-port={port}\n")
-                f.write(f"motd={name}\n")
-                f.write(f"max-players=20\n")
-                f.write(f"online-mode=true\n")
-                f.write(f"enable-rcon=false\n")
-        except Exception as e:
-            print(f"Warning: Could not create server.properties: {e}")
     
     return jsonify(server.to_dict()), 201
     
@@ -173,7 +163,7 @@ def start_server(server_id):
         else:
             return jsonify({'error': f'Bedrock version {server.version} not found'}), 400
     
-    # Przekaż serwer jako obiekt (nie tylko ID)
+    # Użyj metody start_server z server_manager
     success, message = server_manager.start_server(server, bedrock_url)
     
     if success:
@@ -678,9 +668,11 @@ def get_realtime_output(server_id):
         return jsonify({'error': 'Access denied'}), 403
     
     # Get real-time output from server manager
-    output = server_manager.get_realtime_output(server_id)
-    
-    return jsonify({'output': output})
+    try:
+        output = server_manager.get_realtime_output(server_id)
+        return jsonify({'output': output})
+    except Exception as e:
+        return jsonify({'error': f'Error getting output: {str(e)}'}), 500
     
 # Endpointy do zarządzania addonami
 @main.route('/addons', methods=['GET'])
@@ -1531,7 +1523,7 @@ def check_server_files(server_id):
     try:
         server_path = server_manager.get_server_path(server.name)
         
-        # Sprawdź czy katalog serwera istnieje i nie jest pusty
+        # Sprawdź czy katalog serwera istnieje
         if not os.path.exists(server_path):
             return jsonify({'hasFiles': False, 'message': 'Server directory does not exist'})
         
@@ -1545,20 +1537,43 @@ def check_server_files(server_id):
         if server.type == 'bedrock':
             bedrock_binary = os.path.join(server_path, 'bedrock_server')
             bedrock_binary_exe = os.path.join(server_path, 'bedrock_server.exe')
-            has_bedrock_binary = os.path.exists(bedrock_binary) or os.path.exists(bedrock_binary_exe)
-            has_files = has_files and has_bedrock_binary
+            # Sprawdź różne możliwe nazwy plików wykonywalnych Bedrock
+            possible_binaries = ['bedrock_server', 'bedrock_server.exe', 'bedrock_server_1.21.100.7']
+            has_bedrock_binary = any(os.path.exists(os.path.join(server_path, binary)) for binary in possible_binaries)
+            
+            # Jeśli nie znaleziono standardowych nazw, sprawdź czy jest jakikolwiek plik wykonywalny
+            if not has_bedrock_binary:
+                for file in files:
+                    file_path = os.path.join(server_path, file)
+                    if os.path.isfile(file_path) and (os.access(file_path, os.X_OK) or file.endswith('.exe')):
+                        has_bedrock_binary = True
+                        break
+            
+            has_files = has_bedrock_binary  # Dla Bedrock najważniejszy jest plik wykonywalny
         
         # Dla serwerów Java sprawdź obecność pliku JAR
         elif server.type == 'java':
             jar_files = [f for f in files if f.endswith('.jar') and 'server' in f.lower()]
             has_jar = len(jar_files) > 0
-            has_files = has_files and has_jar
+            
+            # Sprawdź również inne kryteria - może serwer ma już uruchomione pliki
+            if not has_jar:
+                # Sprawdź czy są inne ważne pliki serwera Minecraft
+                important_files = ['eula.txt', 'server.properties', 'world', 'logs']
+                has_important_files = any(os.path.exists(os.path.join(server_path, f)) for f in important_files)
+                
+                # Jeśli są ważne pliki, zakładamy że serwer jest zainstalowany
+                if has_important_files and has_files:
+                    has_jar = True
+            
+            has_files = has_jar  # Dla Java najważniejszy jest plik JAR lub ważne pliki konfiguracyjne
         
         return jsonify({
             'hasFiles': has_files,
             'fileCount': len(files),
             'serverType': server.type,
-            'serverPath': server_path
+            'serverPath': server_path,
+            'message': 'Server files found' if has_files else 'Server files missing'
         })
         
     except Exception as e:
@@ -1607,7 +1622,7 @@ def install_server(server_id):
 
 def _install_bedrock_server(server):
     """
-    Instalacja serwera Bedrock
+    Instalacja serwera Bedrock - używa istniejącej metody start_server
     """
     try:
         # Znajdź wersję Bedrock
@@ -1622,8 +1637,8 @@ def _install_bedrock_server(server):
         # Pobierz URL do pobrania
         download_url = bedrock_version.download_url
         
-        # Użyj server_manager do pobrania i instalacji
-        success, message = server_manager.install_bedrock_server(server, download_url)
+        # Użyj istniejącej metody start_server, która automatycznie pobiera pliki
+        success, message = server_manager.start_server(server, download_url)
         
         if success:
             return jsonify({
@@ -1639,11 +1654,11 @@ def _install_bedrock_server(server):
 
 def _install_java_server(server):
     """
-    Instalacja serwera Java
+    Instalacja serwera Java - używa istniejącej metody start_server
     """
     try:
-        # Dla serwera Java użyj standardowego pobierania
-        success, message = server_manager.install_java_server(server)
+        # Dla serwera Java użyj standardowego start_server
+        success, message = server_manager.start_server(server)
         
         if success:
             return jsonify({
@@ -1660,7 +1675,7 @@ def _install_java_server(server):
 @jwt_required()
 def get_installation_progress(server_id):
     """
-    Pobiera postęp instalacji serwera
+    Pobiera postęp instalacji serwera - używa get_download_progress
     """
     current_user_id = get_jwt_identity()
     
@@ -1669,8 +1684,8 @@ def get_installation_progress(server_id):
         return jsonify({'error': 'Access denied'}), 403
     
     try:
-        # Sprawdź postęp przez server_manager
-        progress = server_manager.get_installation_progress(server_id)
+        # Użyj istniejącej metody get_download_progress
+        progress = server_manager.get_download_progress(server_id)
         
         return jsonify(progress)
         
@@ -1706,7 +1721,7 @@ def clean_install_server(server_id):
         # Utwórz pusty katalog
         os.makedirs(server_path, exist_ok=True)
         
-        # Rozpocznij nową instalację
+        # Rozpocznij nową instalację używając standardowego start_server
         if server.type == 'bedrock':
             return _install_bedrock_server(server)
         elif server.type == 'java':
@@ -1721,7 +1736,7 @@ def clean_install_server(server_id):
 @jwt_required()
 def get_download_status(server_id):
     """
-    Pobiera status pobierania plików serwera
+    Pobiera status pobierania plików serwera - używa get_download_progress
     """
     current_user_id = get_jwt_identity()
     
@@ -1730,8 +1745,8 @@ def get_download_status(server_id):
         return jsonify({'error': 'Access denied'}), 403
     
     try:
-        # Sprawdź status przez server_manager
-        status = server_manager.get_download_status(server_id)
+        # Użyj istniejącej metody get_download_progress
+        status = server_manager.get_download_progress(server_id)
         
         return jsonify(status)
         
