@@ -37,6 +37,7 @@ export const translations = {
     'nav.account': 'Moje konto',
     'nav.plugins': 'Pluginy',
     'nav.backups': 'Backup Manager',
+    'nav.agents': 'Agenci',
     'nav.logout': 'Wyloguj',
     
     // Kategorie menu
@@ -878,6 +879,7 @@ export const translations = {
     'nav.account': 'My Account',
     'nav.plugins': 'Plugins',
     'nav.backups': 'Backup Manager',
+    'nav.agents': 'Agents',
     'nav.logout': 'Logout',
     
     // Menu categories

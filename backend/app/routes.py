@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 from datetime import datetime, timedelta
 from functools import wraps
 import os
+import requests
 
 main = Blueprint('main', __name__)
 
@@ -2402,46 +2403,6 @@ def download_server_files(server_id):
         'files_available': True
     })
 
-@main.route('/agents/<int:agent_id>/test-connection', methods=['POST'])
-@jwt_required()
-def test_agent_connection(agent_id):
-    """Testuje połączenie z agentem"""
-    current_user_id = get_jwt_identity()
-    user = User.query.get(current_user_id)
-    
-    if user.role != 'admin':
-        return jsonify({'error': 'Access denied'}), 403
-    
-    agent = Agent.query.get_or_404(agent_id)
-    
-    try:
-        # Spróbuj wysłać testowe zapytanie do agenta
-        import requests
-        response = requests.get(
-            f"{agent.url}/status",
-            headers={'Authorization': f'Bearer {agent.token}'},
-            timeout=10
-        )
-        
-        if response.status_code == 200:
-            agent_data = response.json()
-            return jsonify({
-                'success': True,
-                'message': 'Connection successful',
-                'agent_status': agent_data
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'message': f'Agent responded with status {response.status_code}'
-            }), 400
-            
-    except requests.exceptions.RequestException as e:
-        return jsonify({
-            'success': False,
-            'message': f'Connection failed: {str(e)}'
-        }), 400
-
 @main.route('/agents/<int:agent_id>/deploy-server', methods=['POST'])
 @jwt_required()
 def deploy_server_to_agent(agent_id):
@@ -2491,6 +2452,43 @@ def deploy_server_to_agent(agent_id):
         return jsonify({
             'success': False,
             'message': f'Failed to deploy to agent: {str(e)}'
+        }), 400
+        
+@main.route('/agents/<int:agent_id>/test', methods=['GET'])
+@jwt_required()
+def test_agent_connection(agent_id):
+    """Testuje połączenie z agentem"""
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    if user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    
+    agent = Agent.query.get_or_404(agent_id)
+    
+    try:
+        response = requests.get(
+            f"{agent.url}/status",
+            headers={'Authorization': f'Bearer {agent.auth_token}'},
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            return jsonify({
+                'status': 'success',
+                'message': 'Agent is responding',
+                'agent_status': response.json()
+            })
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': f'Agent responded with status {response.status_code}'
+            }), 400
+            
+    except requests.exceptions.RequestException as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Failed to connect to agent: {str(e)}'
         }), 400
 
 def _check_permission(user_id, server_id, permission):
