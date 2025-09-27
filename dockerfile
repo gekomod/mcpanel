@@ -48,6 +48,10 @@ RUN apt-get update && apt-get install -y \
     unzip \
     libcurl4-openssl-dev \
     && mkdir -p /app/minecraft/tools
+    
+RUN wget https://download.oracle.com/java/23/archive/jdk-23.0.2_linux-x64_bin.deb
+RUN dpkg -i jdk-23.0.2_linux-x64_bin.deb
+RUN rm jdk-23.0.2_linux-x64_bin.deb
 
 # Utwórz katalog aplikacji
 WORKDIR $APP_HOME
