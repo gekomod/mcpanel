@@ -10,10 +10,11 @@ from datetime import datetime
 from flask import Flask, request, jsonify
 import logging
 
-# Konfiguracja logowania
+# Configure logging to output to stdout for systemd journaling
 logging.basicConfig(
-    level=logging.DEBUG,  # Zmieniamy na DEBUG dla więcej informacji
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger('MCPanelAgent')
 
@@ -344,27 +345,43 @@ class MCPanelAgent:
                 logger.error(f"Error updating server status: {e}")
 
 def main():
-    # Konfiguracja z zmiennych środowiskowych
-    panel_url = os.environ.get('PANEL_URL', 'http://SET_URL_PANEL:5000')
-    agent_token = os.environ.get('AGENT_TOKEN', 'SET_TOKEN')
-    agent_name = os.environ.get('AGENT_NAME', 'SET_AGENT_NAME')
-    capacity = int(os.environ.get('AGENT_CAPACITY', '5')) //Change if you want more servers to this machine Default max run: 5
-    agent_port = int(os.environ.get('AGENT_PORT', '9292')) //NOT CHANGE
-    base_path = os.environ.get('AGENT_BASE_PATH', '/home/agent') //AGENT PATH
-    
-    logger.info("Starting MCPanel Agent...")
+    """Main function to start the agent."""
+    # Load configuration from environment variables
+    panel_url = os.environ.get('PANEL_URL')
+    agent_token = os.environ.get('AGENT_TOKEN')
+    agent_name = os.environ.get('AGENT_NAME', 'DefaultAgentName')
+    capacity = int(os.environ.get('AGENT_CAPACITY', '5'))
+    agent_port = int(os.environ.get('AGENT_PORT', '9292'))
+    base_path = os.environ.get('AGENT_BASE_PATH', '/opt/mcpanel-agent/servers')
+
+    # Ensure required environment variables are set
+    if not panel_url or not agent_token:
+        logger.critical("PANEL_URL and AGENT_TOKEN environment variables must be set.")
+        return
+
+    logger.info("--- MCPanel Agent Initializing ---")
+    logger.info(f"Agent Name: {agent_name}")
     logger.info(f"Panel URL: {panel_url}")
-    logger.info(f"Agent name: {agent_name}")
-    logger.info(f"Agent port: {agent_port}")
+    logger.info(f"Listening on Port: {agent_port}")
+    logger.info(f"Server Capacity: {capacity}")
+    logger.info(f"Servers Base Path: {base_path}")
+    logger.info("---------------------------------")
     
-    agent = MCPanelAgent(panel_url, agent_token, agent_name, capacity, agent_port, base_path)
+    agent = MCPanelAgent(
+        panel_url=panel_url,
+        agent_token=agent_token,
+        agent_name=agent_name,
+        capacity=capacity,
+        port=agent_port,
+        base_path=base_path
+    )
     
     try:
         agent.start()
     except KeyboardInterrupt:
-        logger.info("Shutting down agent...")
+        logger.info("Agent shutting down due to keyboard interrupt.")
     except Exception as e:
-        logger.error(f"Agent error: {e}")
+        logger.critical(f"A critical error occurred: {e}", exc_info=True)
 
 if __name__ == '__main__':
     main()

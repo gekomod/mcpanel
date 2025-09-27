@@ -1,0 +1,17 @@
+[Unit]
+Description=MCPanel Agent
+After=network.target
+
+[Service]
+User=root
+Group=root
+WorkingDirectory=/opt/mcpanel-agent
+ExecStart=/usr/bin/python3 /opt/mcpanel-agent/agent.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+EnvironmentFile=/etc/mcpanel-agent/config
+
+[Install]
+WantedBy=multi-user.target
