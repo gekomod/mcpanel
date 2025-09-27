@@ -7,7 +7,9 @@ import {
   FiX,
   FiCpu,
   FiHardDrive,
-  FiRefreshCw
+  FiRefreshCw,
+  FiCode,
+  FiBox
 } from 'react-icons/fi';
 import api from '../services/api';
 import { useLanguage } from '../context/LanguageContext';
@@ -35,7 +37,7 @@ const Modal = styled.div`
   border: 1px solid #3a3f57;
   border-radius: 10px;
   padding: 30px;
-  width: 600px;
+  width: 700px;
   max-width: 100%;
   max-height: 90vh;
   overflow-y: auto;
@@ -121,24 +123,6 @@ const Select = styled.select`
   color: #fff;
   transition: border-color 0.2s;
   appearance: none;
-
-  &:focus {
-    outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
-  }
-`;
-
-const TextArea = styled.textarea`
-  padding: 12px 16px;
-  background: #35394e;
-  border: 1px solid #3a3f57;
-  border-radius: 6px;
-  font-size: 1rem;
-  min-height: 80px;
-  resize: vertical;
-  transition: border-color 0.2s;
-  color: #fff;
 
   &:focus {
     outline: none;
@@ -269,6 +253,73 @@ const ServerTypeIcon = styled.div.attrs(props => ({
   margin-bottom: 10px;
 `;
 
+const ServerImplementationSelector = styled.div`
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
+`;
+
+const ImplementationButton = styled.button.attrs(props => ({
+  style: {
+    borderColor: props['data-selected'] ? '#3b82f6' : '#3a3f57',
+    background: props['data-selected'] ? '#222b43' : '#2e3245',
+    color: props['data-selected'] ? '#fff' : '#a4aabc'
+  }
+}))`
+  flex: 1;
+  padding: 15px;
+  border: 2px solid;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s;
+  font-size: 0.9rem;
+  
+  &:hover {
+    border-color: #3b82f6;
+    background: #222b43;
+    color: #fff;
+  }
+`;
+
+const ImplementationIcon = styled.div.attrs(props => ({
+  style: {
+    color: props['data-selected'] ? '#3b82f6' : '#a4aabc'
+  }
+}))`
+  font-size: 1.5rem;
+  margin-bottom: 8px;
+`;
+
+const VersionTypeSelector = styled.div`
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
+`;
+
+const VersionTypeButton = styled.button.attrs(props => ({
+  style: {
+    borderColor: props['data-selected'] ? '#3b82f6' : '#3a3f57',
+    background: props['data-selected'] ? '#222b43' : '#2e3245',
+    color: props['data-selected'] ? '#fff' : '#a4aabc'
+  }
+}))`
+  flex: 1;
+  padding: 12px;
+  border: 1px solid;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s;
+  font-size: 0.8rem;
+  
+  &:hover {
+    border-color: #3b82f6;
+    background: #222b43;
+    color: #fff;
+  }
+`;
+
 const LoadingSpinner = styled.div`
   display: inline-block;
   width: 20px;
@@ -326,8 +377,17 @@ const PortStatus = styled.div`
   `}
 `;
 
+const InfoText = styled.div`
+  font-size: 0.8rem;
+  color: #6b7280;
+  margin-top: 5px;
+  font-style: italic;
+`;
+
 function AddServer({ isOpen, onClose, onServerAdded }) {
   const [serverType, setServerType] = useState('java');
+  const [serverImplementation, setServerImplementation] = useState('paper');
+  const [versionType, setVersionType] = useState('numeric');
   const [serverName, setServerName] = useState('');
   const [port, setPort] = useState('25565');
   const [version, setVersion] = useState('');
@@ -339,60 +399,120 @@ function AddServer({ isOpen, onClose, onServerAdded }) {
   const [portStatus, setPortStatus] = useState('unknown');
   const { t } = useLanguage();
 
+  // Dostępne implementacje serwerów Java
+  const javaImplementations = [
+    { id: 'paper', name: 'Paper', icon: FiBox, description: 'Rekomendowany, optymalizowany' },
+    { id: 'purpur', name: 'Purpur', icon: FiServer, description: 'Bardzo wydajny, wiele funkcji' },
+    { id: 'vanilla', name: 'Vanilla', icon: FiCode, description: 'Oryginalny serwer Mojang' },
+    { id: 'fabric', name: 'Fabric', icon: FiCpu, description: 'Dla modów Fabric' }
+  ];
+
+  // Dostępne typy wersji
+  const versionTypes = [
+    { id: 'numeric', name: 'Wersje numeryczne', description: 'Standardowe wersje Minecraft' },
+    { id: 'implementation', name: 'Wersje implementacji', description: 'Specyficzne wersje Paper/Purpur' }
+  ];
+
   useEffect(() => {
     if (isOpen) {
       loadVersions();
-      // Ustaw domyślny port w zależności od typu serwera
       setPort(serverType === 'java' ? '25565' : '19132');
       setPortStatus('unknown');
     }
-  }, [isOpen, serverType]);
-
-  useEffect(() => {
-    // Sprawdź port przy zmianie typu serwera lub portu
-    if (port && isOpen) {
-      checkPortAvailability();
-    }
-  }, [port, serverType, isOpen]);
+  }, [isOpen, serverType, serverImplementation, versionType]);
 
   const loadVersions = async () => {
     setLoadingVersions(true);
     setError('');
+    setVersion('');
     
     try {
       let versionsData = [];
       
       if (serverType === 'java') {
-        const response = await fetch('https://launchermeta.mojang.com/mc/game/version_manifest.json');
-        const data = await response.json();
-        versionsData = data.versions
-          .filter(v => v.type === 'release')
-          .map(v => ({
-            id: v.id,
-            name: v.id,
-            releaseDate: v.releaseTime
-          }));
+        if (versionType === 'numeric') {
+          // Pobierz standardowe wersje Minecraft
+          const response = await fetch('https://launchermeta.mojang.com/mc/game/version_manifest.json');
+          const data = await response.json();
+          versionsData = data.versions
+            .filter(v => v.type === 'release')
+            .map(v => ({
+              id: v.id,
+              name: v.id,
+              releaseDate: v.releaseTime,
+              type: 'numeric'
+            }));
+        } else {
+          // Pobierz wersje specyficzne dla implementacji
+          let apiUrl = '';
+          switch (serverImplementation) {
+            case 'paper':
+              apiUrl = 'https://api.papermc.io/v2/projects/paper';
+              break;
+            case 'purpur':
+              apiUrl = 'https://api.purpurmc.org/v2/purpur';
+              break;
+            case 'fabric':
+              // Fabric używa standardowych wersji Minecraft
+              const fabricResponse = await fetch('https://launchermeta.mojang.com/mc/game/version_manifest.json');
+              const fabricData = await fabricResponse.json();
+              versionsData = fabricData.versions
+                .filter(v => v.type === 'release')
+                .map(v => ({
+                  id: v.id,
+                  name: v.id,
+                  releaseDate: v.releaseTime,
+                  type: 'numeric'
+                }));
+              break;
+            default:
+              // Vanilla - standardowe wersje
+              const vanillaResponse = await fetch('https://launchermeta.mojang.com/mc/game/version_manifest.json');
+              const vanillaData = await vanillaResponse.json();
+              versionsData = vanillaData.versions
+                .filter(v => v.type === 'release')
+                .map(v => ({
+                  id: v.id,
+                  name: v.id,
+                  releaseDate: v.releaseTime,
+                  type: 'numeric'
+                }));
+          }
+
+          if (apiUrl && serverImplementation !== 'fabric') {
+            const response = await fetch(apiUrl);
+            const data = await response.json();
+            versionsData = data.versions
+              .slice()
+              .reverse()
+              .map(version => ({
+                id: version,
+                name: version,
+                type: 'implementation'
+              }));
+          }
+        }
       } else {
-        // Pobierz wersje Bedrock z backendu
+        // Bedrock Edition
         try {
           const response = await api.get('/bedrock-versions');
           versionsData = response.data.map(v => ({
             id: v.version,
             name: v.version,
-            releaseDate: v.release_date
+            releaseDate: v.release_date,
+            type: 'bedrock'
           }));
         } catch (error) {
           console.error('Error loading bedrock versions:', error);
-          // Fallback do przykładowych wersji
           versionsData = [
-            { id: '1.20.15', name: '1.20.15', releaseDate: '2023-10-25' },
-            { id: '1.20.10', name: '1.20.10', releaseDate: '2023-09-19' },
-            { id: '1.20.1', name: '1.20.1', releaseDate: '2023-06-12' },
+            { id: '1.20.15', name: '1.20.15', releaseDate: '2023-10-25', type: 'bedrock' },
+            { id: '1.20.10', name: '1.20.10', releaseDate: '2023-09-19', type: 'bedrock' },
+            { id: '1.20.1', name: '1.20.1', releaseDate: '2023-06-12', type: 'bedrock' },
           ];
         }
       }
       
-      setVersions(versionsData.slice(0, 20));
+      setVersions(versionsData.slice(0, 25));
     } catch (error) {
       const errorMsg = t('server.versions.error') || 'Failed to load versions';
       setError(errorMsg);
@@ -409,7 +529,6 @@ function AddServer({ isOpen, onClose, onServerAdded }) {
     setPortStatus('checking');
     
     try {
-      // Sprawdź dostępność portu przez API
       const response = await api.post('/check-port', {
         port: parseInt(port),
         type: serverType
@@ -418,7 +537,6 @@ function AddServer({ isOpen, onClose, onServerAdded }) {
       setPortStatus(response.data.available ? 'free' : 'taken');
     } catch (error) {
       console.error('Error checking port:', error);
-      // Dla celów demonstracyjnych, symulujemy losowy wynik
       const isAvailable = Math.random() > 0.3;
       setPortStatus(isAvailable ? 'free' : 'taken');
     } finally {
@@ -436,7 +554,6 @@ function AddServer({ isOpen, onClose, onServerAdded }) {
       let attempts = 0;
       const maxAttempts = 10;
       
-      // Szukaj wolnego portu (co 2 porty w górę)
       while (attempts < maxAttempts && !foundPort) {
         try {
           const response = await api.post('/check-port', {
@@ -447,11 +564,10 @@ function AddServer({ isOpen, onClose, onServerAdded }) {
           if (response.data.available) {
             foundPort = currentPort;
           } else {
-            currentPort += 2; // Zwiększaj co 2 porty
+            currentPort += 2;
             attempts++;
           }
         } catch (error) {
-          // W przypadku błędu API, symuluj znalezienie portu
           foundPort = currentPort;
           break;
         }
@@ -475,9 +591,21 @@ function AddServer({ isOpen, onClose, onServerAdded }) {
 
   const handleServerTypeChange = (type) => {
     setServerType(type);
-    // Ustaw domyślny port dla wybranego typu
     const defaultPort = type === 'java' ? '25565' : '19132';
     setPort(defaultPort);
+    setVersion('');
+    setServerImplementation(type === 'java' ? 'paper' : '');
+    setVersionType('numeric');
+  };
+
+  const handleImplementationChange = (implementation) => {
+    setServerImplementation(implementation);
+    setVersion('');
+    setVersionType(implementation === 'vanilla' ? 'numeric' : 'implementation');
+  };
+
+  const handleVersionTypeChange = (type) => {
+    setVersionType(type);
     setVersion('');
   };
 
@@ -496,23 +624,24 @@ function AddServer({ isOpen, onClose, onServerAdded }) {
       return;
     }
 
-    if (portStatus === 'checking') {
-      const errorMsg = t('server.port.checking') || 'Please wait for port check';
-      setError(errorMsg);
-      return;
-    }
-
     setLoading(true);
     setError('');
 
     try {
-      const response = await api.post('/servers', {
+      const serverData = {
         name: serverName,
         type: serverType,
         version: version,
         port: parseInt(port)
-      });
+      };
 
+      // Dodaj informacje o implementacji tylko dla Java Edition
+      if (serverType === 'java') {
+        serverData.implementation = serverImplementation;
+        serverData.versionType = versionType;
+      }
+
+      const response = await api.post('/servers', serverData);
       onServerAdded(response.data);
       onClose();
     } catch (error) {
@@ -565,6 +694,58 @@ function AddServer({ isOpen, onClose, onServerAdded }) {
             </ServerTypeSelector>
           </FormGroup>
 
+          {serverType === 'java' && (
+            <>
+              <FormGroup>
+                <Label>Typ implementacji serwera</Label>
+                <ServerImplementationSelector>
+                  {javaImplementations.map(impl => {
+                    const IconComponent = impl.icon;
+                    return (
+                      <ImplementationButton
+                        key={impl.id}
+                        type="button"
+                        data-selected={serverImplementation === impl.id}
+                        onClick={() => handleImplementationChange(impl.id)}
+                        title={impl.description}
+                      >
+                        <ImplementationIcon data-selected={serverImplementation === impl.id}>
+                          <IconComponent />
+                        </ImplementationIcon>
+                        {impl.name}
+                      </ImplementationButton>
+                    );
+                  })}
+                </ServerImplementationSelector>
+                <InfoText>
+                  {javaImplementations.find(impl => impl.id === serverImplementation)?.description}
+                </InfoText>
+              </FormGroup>
+
+              <FormGroup>
+                <Label>Typ wersji</Label>
+                <VersionTypeSelector>
+                  {versionTypes.map(type => (
+                    <VersionTypeButton
+                      key={type.id}
+                      type="button"
+                      data-selected={versionType === type.id}
+                      onClick={() => handleVersionTypeChange(type.id)}
+                      title={type.description}
+                    >
+                      {type.name}
+                    </VersionTypeButton>
+                  ))}
+                </VersionTypeSelector>
+                <InfoText>
+                  {versionType === 'numeric' 
+                    ? 'Standardowe wersje Minecraft od Mojang' 
+                    : `Specyficzne wersje dla ${serverImplementation.charAt(0).toUpperCase() + serverImplementation.slice(1)}`}
+                </InfoText>
+              </FormGroup>
+            </>
+          )}
+
           <FormGroup>
             <Label>{t('server.name') || 'Server Name'} *</Label>
             <Input
@@ -611,7 +792,11 @@ function AddServer({ isOpen, onClose, onServerAdded }) {
           </FormGroup>
 
           <FormGroup>
-            <Label>{t('server.version') || 'Minecraft Version'} *</Label>
+            <Label>
+              {serverType === 'java' 
+                ? `Wersja Minecraft ${versionType === 'numeric' ? '(numeryczna)' : `(${serverImplementation})`}` 
+                : t('server.version') || 'Minecraft Version'} *
+            </Label>
             {loadingVersions ? (
               <LoadingText>{t('server.versions.loading') || 'Loading versions...'}</LoadingText>
             ) : (
@@ -651,6 +836,5 @@ function AddServer({ isOpen, onClose, onServerAdded }) {
     </ModalOverlay>
   );
 }
-
 
 export default AddServer;
