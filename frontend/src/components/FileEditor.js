@@ -61,6 +61,7 @@ const NavTab = styled.div`
     background: #35394e;
   }
 `;
+
 const Header = styled.div`
   display: flex;
   align-items: center;
@@ -404,6 +405,36 @@ const EmptyState = styled.div`
   color: #a4aabc;
 `;
 
+const NewItemForm = styled.div`
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #35394e;
+  border-radius: 6px;
+  border: 1px solid #3a3f57;
+`;
+
+const NewItemInput = styled.input`
+  width: 100%;
+  padding: 8px 12px;
+  background: #2e3245;
+  border: 1px solid #3a3f57;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 0.9rem;
+  margin-bottom: 8px;
+  
+  &:focus {
+    outline: none;
+    border-color: #3b82f6;
+  }
+`;
+
+const NewItemActions = styled.div`
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+`;
+
 function FileEditor() {
   const { serverId } = useParams();
   const navigate = useNavigate();
@@ -419,6 +450,9 @@ function FileEditor() {
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('files');
+  const [isCreatingNew, setIsCreatingNew] = useState(false);
+  const [newItemName, setNewItemName] = useState('');
+  const [newItemType, setNewItemType] = useState('file');
   const { t } = useLanguage();
 
   useEffect(() => {
@@ -431,7 +465,6 @@ function FileEditor() {
       const filtered = files.filter(file => 
         file.name.toLowerCase().includes(searchQuery.toLowerCase())
       );
-      // Sortuj: katalogi na górze, potem pliki
       const sorted = filtered.sort((a, b) => {
         if (a.is_dir && !b.is_dir) return -1;
         if (!a.is_dir && b.is_dir) return 1;
@@ -439,7 +472,6 @@ function FileEditor() {
       });
       setFilteredFiles(sorted);
     } else {
-      // Sortuj również oryginalną listę plików
       const sorted = [...files].sort((a, b) => {
         if (a.is_dir && !b.is_dir) return -1;
         if (!a.is_dir && b.is_dir) return 1;
@@ -455,8 +487,8 @@ function FileEditor() {
       setServer(response.data);
     } catch (error) {
       console.error('Error fetching server:', error);
-	  setError(t('files.errorLoadServer'));
-	  showError(t('files.errorLoadServer'));
+      setError(t('files.errorLoadServer'));
+      showError(t('files.errorLoadServer'));
     }
   };
   
@@ -519,7 +551,6 @@ function FileEditor() {
       const response = await api.get(`/servers/${serverId}/files?path=${encodeURIComponent(path)}`);
       
       if (response.data && Array.isArray(response.data)) {
-        // Sortuj pliki: katalogi na górze, potem pliki alfabetycznie
         const sortedFiles = response.data.sort((a, b) => {
           if (a.is_dir && !b.is_dir) return -1;
           if (!a.is_dir && b.is_dir) return 1;
@@ -531,7 +562,7 @@ function FileEditor() {
         setCurrentPath(path);
         
         if (path && response.data.length > 0) {
-           showInfo(t('files.loadedItems', { count: response.data.length, path: path }));
+          showInfo(t('files.loadedItems', { count: response.data.length, path: path }));
         }
       } else {
         setError(t('files.invalidResponse'));
@@ -607,6 +638,81 @@ function FileEditor() {
       setSaving(false);
     }
   };
+
+  const createNewItem = async () => {
+    if (!newItemName.trim()) return;
+
+    try {
+      setLoading(true);
+      const fullPath = currentPath ? `${currentPath}/${newItemName}` : newItemName;
+      
+      if (newItemType === 'directory') {
+        await api.post(`/servers/${serverId}/files/mkdir`, {
+          path: fullPath
+        });
+        showSuccess(t('files.folderCreated'));
+      } else {
+        await api.post(`/servers/${serverId}/files/write`, {
+          path: fullPath,
+          content: ''
+        });
+        showSuccess(t('files.fileCreated'));
+      }
+      
+      setIsCreatingNew(false);
+      setNewItemName('');
+      loadFiles(currentPath);
+    } catch (error) {
+      console.error('Error creating item:', error);
+      const errorMsg = `Failed to create ${newItemType}: ${error.response?.data?.error || error.message}`;
+      showError(errorMsg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+	const handleFileUpload = async (event) => {
+	  const file = event.target.files[0];
+	  if (!file) return;
+
+	  try {
+		setLoading(true);
+		const formData = new FormData();
+		
+		// POPRAWIONE: Prawidłowe dodanie pliku z nazwą
+		formData.append('file', file, file.name);
+		
+		// Dodaj ścieżkę jako form field
+		if (currentPath) {
+		  formData.append('path', currentPath);
+		}
+
+		console.log('Uploading file:', file.name, 'Size:', file.size, 'Type:', file.type);
+		console.log('Upload to path:', currentPath);
+		
+		// Debug: sprawdź zawartość FormData
+		for (let [key, value] of formData.entries()) {
+		  console.log('FormData:', key, value);
+		}
+
+		const response = await api.post(`/servers/${serverId}/files/upload`, formData, {
+		  headers: {
+		    'Content-Type': 'multipart/form-data'
+		  },
+		  timeout: 60000
+		});
+		
+		showSuccess(t('files.uploadSuccess'));
+		loadFiles(currentPath);
+	  } catch (error) {
+		console.error('Error uploading file:', error);
+		const errorMsg = error.response?.data?.error || `Failed to upload file: ${error.message}`;
+		showError(errorMsg);
+	  } finally {
+		setLoading(false);
+		event.target.value = ''; // Reset input
+	  }
+	};
 
   const navigateUp = () => {
     if (currentPath === '') {
@@ -694,12 +800,11 @@ function FileEditor() {
             <FiBox /> {t('page.plugins') || 'Plugins'}
           </NavTab>
           <NavTab 
-          $active={activeTab === 'users'} 
-          onClick={() => navigate(`/servers/${serverId}/users`)}
-        >
-          <FiUser /> {t('page.server.users') || 'Users'}
+            $active={activeTab === 'users'} 
+            onClick={() => navigate(`/servers/${serverId}/users`)}
+          >
+            <FiUser /> {t('page.server.users') || 'Users'}
           </NavTab>
-          
         </NavTabs>
         
         <Header>
@@ -751,17 +856,16 @@ function FileEditor() {
         >
           <FiUser /> {t('page.server.users') || 'Users'}
         </NavTab>
-        
-          <NavTab 
+        <NavTab 
           $active={activeTab === 'backups'} 
           onClick={() => navigate(`/servers/${serverId}/backups`)}
         >
           <FiDownload /> {t('page.backups') || 'Backups'}
-          </NavTab>
+        </NavTab>
       </NavTabs>
 
       <Header>
-         <Title>{t('files.title')} - {server?.name || t('files.loading')}</Title>
+        <Title>{t('files.title')} - {server?.name || t('files.loading')}</Title>
         <Breadcrumb>
           {getBreadcrumbItems().map((item, index) => (
             <BreadcrumbItem 
@@ -808,13 +912,82 @@ function FileEditor() {
           </SearchBox>
 
           <FileActions>
-            <ActionButton disabled title={t('files.upload')}>
-              <FiUpload /> {t('files.upload')}
+<>
+<input
+  type="file"
+  id="file-upload"
+  style={{ display: 'none' }}
+  onChange={handleFileUpload}
+  accept="*/*"
+  multiple={false} // Dodaj to, aby uniknąć problemów z wieloma plikami
+/>
+<ActionButton 
+  onClick={() => document.getElementById('file-upload').click()}
+  title={t('files.upload')}
+  disabled={loading}
+>
+  <FiUpload /> {loading ? t('files.uploading') : t('files.upload')}
+</ActionButton>
+</>
+            
+            <ActionButton 
+              onClick={() => {
+                setIsCreatingNew(true);
+                setNewItemType('file');
+                setNewItemName('');
+              }}
+              title={t('files.newFile')}
+            >
+              <FiPlus /> {t('files.newFile')}
             </ActionButton>
-            <ActionButton disabled title={t('files.new')}>
-              <FiPlus /> {t('files.new')}
+            
+            <ActionButton 
+              onClick={() => {
+                setIsCreatingNew(true);
+                setNewItemType('directory');
+                setNewItemName('');
+              }}
+              variant="secondary"
+              title={t('files.newFolder')}
+            >
+              <FiFolder /> {t('files.newFolder')}
             </ActionButton>
           </FileActions>
+
+          {isCreatingNew && (
+            <NewItemForm>
+              <NewItemInput
+                type="text"
+                placeholder={newItemType === 'file' ? t('files.fileNamePlaceholder') : t('files.folderNamePlaceholder')}
+                value={newItemName}
+                onChange={(e) => setNewItemName(e.target.value)}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    createNewItem();
+                  } else if (e.key === 'Escape') {
+                    setIsCreatingNew(false);
+                  }
+                }}
+              />
+              <NewItemActions>
+                <ActionButton 
+                  onClick={createNewItem}
+                  disabled={!newItemName.trim()}
+                  size="small"
+                >
+                  <FiCheckCircle /> {t('files.create')}
+                </ActionButton>
+                <ActionButton 
+                  onClick={() => setIsCreatingNew(false)}
+                  variant="secondary"
+                  size="small"
+                >
+                  <FiXCircle /> {t('files.cancel')}
+                </ActionButton>
+              </NewItemActions>
+            </NewItemForm>
+          )}
 
           <FileList>
             {loading ? (

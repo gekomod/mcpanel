@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, current_app, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from .models import db, User, Server, Permission, BedrockVersion, Addon, UserSession, Agent
 from .managers import server_manager, file_manager
@@ -273,6 +273,250 @@ def write_file(server_id):
         return jsonify({'error': error}), 500
     
     return jsonify({'message': 'File saved successfully'})
+    
+@main.route('/servers/<int:server_id>/files/upload', methods=['POST'])
+@jwt_required()
+def upload_file(server_id):
+    """Upload pliku do serwera"""
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    if 'file' not in request.files:
+        print("DEBUG: No 'file' in request.files")
+        return jsonify({'error': 'No file provided'}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        print("DEBUG: Empty filename")
+        return jsonify({'error': 'No file selected'}), 400
+    
+    path = request.form.get('path', '')
+    
+    print(f"DEBUG: Uploading file '{file.filename}' to path '{path}' for server {server.name}")
+    print(f"DEBUG: File content type: {file.content_type}")
+    print(f"DEBUG: File content length: {file.content_length}")
+    
+    try:
+        # Użyj file_manager do zapisania pliku
+        success, error = file_manager.upload_file(server.name, path, file)
+        if error:
+            print(f"DEBUG: File manager error: {error}")
+            return jsonify({'error': error}), 500
+        
+        return jsonify({'message': f'File {file.filename} uploaded successfully'})
+    
+    except Exception as e:
+        print(f"DEBUG: Upload exception: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Upload failed: {str(e)}'}), 500
+
+@main.route('/servers/<int:server_id>/files/mkdir', methods=['POST'])
+@jwt_required()
+def create_directory(server_id):
+    """Tworzy nowy katalog"""
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    data = request.get_json()
+    dir_path = data.get('path', '')
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    if not dir_path:
+        return jsonify({'error': 'Path is required'}), 400
+    
+    try:
+        # Użyj file_manager do utworzenia katalogu
+        success, error = file_manager.create_directory(server.name, dir_path)
+        if error:
+            return jsonify({'error': error}), 500
+        
+        return jsonify({'message': f'Directory {dir_path} created successfully'})
+    
+    except Exception as e:
+        return jsonify({'error': f'Failed to create directory: {str(e)}'}), 500
+
+@main.route('/servers/<int:server_id>/files/download', methods=['GET'])
+@jwt_required()
+def download_file(server_id):
+    """Pobiera plik z serwera"""
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    file_path = request.args.get('path', '')
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    if not file_path:
+        return jsonify({'error': 'Path is required'}), 400
+    
+    try:
+        # Użyj file_manager do pobrania pełnej ścieżki pliku
+        full_path, error = file_manager.get_full_path(server.name, file_path)
+        if error:
+            return jsonify({'error': error}), 500
+        
+        if not os.path.exists(full_path) or not os.path.isfile(full_path):
+            return jsonify({'error': 'File not found'}), 404
+        
+        # Pobierz nazwę pliku z ścieżki
+        filename = os.path.basename(file_path)
+        
+        return send_file(
+            full_path,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/octet-stream'
+        )
+    
+    except Exception as e:
+        return jsonify({'error': f'Download failed: {str(e)}'}), 500
+
+@main.route('/servers/<int:server_id>/files/delete', methods=['POST'])
+@jwt_required()
+def delete_file(server_id):
+    """Usuwa plik lub katalog"""
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    data = request.get_json()
+    item_path = data.get('path', '')
+    is_directory = data.get('is_directory', False)
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    if not item_path:
+        return jsonify({'error': 'Path is required'}), 400
+    
+    try:
+        # Użyj file_manager do usunięcia
+        success, error = file_manager.delete_item(server.name, item_path, is_directory)
+        if error:
+            return jsonify({'error': error}), 500
+        
+        item_type = 'Directory' if is_directory else 'File'
+        return jsonify({'message': f'{item_type} {item_path} deleted successfully'})
+    
+    except Exception as e:
+        return jsonify({'error': f'Delete failed: {str(e)}'}), 500
+
+@main.route('/servers/<int:server_id>/files/rename', methods=['POST'])
+@jwt_required()
+def rename_file(server_id):
+    """Zmienia nazwę pliku lub katalogu"""
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    data = request.get_json()
+    old_path = data.get('old_path', '')
+    new_path = data.get('new_path', '')
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    if not old_path or not new_path:
+        return jsonify({'error': 'Both old_path and new_path are required'}), 400
+    
+    try:
+        # Użyj file_manager do zmiany nazwy
+        success, error = file_manager.rename_item(server.name, old_path, new_path)
+        if error:
+            return jsonify({'error': error}), 500
+        
+        return jsonify({'message': f'Item renamed from {old_path} to {new_path}'})
+    
+    except Exception as e:
+        return jsonify({'error': f'Rename failed: {str(e)}'}), 500
+
+@main.route('/servers/<int:server_id>/files/copy', methods=['POST'])
+@jwt_required()
+def copy_file(server_id):
+    """Kopiuje plik lub katalog"""
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    data = request.get_json()
+    source_path = data.get('source_path', '')
+    destination_path = data.get('destination_path', '')
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    if not source_path or not destination_path:
+        return jsonify({'error': 'Both source_path and destination_path are required'}), 400
+    
+    try:
+        # Użyj file_manager do kopiowania
+        success, error = file_manager.copy_item(server.name, source_path, destination_path)
+        if error:
+            return jsonify({'error': error}), 500
+        
+        return jsonify({'message': f'Item copied from {source_path} to {destination_path}'})
+    
+    except Exception as e:
+        return jsonify({'error': f'Copy failed: {str(e)}'}), 500
+
+@main.route('/servers/<int:server_id>/files/move', methods=['POST'])
+@jwt_required()
+def move_file(server_id):
+    """Przenosi plik lub katalog"""
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    data = request.get_json()
+    source_path = data.get('source_path', '')
+    destination_path = data.get('destination_path', '')
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    if not source_path or not destination_path:
+        return jsonify({'error': 'Both source_path and destination_path are required'}), 400
+    
+    try:
+        # Użyj file_manager do przenoszenia
+        success, error = file_manager.move_item(server.name, source_path, destination_path)
+        if error:
+            return jsonify({'error': error}), 500
+        
+        return jsonify({'message': f'Item moved from {source_path} to {destination_path}'})
+    
+    except Exception as e:
+        return jsonify({'error': f'Move failed: {str(e)}'}), 500
+
+@main.route('/servers/<int:server_id>/files/info', methods=['GET'])
+@jwt_required()
+def get_file_info(server_id):
+    """Pobiera informacje o pliku lub katalogu"""
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    file_path = request.args.get('path', '')
+    
+    # Check permissions
+    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    if not file_path:
+        return jsonify({'error': 'Path is required'}), 400
+    
+    try:
+        # Użyj file_manager do pobrania informacji
+        info, error = file_manager.get_file_info(server.name, file_path)
+        if error:
+            return jsonify({'error': error}), 500
+        
+        return jsonify(info)
+    
+    except Exception as e:
+        return jsonify({'error': f'Failed to get file info: {str(e)}'}), 500
 
 @main.route('/servers/<int:server_id>/properties', methods=['GET'])
 @jwt_required()

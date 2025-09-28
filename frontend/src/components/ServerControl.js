@@ -823,27 +823,48 @@ const fetchRealtimeOutput = useCallback(async () => {
 	  if (!Array.isArray(logs)) return { count: 0, players: [] };
 	  
 	  const players = new Set();
-	  const joinRegex = /(?:Player connected:\s*(\w+)|\[.*?\]:\s*(\w+)\s*joined|\[.*?\]:\s*(\w+)\s*\[.*\] logged in)/i;
-	  const leaveRegex = /(?:Player disconnected:\s*(\w+)|\[.*?\]:\s*(\w+)\s*left|\[.*?\]:\s*(\w+)\s*lost connection)/i;
+	  
+	  // Rozszerzone wzorce dla różnych formatów logów Minecraft
+	  const joinPatterns = [
+		/Player connected:\s*(\w+)/i,
+		/\[.*?\]:\s*(\w+)\s*joined the game/i,
+		/\[.*?\]:\s*(\w+)\s*\[.*\] logged in/i,
+		/(\w+) joined the game/i,
+		/(\w+)\s*\[.*\] logged in/i
+	  ];
+	  
+	  const leavePatterns = [
+		/Player disconnected:\s*(\w+)/i,
+		/\[.*?\]:\s*(\w+)\s*left the game/i,
+		/\[.*?\]:\s*(\w+)\s*lost connection/i,
+		/(\w+) left the game/i,
+		/(\w+) lost connection/i
+	  ];
 	  
 	  logs.forEach(log => {
-		const logLine = typeof log === 'string' ? log : String(log);
+		const logLine = removeAnsiCodes(typeof log === 'string' ? log : String(log));
 		
 		// Sprawdzanie dołączenia gracza
-		const joinMatch = logLine.match(joinRegex);
-		if (joinMatch) {
-		  const playerName = joinMatch[1] || joinMatch[2] || joinMatch[3];
-		  if (playerName) {
-		    players.add(playerName.toLowerCase());
+		for (const pattern of joinPatterns) {
+		  const match = logLine.match(pattern);
+		  if (match && match[1]) {
+		    const playerName = match[1].trim();
+		    if (playerName && playerName !== '') {
+		      players.add(playerName.toLowerCase());
+		      break;
+		    }
 		  }
 		}
 		
 		// Sprawdzanie opuszczenia gracza
-		const leaveMatch = logLine.match(leaveRegex);
-		if (leaveMatch) {
-		  const playerName = leaveMatch[1] || leaveMatch[2] || leaveMatch[3];
-		  if (playerName) {
-		    players.delete(playerName.toLowerCase());
+		for (const pattern of leavePatterns) {
+		  const match = logLine.match(pattern);
+		  if (match && match[1]) {
+		    const playerName = match[1].trim();
+		    if (playerName && playerName !== '') {
+		      players.delete(playerName.toLowerCase());
+		      break;
+		    }
 		  }
 		}
 	  });
@@ -852,6 +873,55 @@ const fetchRealtimeOutput = useCallback(async () => {
 		count: players.size,
 		players: Array.from(players)
 	  };
+	};
+	
+	// Funkcja do usuwania kodów ANSI z logów
+	const removeAnsiCodes = (text) => {
+	  if (typeof text !== 'string') return text;
+	  return text.replace(/\u001b\[\d+m/g, '');
+	};
+
+	// Zaktualizuj funkcję parseLogLine:
+	const parseLogLine = (log) => {
+	  if (typeof log !== 'string') {
+		return { content: String(log), type: 'UNKNOWN' };
+	  }
+	  
+	  // Najpierw usuń kody ANSI
+	  const cleanLog = removeAnsiCodes(log);
+	  
+	  // Sprawdź czy to komenda użytkownika
+	  if (cleanLog.startsWith('> ')) {
+		return { content: cleanLog, type: 'COMMAND' };
+	  }
+	  
+	  // Sprawdź czy to błąd
+	  if (cleanLog.includes('ERROR') || cleanLog.includes('Error') || cleanLog.toLowerCase().includes('exception') || cleanLog.toLowerCase().includes('error')) {
+		return { content: cleanLog, type: 'ERROR' };
+	  }
+	  
+	  // Sprawdź czy to warning
+	  if (cleanLog.includes('WARN') || cleanLog.includes('Warning') || cleanLog.toLowerCase().includes('warn')) {
+		return { content: cleanLog, type: 'WARN' };
+	  }
+	  
+	  // Sprawdź czy to info
+	  if (cleanLog.includes('INFO') || cleanLog.includes('Info') || cleanLog.toLowerCase().includes('info')) {
+		return { content: cleanLog, type: 'INFO' };
+	  }
+	  
+	  // Sprawdź czy to debug
+	  if (cleanLog.includes('DEBUG') || cleanLog.includes('Debug') || cleanLog.toLowerCase().includes('debug')) {
+		return { content: cleanLog, type: 'DEBUG' };
+	  }
+	  
+	  // Sprawdź czy zawiera timestamp (format daty)
+	  const timestampRegex = /\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]/;
+	  if (timestampRegex.test(cleanLog)) {
+		return { content: cleanLog, type: 'TIMESTAMP' };
+	  }
+	  
+	  return { content: cleanLog, type: 'UNKNOWN' };
 	};
 
   const checkDownloadProgress = async () => {
