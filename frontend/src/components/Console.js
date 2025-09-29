@@ -287,37 +287,63 @@ function Console() {
     }
   };
 
-  const fetchOutput = async () => {
-    if (!server || server.status !== 'running') return;
+const fetchOutput = async () => {
+  if (!server || server.status !== 'running') return;
 
-    try {
-      let response;
-      if (isBedrock) {
-        // Use real-time output for Bedrock servers
-        response = await api.get(`/servers/${serverId}/realtime-output`);
-      } else {
-        // Use log files for Java servers
-        response = await api.get(`/servers/${serverId}/logs`);
+  try {
+    let response;
+    if (isBedrock) {
+      // Use real-time output for Bedrock servers
+      response = await api.get(`/servers/${serverId}/realtime-output`);
+    } else {
+      // Use log files for Java servers
+      response = await api.get(`/servers/${serverId}/logs`);
+    }
+    
+    if (response.data && response.data.output) {
+      let logContent = response.data.output;
+      
+      // Dla serwerów Java - usuń kod ANSI z logów
+      if (!isBedrock) {
+        logContent = removeAnsiCodes(logContent);
       }
       
-      if (response.data && response.data.output) {
-        const lines = response.data.output.split('\n').filter(line => line.trim());
-        const formattedOutput = lines.map(line => {
-          // Parse timestamp from log line if available
-          const timestampMatch = line.match(/\[(.*?)\]/);
-          const timestamp = timestampMatch ? new Date(timestampMatch[1]) : new Date();
-          return {
-            timestamp: timestamp,
-            message: line.replace(/\[.*?\]\s*/, '') // Remove timestamp from message
-          };
-        });
-        setOutput(formattedOutput);
-      }
-    } catch (error) {
-      console.error('Error fetching output:', error);
-      // Don't set error state for output to avoid breaking the UI
+      const lines = logContent.split('\n').filter(line => line.trim());
+      const formattedOutput = lines.map(line => {
+        // Parse timestamp from log line if available
+        const timestampMatch = line.match(/\[(.*?)\]/);
+        const timestamp = timestampMatch ? parseLogTimestamp(timestampMatch[1]) : new Date();
+        return {
+          timestamp: timestamp,
+          message: line.replace(/\[.*?\]\s*/, '') // Remove timestamp from message
+        };
+      });
+      setOutput(formattedOutput);
     }
-  };
+  } catch (error) {
+    console.error('Error fetching output:', error);
+    // Don't set error state for output to avoid breaking the UI
+  }
+};
+
+// Funkcja do usuwania kodów ANSI
+const removeAnsiCodes = (text) => {
+  return text.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
+};
+
+// Funkcja do parsowania timestamp z logów Minecraft
+const parseLogTimestamp = (timestampStr) => {
+  try {
+    // Format timestamp z logów: "19:38:22"
+    const [hours, minutes, seconds] = timestampStr.split(':').map(Number);
+    const now = new Date();
+    now.setHours(hours, minutes, seconds, 0);
+    return now;
+  } catch (error) {
+    console.warn('Failed to parse timestamp:', timestampStr);
+    return new Date();
+  }
+};
 
   const scrollToBottom = () => {
     consoleEndRef.current?.scrollIntoView({ behavior: "smooth" });

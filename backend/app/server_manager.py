@@ -674,8 +674,13 @@ class ServerManager:
             time.sleep(1)
         
             if server.type == 'java':
-                # Użyj znalezionego pliku JAR
-                cmd = ['java', '-Xmx2G', '-Xms1G', '-jar', jar_file, 'nogui']
+                cmd = ['java', 
+                       '-Xmx6G', '-Xms3G',
+                       '-XX:+UseG1GC', '-XX:+ParallelRefProcEnabled', '-XX:MaxGCPauseMillis=200',
+                       '-XX:+UnlockExperimentalVMOptions', '-XX:+DisableExplicitGC', 
+                       '-XX:G1NewSizePercent=30', '-XX:G1MaxNewSizePercent=40',
+                       '-XX:G1HeapRegionSize=8M', '-XX:G1ReservePercent=20',
+                       '-jar', jar_file, 'nogui']
             else:
                 if os.name == 'nt':
                     cmd = ['bedrock_server.exe']

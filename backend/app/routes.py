@@ -876,7 +876,8 @@ def get_server_logs(server_id):
     if error:
         return jsonify({'error': error}), 500
     
-    return jsonify({'logs': logs})
+    # Zwróć logi jako output zamiast logs
+    return jsonify({'output': logs})
     
 @main.route('/servers/<int:server_id>/command', methods=['POST'])
 @jwt_required()
