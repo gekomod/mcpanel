@@ -9,12 +9,104 @@ from functools import wraps
 import os
 import requests
 import shutil
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger('MCPanelRoutes')
 
 main = Blueprint('main', __name__)
 
 def get_bedrock_manager():
     from flask import current_app
     return BedrockAddonManager(current_app.config['SERVER_BASE_PATH'])
+
+def _get_agent_client(server_id=None, agent_id=None):
+    """Pobiera klienta agenta dla serwera lub agenta"""
+    if server_id:
+        server = Server.query.get(server_id)
+        if server and server.agent_id:
+            agent = Agent.query.get(server.agent_id)
+            if agent and agent.is_active:
+                return AgentClient(agent)
+    elif agent_id:
+        agent = Agent.query.get(agent_id)
+        if agent and agent.is_active:
+            return AgentClient(agent)
+    return None
+
+class AgentClient:
+    """Klient do komunikacji z agentem"""
+    
+    def __init__(self, agent):
+        self.agent = agent
+        self.base_url = agent.url.rstrip('/')
+        self.headers = {
+            'Authorization': f'Bearer {agent.auth_token}',
+            'Content-Type': 'application/json'
+        }
+    
+    def _make_request(self, method, endpoint, **kwargs):
+        """Wykonuje zapytanie do agenta"""
+        try:
+            url = f"{self.base_url}{endpoint}"
+            response = requests.request(method, url, headers=self.headers, timeout=30, **kwargs)
+            
+            if response.status_code == 200:
+                return True, response.json()
+            else:
+                error_msg = f"Agent error {response.status_code}: {response.text}"
+                return False, error_msg
+                
+        except requests.exceptions.RequestException as e:
+            return False, f"Connection error: {str(e)}"
+    
+    def get_status(self):
+        """Pobiera status agenta"""
+        return self._make_request('GET', '/status')
+    
+    def start_server(self, server_name, server_data):
+        """Uruchamia serwer na agencie"""
+        return self._make_request('POST', f'/server/{server_name}/start', json=server_data)
+    
+    def stop_server(self, server_name):
+        """Zatrzymuje serwer na agencie"""
+        return self._make_request('POST', f'/server/{server_name}/stop')
+    
+    def restart_server(self, server_name, server_data):
+        """Restartuje serwer na agencie"""
+        return self._make_request('POST', f'/server/{server_name}/restart', json=server_data)
+    
+    def send_command(self, server_name, command):
+        """Wysyła komendę do serwera"""
+        return self._make_request('POST', f'/server/{server_name}/command', json={'command': command})
+    
+    def get_console(self, server_name, lines=100):
+        """Pobiera konsolę serwera"""
+        return self._make_request('GET', f'/server/{server_name}/console?lines={lines}')
+    
+    def get_server_status(self, server_name):
+        """Pobiera status serwera"""
+        return self._make_request('GET', f'/server/{server_name}/status')
+    
+    def install_server(self, server_data):
+        """Instaluje serwer na agencie"""
+        return self._make_request('POST', '/server/install', json=server_data)
+    
+    def get_server_logs(self, server_name, lines=100):
+        """Pobiera logi serwera"""
+        return self._make_request('GET', f'/logs/server/{server_name}?lines={lines}')
+        
+    def check_server_files(self, server_name):
+        """Sprawdza czy serwer ma pliki na agencie"""
+        return self._make_request('GET', f'/server/{server_name}/files/check')
+        
+    def delete_server_files(self, server_name):
+        """Usuwa pliki serwera na agencie"""
+        return self._make_request('POST', f'/server/{server_name}/delete')
 
 @main.route('/servers', methods=['GET'])
 @jwt_required()
@@ -25,13 +117,12 @@ def get_servers():
     if user.role == 'admin':
         servers = Server.query.all()
     else:
-        # Get servers that the user has permissions for
         servers = Server.query.join(Permission).filter(
             Permission.user_id == current_user_id
         ).all()
     
     return jsonify([server.to_dict() for server in servers])
-    
+
 @main.route('/servers', methods=['POST'])
 @jwt_required()
 def create_server():
@@ -47,6 +138,7 @@ def create_server():
     version = data.get('version')
     port = data.get('port')
     implementation = data.get('implementation', 'vanilla')
+    agent_id = data.get('agent_id')  # Nowe pole dla agenta
     
     if not name or not server_type or not version:
         return jsonify({'error': 'Missing required fields'}), 400
@@ -64,7 +156,8 @@ def create_server():
     
     if Server.query.filter_by(port=port).first():
         return jsonify({'error': 'Port is already in use by another server'}), 400
-    
+
+    # Sprawdź dostępność portu
     import socket
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -75,11 +168,23 @@ def create_server():
     except Exception as e:
         return jsonify({'error': f'Error checking port: {str(e)}'}), 500
 
-    server_path = os.path.join(current_app.config['SERVER_BASE_PATH'], name)
-    try:
-        os.makedirs(server_path, exist_ok=True)
-    except Exception as e:
-        return jsonify({'error': f'Failed to create server directory: {str(e)}'}), 500
+    # Sprawdź agenta jeśli podany
+    agent = None
+    if agent_id:
+        agent = Agent.query.get(agent_id)
+        if not agent:
+            return jsonify({'error': 'Agent not found'}), 400
+        if not agent.is_active:
+            return jsonify({'error': 'Agent is not active'}), 400
+
+    # Dla serwerów lokalnych tworzymy katalog
+    server_path = None
+    if not agent_id:
+        server_path = os.path.join(current_app.config['SERVER_BASE_PATH'], name)
+        try:
+            os.makedirs(server_path, exist_ok=True)
+        except Exception as e:
+            return jsonify({'error': f'Failed to create server directory: {str(e)}'}), 500
 
     server = Server(
         name=name,
@@ -88,7 +193,8 @@ def create_server():
         version=version,
         port=port,
         path=server_path,
-        status='stopped'
+        status='stopped',
+        agent_id=agent_id
     )
     
     db.session.add(server)
@@ -107,24 +213,51 @@ def delete_server(server_id):
     
     server = Server.query.get_or_404(server_id)
     
-    # Stop server if it's running
-    if server.status == 'running':
-        server_manager.stop_server(server_id)
-    
-    # Delete server directory
     try:
-        import shutil
-        server_path = server_manager.get_server_path(server.name)
-        if os.path.exists(server_path):
-            shutil.rmtree(server_path)
+        # Stop server if it's running
+        if server.status == 'running':
+            if server.agent_id:
+                # Zatrzymaj przez agenta
+                agent_client = _get_agent_client(server_id=server_id)
+                if agent_client:
+                    agent_client.stop_server(server.name)
+            else:
+                # Zatrzymaj lokalnie
+                server_manager.stop_server(server_id)
+        
+        # Usuń pliki serwera - zarówno lokalnie jak i u agenta
+        if server.agent_id:
+            # Usuń pliki u agenta
+            agent_client = _get_agent_client(server_id=server_id)
+            if agent_client:
+                success, result = agent_client.delete_server_files(server.name)
+                if not success:
+                    logger.warning(f"Failed to delete server files on agent: {result}")
+        else:
+            # Usuń pliki lokalnie
+            try:
+                server_path = server_manager.get_server_path(server.name)
+                if os.path.exists(server_path):
+                    logger.info(f"Deleting local server directory: {server_path}")
+                    shutil.rmtree(server_path)
+            except Exception as e:
+                logger.error(f"Could not delete local server directory: {e}")
+        
+        # Usuń uprawnienia użytkowników
+        Permission.query.filter_by(server_id=server_id).delete()
+        
+        # Usuń serwer z bazy danych
+        db.session.delete(server)
+        db.session.commit()
+        
+        logger.info(f"Server {server.name} (ID: {server_id}) deleted successfully")
+        
+        return jsonify({'message': 'Server deleted successfully'})
+        
     except Exception as e:
-        print(f"Warning: Could not delete server directory: {e}")
-    
-    # Delete server from database
-    db.session.delete(server)
-    db.session.commit()
-    
-    return jsonify({'message': 'Server deleted successfully'})
+        db.session.rollback()
+        logger.error(f"Error deleting server {server_id}: {e}")
+        return jsonify({'error': f'Failed to delete server: {str(e)}'}), 500
 
 @main.route('/servers/<int:server_id>', methods=['GET'])
 @jwt_required()
@@ -144,38 +277,65 @@ def start_server(server_id):
     current_user_id = get_jwt_identity()
     server = Server.query.get_or_404(server_id)
     
-    # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_start'):
         return jsonify({'error': 'Access denied'}), 403
     
     print(f"Starting server {server_id} ({server.name})")
     
-    # Get bedrock URL if needed
-    bedrock_url = None
-    if server.type == 'bedrock':
-        from .models import BedrockVersion
-        bedrock_version = BedrockVersion.query.filter_by(
-            version=server.version, 
-            is_active=True
-        ).first()
-        if bedrock_version:
-            bedrock_url = bedrock_version.download_url
-        else:
-            return jsonify({'error': f'Bedrock version {server.version} not found'}), 400
-    
-    # Użyj metody start_server z server_manager
-    success, message = server_manager.start_server(server, bedrock_url)
-    
-    if success:
-        print(f"Server {server_id} start initiated: {message}")
+    # Sprawdź czy serwer ma przypisanego agenta
+    if server.agent_id:
+        agent_client = _get_agent_client(server_id=server_id)
+        if not agent_client:
+            return jsonify({'error': 'Agent not available'}), 500
         
-        return jsonify({
-            'message': message,
-            'pid': None  # PID będzie dostępne później przez endpoint status
-        })
+        # Przygotuj dane serwera dla agenta
+        server_data = {
+            'name': server.name,
+            'type': server.type,
+            'version': server.version,
+            'implementation': server.implementation,
+            'port': server.port,
+            'memory': '2G'  # Domyślna pamięć
+        }
+        
+        # Dodaj URL dla Bedrock
+        if server.type == 'bedrock':
+            bedrock_version = BedrockVersion.query.filter_by(
+                version=server.version, 
+                is_active=True
+            ).first()
+            if bedrock_version:
+                server_data['bedrock_url'] = bedrock_version.download_url
+        
+        # Wyślij żądanie do agenta
+        success, result = agent_client.start_server(server.name, server_data)
+        
+        if success:
+            server.status = 'starting'
+            db.session.commit()
+            return jsonify({
+                'message': 'Server start initiated on agent',
+                'agent_response': result
+            })
+        else:
+            return jsonify({'error': f'Agent error: {result}'}), 500
     else:
-        print(f"Server {server_id} start failed: {message}")
-        return jsonify({'error': message}), 500
+        # Lokalne uruchamianie (stara metoda)
+        bedrock_url = None
+        if server.type == 'bedrock':
+            bedrock_version = BedrockVersion.query.filter_by(
+                version=server.version, 
+                is_active=True
+            ).first()
+            if bedrock_version:
+                bedrock_url = bedrock_version.download_url
+        
+        success, message = server_manager.start_server(server, bedrock_url)
+        
+        if success:
+            return jsonify({'message': message})
+        else:
+            return jsonify({'error': message}), 500
 
 @main.route('/servers/<int:server_id>/stop', methods=['POST'])
 @jwt_required()
@@ -183,17 +343,33 @@ def stop_server(server_id):
     current_user_id = get_jwt_identity()
     server = Server.query.get_or_404(server_id)
     
-    # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_stop'):
         return jsonify({'error': 'Access denied'}), 403
     
-    success, message = server_manager.stop_server(server_id)
-    if success:
-        server.status = 'stopped'
-        db.session.commit()
-        return jsonify({'message': message})
+    if server.agent_id:
+        agent_client = _get_agent_client(server_id=server_id)
+        if not agent_client:
+            return jsonify({'error': 'Agent not available'}), 500
+        
+        success, result = agent_client.stop_server(server.name)
+        
+        if success:
+            server.status = 'stopping'
+            db.session.commit()
+            return jsonify({
+                'message': 'Server stop initiated on agent',
+                'agent_response': result
+            })
+        else:
+            return jsonify({'error': f'Agent error: {result}'}), 500
     else:
-        return jsonify({'error': message}), 500
+        success, message = server_manager.stop_server(server_id)
+        if success:
+            server.status = 'stopped'
+            db.session.commit()
+            return jsonify({'message': message})
+        else:
+            return jsonify({'error': message}), 500
 
 @main.route('/servers/<int:server_id>/restart', methods=['POST'])
 @jwt_required()
@@ -201,25 +377,47 @@ def restart_server(server_id):
     current_user_id = get_jwt_identity()
     server = Server.query.get_or_404(server_id)
     
-    # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_restart'):
         return jsonify({'error': 'Access denied'}), 403
     
-    # Stop the server
-    stop_success, stop_message = server_manager.stop_server(server_id)
-    if not stop_success:
-        return jsonify({'error': f"Failed to stop server: {stop_message}"}), 500
-    
-    # Start the server
-    start_success, start_message = server_manager.start_server(server)
-    if start_success:
-        server.status = 'running'
-        db.session.commit()
-        return jsonify({'message': 'Server restarted successfully'})
+    if server.agent_id:
+        agent_client = _get_agent_client(server_id=server_id)
+        if not agent_client:
+            return jsonify({'error': 'Agent not available'}), 500
+        
+        server_data = {
+            'name': server.name,
+            'type': server.type,
+            'memory': '2G'
+        }
+        
+        success, result = agent_client.restart_server(server.name, server_data)
+        
+        if success:
+            server.status = 'restarting'
+            db.session.commit()
+            return jsonify({
+                'message': 'Server restart initiated on agent',
+                'agent_response': result
+            })
+        else:
+            return jsonify({'error': f'Agent error: {result}'}), 500
     else:
-        server.status = 'stopped'
-        db.session.commit()
-        return jsonify({'error': f"Failed to start server: {start_message}"}), 500
+        # Lokalny restart
+        stop_success, stop_message = server_manager.stop_server(server_id)
+        if not stop_success:
+            return jsonify({'error': f"Failed to stop server: {stop_message}"}), 500
+        
+        start_success, start_message = server_manager.start_server(server)
+        if start_success:
+            server.status = 'running'
+            db.session.commit()
+            return jsonify({'message': 'Server restarted successfully'})
+        else:
+            server.status = 'stopped'
+            db.session.commit()
+            return jsonify({'error': f"Failed to start server: {start_message}"}), 500
+
 
 @main.route('/servers/<int:server_id>/files', methods=['GET'])
 @jwt_required()
@@ -835,31 +1033,60 @@ def get_real_server_status(server_id):
     current_user_id = get_jwt_identity()
     server = Server.query.get_or_404(server_id)
     
-    # Check permissions
     if not _check_permission(current_user_id, server_id, 'view'):
         return jsonify({'error': 'Access denied'}), 403
     
-    # Get real status from server manager
-    real_status = server_manager.get_server_status(server_id)
-    
-    # Update database if status is different
-    if real_status['running'] and server.status != 'running':
-        server.status = 'running'
-        # ZACHOWAJ PID JEŚLI JEST W real_status
-        if real_status.get('pid'):
-            server.pid = real_status['pid']
-        db.session.commit()
-    elif not real_status['running'] and server.status != 'stopped':
-        server.status = 'stopped'
-        server.pid = None  # WYCZYŚĆ PID
-        db.session.commit()
-    
-    return jsonify({
-        'database_status': server.status,
-        'real_status': real_status,
-        'is_running': real_status['running'],
-        'pid': server.pid  # DODAJ PID DO ODPOWIEDZI
-    })
+    if server.agent_id:
+        agent_client = _get_agent_client(server_id=server_id)
+        if not agent_client:
+            return jsonify({'error': 'Agent not available'}), 500
+        
+        success, result = agent_client.get_server_status(server.name)
+        
+        if success:
+            agent_status = result.get('status', {})
+            is_running = agent_status.get('running', False)
+            
+            # Zaktualizuj status w bazie danych
+            if is_running and server.status != 'running':
+                server.status = 'running'
+                server.pid = agent_status.get('pid')
+                db.session.commit()
+            elif not is_running and server.status != 'stopped':
+                server.status = 'stopped'
+                server.pid = None
+                db.session.commit()
+            
+            return jsonify({
+                'database_status': server.status,
+                'real_status': agent_status,
+                'is_running': is_running,
+                'pid': server.pid,
+                'source': 'agent'
+            })
+        else:
+            return jsonify({'error': f'Agent error: {result}'}), 500
+    else:
+        # Lokalny status
+        real_status = server_manager.get_server_status(server_id)
+        
+        if real_status['running'] and server.status != 'running':
+            server.status = 'running'
+            if real_status.get('pid'):
+                server.pid = real_status['pid']
+            db.session.commit()
+        elif not real_status['running'] and server.status != 'stopped':
+            server.status = 'stopped'
+            server.pid = None
+            db.session.commit()
+        
+        return jsonify({
+            'database_status': server.status,
+            'real_status': real_status,
+            'is_running': real_status['running'],
+            'pid': server.pid,
+            'source': 'local'
+        })
     
 @main.route('/servers/<int:server_id>/logs', methods=['GET'])
 @jwt_required()
@@ -867,17 +1094,28 @@ def get_server_logs(server_id):
     current_user_id = get_jwt_identity()
     server = Server.query.get_or_404(server_id)
     
-    # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_edit_files'):
         return jsonify({'error': 'Access denied'}), 403
     
-    # Get logs from server manager
-    logs, error = server_manager.get_server_logs(server.name)
-    if error:
-        return jsonify({'error': error}), 500
+    lines = request.args.get('lines', 100, type=int)
     
-    # Zwróć logi jako output zamiast logs
-    return jsonify({'output': logs})
+    if server.agent_id:
+        agent_client = _get_agent_client(server_id=server_id)
+        if not agent_client:
+            return jsonify({'error': 'Agent not available'}), 500
+        
+        success, result = agent_client.get_server_logs(server.name, lines)
+        
+        if success:
+            logs = result.get('logs', [])
+            return jsonify({'output': ''.join(logs)})
+        else:
+            return jsonify({'error': f'Agent error: {result}'}), 500
+    else:
+        logs, error = server_manager.get_server_logs(server.name)
+        if error:
+            return jsonify({'error': error}), 500
+        return jsonify({'output': logs})
     
 @main.route('/servers/<int:server_id>/command', methods=['POST'])
 @jwt_required()
@@ -886,21 +1124,31 @@ def send_command(server_id):
     data = request.get_json()
     command = data.get('command', '')
     
-    # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_edit_files'):
         return jsonify({'error': 'Access denied'}), 403
     
-    # Check if server is running
     server = Server.query.get_or_404(server_id)
-    if server.status != 'running':
-        return jsonify({'error': 'Server is not running'}), 400
     
-    # Wyślij komendę do serwera
-    success, message = server_manager.send_command(server_id, command)
-    if success:
-        return jsonify({'message': message})
+    if server.agent_id:
+        agent_client = _get_agent_client(server_id=server_id)
+        if not agent_client:
+            return jsonify({'error': 'Agent not available'}), 500
+        
+        success, result = agent_client.send_command(server.name, command)
+        
+        if success:
+            return jsonify({'message': 'Command sent to agent'})
+        else:
+            return jsonify({'error': f'Agent error: {result}'}), 500
     else:
-        return jsonify({'error': message}), 500
+        if server.status != 'running':
+            return jsonify({'error': 'Server is not running'}), 400
+        
+        success, message = server_manager.send_command(server_id, command)
+        if success:
+            return jsonify({'message': message})
+        else:
+            return jsonify({'error': message}), 500
 
 @main.route('/servers/<int:server_id>/realtime-output', methods=['GET'])
 @jwt_required()
@@ -1636,23 +1884,28 @@ def get_console_output(server_id):
     current_user_id = get_jwt_identity()
     server = Server.query.get_or_404(server_id)
     
-    # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_edit_files'):
         return jsonify({'error': 'Access denied'}), 403
     
-    # Pobierz ostatnie linie z konsoli (z logów lub outputu)
-    try:
-        log_file = os.path.join(server.path, 'logs', 'latest.log')
-        lines = []
+    lines = request.args.get('lines', 100, type=int)
+    
+    if server.agent_id:
+        agent_client = _get_agent_client(server_id=server_id)
+        if not agent_client:
+            return jsonify({'error': 'Agent not available'}), 500
         
-        if os.path.exists(log_file):
-            with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
-                lines = f.readlines()[-50:]  # Ostatnie 50 linii
+        success, result = agent_client.get_console(server.name, lines)
         
-        return jsonify({'lines': lines})
-        
-    except Exception as e:
-        return jsonify({'error': f'Error reading console: {str(e)}'}), 500
+        if success:
+            return jsonify({'output': result.get('output', '')})
+        else:
+            return jsonify({'error': f'Agent error: {result}'}), 500
+    else:
+        try:
+            output = server_manager.get_realtime_output(server_id)
+            return jsonify({'output': output})
+        except Exception as e:
+            return jsonify({'error': f'Error getting console: {str(e)}'}), 500
 
 @main.route('/servers/<int:server_id>/console', methods=['POST'])
 @jwt_required()
@@ -1756,7 +2009,7 @@ def check_port():
 @jwt_required()
 def check_server_files(server_id):
     """
-    Sprawdza czy serwer ma zainstalowane pliki
+    Sprawdza czy serwer ma zainstalowane pliki (lokalnie lub na agencie)
     """
     current_user_id = get_jwt_identity()
     server = Server.query.get_or_404(server_id)
@@ -1766,11 +2019,42 @@ def check_server_files(server_id):
         return jsonify({'error': 'Access denied'}), 403
     
     try:
+        # Jeśli serwer ma przypisanego agenta, sprawdź przez agenta
+        if server.agent_id:
+            agent_client = _get_agent_client(server_id=server_id)
+            if not agent_client:
+                return jsonify({'error': 'Agent not available'}), 500
+            
+            # Wyślij żądanie do agenta o sprawdzenie plików
+            success, result = agent_client.check_server_files(server.name)
+            
+            if success:
+                return jsonify({
+                    'hasFiles': result.get('hasFiles', False),
+                    'message': result.get('message', ''),
+                    'fileCount': result.get('fileCount', 0),
+                    'serverType': server.type,
+                    'checkedVia': 'agent'
+                })
+            else:
+                # W przypadku błędu agenta, zwróć podstawową informację
+                return jsonify({
+                    'hasFiles': False,
+                    'message': f'Agent error: {result}',
+                    'serverType': server.type,
+                    'checkedVia': 'agent_error'
+                })
+        
+        # Lokalne sprawdzanie (oryginalna logika)
         server_path = server_manager.get_server_path(server.name)
         
         # Sprawdź czy katalog serwera istnieje
         if not os.path.exists(server_path):
-            return jsonify({'hasFiles': False, 'message': 'Server directory does not exist'})
+            return jsonify({
+                'hasFiles': False, 
+                'message': 'Server directory does not exist',
+                'checkedVia': 'local'
+            })
         
         # Sprawdź czy są jakieś pliki (ignorując ukryte pliki systemowe)
         files = [f for f in os.listdir(server_path) 
@@ -1818,7 +2102,8 @@ def check_server_files(server_id):
             'fileCount': len(files),
             'serverType': server.type,
             'serverPath': server_path,
-            'message': 'Server files found' if has_files else 'Server files missing'
+            'message': 'Server files found' if has_files else 'Server files missing',
+            'checkedVia': 'local'
         })
         
     except Exception as e:
@@ -1827,43 +2112,68 @@ def check_server_files(server_id):
 @main.route('/servers/<int:server_id>/install', methods=['POST'])
 @jwt_required()
 def install_server(server_id):
-    """
-    Rozpoczyna proces instalacji serwera
-    """
     current_user_id = get_jwt_identity()
     server = Server.query.get_or_404(server_id)
     
-    # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_start'):
         return jsonify({'error': 'Access denied'}), 403
     
-    # Sprawdź czy serwer jest zatrzymany
     if server.status == 'running':
         return jsonify({'error': 'Server must be stopped to install'}), 400
     
-    # Sprawdź czy serwer już ma pliki
-    try:
-        server_path = server_manager.get_server_path(server.name)
-        if os.path.exists(server_path) and len([f for f in os.listdir(server_path) if not f.startswith('.')]) > 0:
-            return jsonify({'error': 'Server already has files installed'}), 400
-    except Exception as e:
-        print(f"Warning: Could not check server files: {e}")
-    
-    try:
-        # Utwórz katalog serwera jeśli nie istnieje
-        server_path = server_manager.get_server_path(server.name)
-        os.makedirs(server_path, exist_ok=True)
+    if server.agent_id:
+        agent_client = _get_agent_client(server_id=server_id)
+        if not agent_client:
+            return jsonify({'error': 'Agent not available'}), 500
         
-        # Rozpocznij instalację w zależności od typu serwera
+        server_data = {
+            'name': server.name,
+            'type': server.type,
+            'implementation': server.implementation,
+            'version': server.version,
+            'port': server.port
+        }
+        
+        # Dodaj URL dla Bedrock
         if server.type == 'bedrock':
-            return _install_bedrock_server(server)
-        elif server.type == 'java':
-            return _install_java_server(server)
+            bedrock_version = BedrockVersion.query.filter_by(
+                version=server.version, 
+                is_active=True
+            ).first()
+            if bedrock_version:
+                server_data['bedrock_url'] = bedrock_version.download_url
+        
+        success, result = agent_client.install_server(server_data)
+        
+        if success:
+            return jsonify({
+                'message': 'Server installation started on agent',
+                'agent_response': result
+            })
         else:
-            return jsonify({'error': f'Unsupported server type: {server.type}'}), 400
+            return jsonify({'error': f'Agent installation error: {result}'}), 500
+    else:
+        # Lokalna instalacja
+        try:
+            server_path = server_manager.get_server_path(server.name)
+            if os.path.exists(server_path) and len([f for f in os.listdir(server_path) if not f.startswith('.')]) > 0:
+                return jsonify({'error': 'Server already has files installed'}), 400
+        except Exception as e:
+            print(f"Warning: Could not check server files: {e}")
+        
+        try:
+            os.makedirs(server_path, exist_ok=True)
             
-    except Exception as e:
-        return jsonify({'error': f'Installation failed: {str(e)}'}), 500
+            if server.type == 'bedrock':
+                return _install_bedrock_server(server)
+            elif server.type == 'java':
+                return _install_java_server(server)
+            else:
+                return jsonify({'error': f'Unsupported server type: {server.type}'}), 400
+                
+        except Exception as e:
+            return jsonify({'error': f'Installation failed: {str(e)}'}), 500
+
 
 def _install_bedrock_server(server):
     """
@@ -1929,6 +2239,21 @@ def get_installation_progress(server_id):
         return jsonify({'error': 'Access denied'}), 403
     
     try:
+        server = Server.query.get_or_404(server_id)
+        
+        # Dla agenta, sprawdź również status plików
+        if server.agent_id:
+            agent_client = _get_agent_client(server_id=server_id)
+            if agent_client:
+                # Sprawdź czy pliki już istnieją u agenta
+                files_success, files_result = agent_client.check_server_files(server.name)
+                if files_success and files_result.get('hasFiles', False):
+                    return jsonify({
+                        'status': 'complete',
+                        'message': 'Server installed on agent',
+                        'agent_files_check': files_result
+                    })
+        
         # Użyj istniejącej metody get_download_progress
         progress = server_manager.get_download_progress(server_id)
         
@@ -2225,7 +2550,6 @@ def agent_token_required(f):
 def get_agents():
     agents = Agent.query.all()
     
-    # Sprawdzamy które agenty są online (aktualizowane w ciągu 5 minut)
     current_time = datetime.utcnow()
     
     agents_data = []
@@ -2254,7 +2578,6 @@ def get_agents():
 @main.route('/agents', methods=['POST'])
 @jwt_required()
 def create_agent():
-    """Tworzy nowego agenta"""
     current_user_id = get_jwt_identity()
     user = User.query.get(current_user_id)
     
@@ -2268,11 +2591,9 @@ def create_agent():
         if not data.get(field):
             return jsonify({'error': f'Missing required field: {field}'}), 400
     
-    # Sprawdź czy agent o tej nazwie już istnieje
     if Agent.query.filter_by(name=data['name']).first():
         return jsonify({'error': 'Agent with this name already exists'}), 400
     
-    # Sprawdź czy URL jest unikalny
     if Agent.query.filter_by(url=data['url']).first():
         return jsonify({'error': 'Agent with this URL already exists'}), 400
     
@@ -2422,7 +2743,6 @@ def get_agent_servers(agent_id):
 @main.route('/servers/<int:server_id>/assign-to-agent', methods=['POST'])
 @jwt_required()
 def assign_server_to_agent(server_id):
-    """Przypisuje serwer do agenta"""
     current_user_id = get_jwt_identity()
     user = User.query.get(current_user_id)
     
@@ -2438,9 +2758,8 @@ def assign_server_to_agent(server_id):
     server = Server.query.get_or_404(server_id)
     agent = Agent.query.get_or_404(agent_id)
     
-    # Sprawdź czy agent ma wystarczającą pojemność
     current_servers = Server.query.filter_by(agent_id=agent_id).count()
-    if current_servers >= agent.capacity:
+    if current_servers >= agent.max_servers:
         return jsonify({'error': 'Agent has reached maximum capacity'}), 400
     
     server.agent_id = agent_id
@@ -2516,12 +2835,10 @@ def report_agent_status():
 @main.route('/api/agent/servers', methods=['GET'])
 @agent_token_required
 def get_agent_servers_api():
-    """Pobiera listę serwerów dla agenta"""
     try:
         agent = request.agent
         print(f"Getting servers for agent: {agent.name}")
         
-        # Pobierz serwery przypisane do tego agenta
         servers = Server.query.filter_by(agent_id=agent.id).all()
         
         server_list = []
@@ -2546,7 +2863,6 @@ def get_agent_servers_api():
 @main.route('/api/agent/servers/<int:server_id>/status', methods=['POST'])
 @agent_token_required
 def update_server_status(server_id):
-    """Aktualizuje status serwera od agenta"""
     try:
         agent = request.agent
         data = request.get_json()
@@ -2564,7 +2880,6 @@ def update_server_status(server_id):
         if not server:
             return jsonify({'error': 'Server not found'}), 404
         
-        # Sprawdź czy serwer należy do tego agenta
         if server.agent_id != agent.id:
             return jsonify({'error': 'Server not assigned to this agent'}), 403
         
@@ -2750,6 +3065,7 @@ def test_agent_connection(agent_id):
             'status': 'error',
             'message': f'Failed to connect to agent: {str(e)}'
         }), 400
+
 
 def _check_permission(user_id, server_id, permission):
     user = User.query.get(user_id)

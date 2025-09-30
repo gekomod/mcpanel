@@ -720,6 +720,29 @@ useEffect(() => {
     }
   };
 
+	const checkInstallationStatus = async () => {
+	  try {
+		const response = await api.get(`/servers/${serverId}/files/check`);
+		const hasServerFiles = response.data.hasFiles;
+		const checkedVia = response.data.checkedVia;
+		
+		console.log(`Files check result: ${hasServerFiles} (via: ${checkedVia})`);
+		
+		setHasFiles(hasServerFiles);
+		
+		if (hasServerFiles) {
+		  // Jeśli pliki są już zainstalowane, zatrzymaj polling
+		  stopInstallationPolling();
+		  toast.success(t('server.install.success') || 'Serwer został pomyślnie zainstalowany');
+		}
+		
+		return hasServerFiles;
+	  } catch (error) {
+		console.error('Error checking installation status:', error);
+		return false;
+	  }
+	};
+
   const fetchServer = async () => {
     try {
       const response = await api.get(`/servers/${serverId}`);
@@ -1215,44 +1238,85 @@ useEffect(() => {
     }
   };
   
-  const startInstallationPolling = () => {
-    const pollInterval = setInterval(async () => {
-      try {
-        const response = await api.get(`/servers/${serverId}/installation-progress`);
-        const progress = response.data;
-        
-        if (progress.status === 'complete') {
-          clearInterval(pollInterval);
-          setActionLoading(false);
-          setCurrentAction(null);
-          setHasFiles(true);
-          toast.success(t('server.add.success') || 'Instalacja serwera zakończona pomyślnie');
-          fetchServer(); // Odśwież dane serwera
-        } else if (progress.status === 'error') {
-          clearInterval(pollInterval);
-          setActionLoading(false);
-          setCurrentAction(null);
-          toast.error(t('server.add.error') || 'Błąd podczas instalacji serwera');
-        }
-        
-        // Aktualizuj postęp pobierania jeśli dostępny
-        if (progress.downloadProgress) {
-          setDownloadProgress(progress.downloadProgress);
-        }
-        
-      } catch (error) {
-        console.error('Error polling installation progress:', error);
+const startInstallationPolling = () => {
+  let pollCount = 0;
+  const maxPolls = 60; // 3 minuty (60 * 3 sekundy)
+  
+  const pollInterval = setInterval(async () => {
+    pollCount++;
+    
+    try {
+      // Sprawdź status instalacji przez sprawdzenie plików
+      const isInstalled = await checkInstallationStatus();
+      
+      if (isInstalled) {
+        console.log('Server installation completed - files found');
+        clearInterval(pollInterval);
+        setActionLoading(false);
+        setCurrentAction(null);
+        fetchServer(); // Odśwież dane serwera
+        return;
       }
-    }, 2000);
+      
+      // Równolegle sprawdzaj postęp instalacji przez standardowy endpoint
+      const progressResponse = await api.get(`/servers/${serverId}/installation-progress`);
+      const progress = progressResponse.data;
+      
+      console.log('Installation progress:', progress);
+      
+      if (progress.status === 'complete') {
+        console.log('Installation marked as complete');
+        clearInterval(pollInterval);
+        setActionLoading(false);
+        setCurrentAction(null);
+        setHasFiles(true);
+        toast.success(t('server.add.success') || 'Instalacja serwera zakończona pomyślnie');
+        fetchServer();
+        return;
+      } else if (progress.status === 'error') {
+        console.log('Installation error detected');
+        clearInterval(pollInterval);
+        setActionLoading(false);
+        setCurrentAction(null);
+        toast.error(t('server.add.error') || 'Błąd podczas instalacji serwera');
+        return;
+      }
+      
+      // Aktualizuj postęp pobierania jeśli dostępny
+      if (progress.downloadProgress) {
+        setDownloadProgress(progress.downloadProgress);
+      }
+      
+      // Timeout po maxPolls
+      if (pollCount >= maxPolls) {
+        console.log('Installation polling timeout');
+        clearInterval(pollInterval);
+        setActionLoading(false);
+        setCurrentAction(null);
+        toast.error('Instalacja serwera przekroczyła limit czasu (3 minuty)');
+        
+        // Na koniec sprawdź jeszcze raz czy może jednak pliki się pojawiły
+        setTimeout(() => {
+          checkInstallationStatus();
+        }, 2000);
+      }
+      
+    } catch (error) {
+      console.error('Error polling installation progress:', error);
+      
+      // Po pewnym czasie przerwij polling w przypadku błędów
+      if (pollCount >= 20) { // 1 minuta błędów
+        clearInterval(pollInterval);
+        setActionLoading(false);
+        setCurrentAction(null);
+        toast.error('Błąd podczas śledzenia instalacji serwera');
+      }
+    }
+  }, 3000); // Sprawdzaj co 3 sekundy
 
-    // Timeout po 10 minutach
-    setTimeout(() => {
-      clearInterval(pollInterval);
-      setActionLoading(false);
-      setCurrentAction(null);
-      toast.error('Instalacja serwera przekroczyła limit czasu');
-    }, 10 * 60 * 1000);
-  };
+  // Zapisz interval do późniejszego wyczyszczenia
+  setProgressInterval(pollInterval);
+};
   
   useEffect(() => {
   return () => {

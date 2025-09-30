@@ -10,6 +10,9 @@ from datetime import datetime
 from flask import Flask, request, jsonify, send_file
 import logging
 import glob
+import zipfile
+import tarfile
+import signal
 
 # Configure logging
 logging.basicConfig(
@@ -19,6 +22,604 @@ logging.basicConfig(
 )
 logger = logging.getLogger('MCPanelAgent')
 
+class ServerManager:
+    """Klasa do zarządzania serwerami Minecraft - zintegrowana z agentem"""
+    
+    def __init__(self, base_path):
+        self.base_path = base_path
+        self.processes = {}
+        self.server_info = {}
+        self.lock = threading.Lock()
+        
+    def get_server_path(self, server_name):
+        return os.path.join(self.base_path, server_name)
+        
+    def check_server_files(self, server_name):
+        """Sprawdza czy serwer ma pliki na agencie"""
+        server_path = self.get_server_path(server_name)
+        
+        try:
+            # Sprawdź czy katalog serwera istnieje
+            if not os.path.exists(server_path):
+                return {
+                    'hasFiles': False, 
+                    'message': 'Server directory does not exist',
+                    'fileCount': 0,
+                    'serverPath': server_path
+                }
+            
+            # Sprawdź czy są jakieś pliki (ignorując ukryte pliki systemowe)
+            files = [f for f in os.listdir(server_path) 
+                    if not f.startswith('.') and f not in ['__pycache__', '.git']]
+            
+            has_files = len(files) > 0
+            file_count = len(files)
+            
+            # Dla serwerów Bedrock sprawdź obecność bedrock_server
+            # Pobierz typ serwera z istniejących danych
+            server_type = self._detect_server_type(server_path)
+            
+            if server_type == 'bedrock':
+                # Sprawdź różne możliwe nazwy plików wykonywalnych Bedrock
+                possible_binaries = ['bedrock_server', 'bedrock_server.exe', 'bedrock_server_1.21.100.7']
+                has_bedrock_binary = any(os.path.exists(os.path.join(server_path, binary)) for binary in possible_binaries)
+                
+                # Jeśli nie znaleziono standardowych nazw, sprawdź czy jest jakikolwiek plik wykonywalny
+                if not has_bedrock_binary:
+                    for file in files:
+                        file_path = os.path.join(server_path, file)
+                        if os.path.isfile(file_path) and (os.access(file_path, os.X_OK) or file.endswith('.exe')):
+                            has_bedrock_binary = True
+                            break
+                
+                has_files = has_bedrock_binary  # Dla Bedrock najważniejszy jest plik wykonywalny
+            
+            # Dla serwerów Java sprawdź obecność pliku JAR
+            elif server_type == 'java':
+                jar_files = [f for f in files if f.endswith('.jar') and 'server' in f.lower()]
+                has_jar = len(jar_files) > 0
+                
+                # Sprawdź również inne kryteria - może serwer ma już uruchomione pliki
+                if not has_jar:
+                    # Sprawdź czy są inne ważne pliki serwera Minecraft
+                    important_files = ['eula.txt', 'server.properties', 'world', 'logs']
+                    has_important_files = any(os.path.exists(os.path.join(server_path, f)) for f in important_files)
+                    
+                    # Jeśli są ważne pliki, zakładamy że serwer jest zainstalowany
+                    if has_important_files and has_files:
+                        has_jar = True
+                
+                has_files = has_jar  # Dla Java najważniejszy jest plik JAR lub ważne pliki konfiguracyjne
+            
+            return {
+                'hasFiles': has_files,
+                'fileCount': file_count,
+                'serverType': server_type,
+                'serverPath': server_path,
+                'message': 'Server files found' if has_files else 'Server files missing',
+                'files': files[:10]  # Zwróć pierwsze 10 plików dla debugowania
+            }
+            
+        except Exception as e:
+            logger.error(f"Error checking server files for {server_name}: {e}")
+            return {
+                'hasFiles': False,
+                'message': f'Error checking files: {str(e)}',
+                'fileCount': 0,
+                'serverPath': server_path
+            }
+    
+    def _detect_server_type(self, server_path):
+        """Wykrywa typ serwera na podstawie plików"""
+        try:
+            # Sprawdź pliki Bedrock
+            bedrock_files = ['bedrock_server', 'bedrock_server.exe', 'server.properties']
+            for file in bedrock_files:
+                if os.path.exists(os.path.join(server_path, file)):
+                    return 'bedrock'
+            
+            # Sprawdź pliki Java
+            jar_files = [f for f in os.listdir(server_path) if f.endswith('.jar')]
+            if jar_files:
+                return 'java'
+            
+            # Sprawdź inne wskaźniki
+            if os.path.exists(os.path.join(server_path, 'eula.txt')):
+                return 'java'
+            if os.path.exists(os.path.join(server_path, 'logs')):
+                return 'java'
+            
+            return 'unknown'
+        except:
+            return 'unknown'
+    
+    def install_server(self, server_data):
+        """Instalacja serwera Minecraft"""
+        server_name = server_data['name']
+        server_type = server_data['type']
+        server_path = self.get_server_path(server_name)
+        
+        try:
+            os.makedirs(server_path, exist_ok=True)
+            
+            if server_type == 'java':
+                return self._install_java_server(server_data, server_path)
+            elif server_type == 'bedrock':
+                return self._install_bedrock_server(server_data, server_path)
+            else:
+                return False, f"Unknown server type: {server_type}"
+                
+        except Exception as e:
+            return False, f"Installation error: {str(e)}"
+            
+    def delete_server_files(self, server_name):
+        """Usuwa pliki serwera z agenta"""
+        server_path = self.get_server_path(server_name)
+        
+        try:
+            # Zatrzymaj serwer jeśli działa
+            if server_name in self.processes:
+                self.stop_server(server_name)
+                time.sleep(2)  # Poczekaj na zatrzymanie
+            
+            # Sprawdź czy katalog istnieje
+            if not os.path.exists(server_path):
+                return True, "Server directory does not exist"
+            
+            # Usuń katalog serwera
+            logger.info(f"Deleting server directory: {server_path}")
+            shutil.rmtree(server_path)
+            
+            # Wyczyść z pamięci
+            with self.lock:
+                if server_name in self.processes:
+                    del self.processes[server_name]
+                if server_name in self.server_info:
+                    del self.server_info[server_name]
+            
+            logger.info(f"Server files deleted successfully: {server_name}")
+            return True, f"Server files deleted: {server_name}"
+            
+        except Exception as e:
+            logger.error(f"Error deleting server files for {server_name}: {e}")
+            return False, f"Error deleting server files: {str(e)}"
+    
+    def _install_java_server(self, server_data, server_path):
+        """Instalacja serwera Java"""
+        try:
+            implementation = server_data.get('implementation', 'vanilla')
+            version = server_data['version']
+            
+            # Pobierz URL serwera
+            jar_url = self._get_java_server_url(implementation, version)
+            if not jar_url:
+                return False, f"Could not find server URL for {implementation} {version}"
+            
+            jar_filename = f"server_{version}.jar"
+            if implementation == 'paper':
+                jar_filename = f"paper-{version}.jar"
+            elif implementation == 'purpur':
+                jar_filename = f"purpur-{version}.jar"
+            
+            jar_path = os.path.join(server_path, jar_filename)
+            
+            # Pobierz plik JAR
+            success = self._download_file(jar_url, jar_path)
+            if not success:
+                return False, "Failed to download server JAR"
+            
+            # Utwórz eula.txt
+            eula_path = os.path.join(server_path, 'eula.txt')
+            with open(eula_path, 'w') as f:
+                f.write("eula=true\n")
+            
+            # Dla Fabric - specjalna instalacja
+            if implementation == 'fabric':
+                return self._install_fabric_server(server_path, version)
+            
+            return True, f"Java server installed successfully: {jar_filename}"
+            
+        except Exception as e:
+            return False, f"Java server installation error: {str(e)}"
+    
+    def _install_bedrock_server(self, server_data, server_path):
+        """Instalacja serwera Bedrock"""
+        try:
+            version = server_data['version']
+            platform = server_data.get('platform', 'linux')
+            
+            # Pobierz URL dla Bedrock servera
+            bedrock_url = self._get_bedrock_server_url(version, platform)
+            if not bedrock_url:
+                return False, f"Could not find Bedrock server URL for {platform}"
+            
+            # Pobierz i wypakuj
+            temp_zip = os.path.join(server_path, 'bedrock_temp.zip')
+            success = self._download_file(bedrock_url, temp_zip)
+            if not success:
+                return False, "Failed to download Bedrock server"
+            
+            # Wypakuj
+            with zipfile.ZipFile(temp_zip, 'r') as zip_ref:
+                zip_ref.extractall(server_path)
+            
+            # Usuń tymczasowy plik
+            os.remove(temp_zip)
+            
+            # Ustaw uprawnienia wykonania
+            if platform == 'linux':
+                bedrock_binary = os.path.join(server_path, 'bedrock_server')
+                if os.path.exists(bedrock_binary):
+                    os.chmod(bedrock_binary, 0o755)
+            
+            return True, "Bedrock server installed successfully"
+            
+        except Exception as e:
+            return False, f"Bedrock server installation error: {str(e)}"
+    
+    def _get_java_server_url(self, implementation, version):
+        """Pobierz URL serwera Java"""
+        if implementation == 'vanilla':
+            return f"https://piston-data.mojang.com/v1/objects/{self._get_vanilla_hash(version)}/server.jar"
+        elif implementation == 'paper':
+            return f"https://api.papermc.io/v2/projects/paper/versions/{version}/builds/{self._get_latest_paper_build(version)}/downloads/paper-{version}-{self._get_latest_paper_build(version)}.jar"
+        elif implementation == 'purpur':
+            return f"https://api.purpurmc.org/v2/purpur/{version}/latest/download"
+        return None
+    
+    def _get_bedrock_server_url(self, version, platform):
+        """Pobierz URL serwera Bedrock"""
+        # Tutaj możesz dodać logikę pobierania URLi dla Bedrock
+        # Na potrzeby przykładu zwracamy None
+        return None
+    
+    def _get_vanilla_hash(self, version):
+        """Pobierz hash dla vanilla servera"""
+        # Dla uproszczenia - w pełnej implementacji pobierz z manifestu Mojang
+        hashes = {
+            '1.20.1': '84194a2f286ef7c14ed7ce0090dba59902951553',
+            '1.19.4': '8f3112a1049751cc472ec13e397eade5336ca7ae',
+            '1.18.2': 'c8f83c5655308435b3dcf03c06d9fe8740a77469'
+        }
+        return hashes.get(version, hashes['1.20.1'])
+    
+    def _get_latest_paper_build(self, version):
+        """Pobierz najnowszy build Paper"""
+        # Dla uproszczenia - w pełnej implementacji zapytaj API
+        return 'latest'
+    
+    def _install_fabric_server(self, server_path, version):
+        """Specjalna instalacja Fabric"""
+        try:
+            fabric_url = f"https://meta.fabricmc.net/v2/versions/loader/{version}/latest/stable/server/jar"
+            fabric_jar = os.path.join(server_path, 'fabric-server.jar')
+            
+            success = self._download_file(fabric_url, fabric_jar)
+            if not success:
+                return False, "Failed to download Fabric installer"
+            
+            # Uruchom instalator
+            process = subprocess.Popen(
+                ['java', '-jar', 'fabric-server.jar', 'nogui'],
+                cwd=server_path,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT
+            )
+            
+            # Czekaj na instalację
+            process.wait(timeout=120)
+            
+            # Sprawdź czy instalacja się powiodła
+            fabric_launcher = os.path.join(server_path, 'fabric-server-launcher.jar')
+            if os.path.exists(fabric_launcher):
+                # Zmień nazwę na server.jar
+                server_jar = os.path.join(server_path, 'server.jar')
+                if os.path.exists(server_jar):
+                    os.remove(server_jar)
+                os.rename(fabric_launcher, server_jar)
+                
+                # Usuń instalator
+                if os.path.exists(fabric_jar):
+                    os.remove(fabric_jar)
+                
+                return True, "Fabric server installed successfully"
+            else:
+                return False, "Fabric installation failed - no launcher found"
+                
+        except Exception as e:
+            return False, f"Fabric installation error: {str(e)}"
+    
+    def _download_file(self, url, file_path):
+        """Pobierz plik"""
+        try:
+            response = requests.get(url, stream=True, timeout=30)
+            response.raise_for_status()
+            
+            with open(file_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            
+            return os.path.exists(file_path) and os.path.getsize(file_path) > 0
+            
+        except Exception as e:
+            logger.error(f"Download error: {e}")
+            return False
+    
+    def start_server(self, server_name, server_data):
+        """Uruchom serwer"""
+        server_path = self.get_server_path(server_name)
+        
+        if not os.path.exists(server_path):
+            return False, "Server directory not found"
+        
+        try:
+            if server_data['type'] == 'java':
+                cmd = self._get_java_start_command(server_path, server_data)
+            else:  # bedrock
+                cmd = self._get_bedrock_start_command(server_path, server_data)
+            
+            # Uruchom proces
+            process = subprocess.Popen(
+                cmd,
+                cwd=server_path,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+                universal_newlines=True
+            )
+            
+            # Zapisz informacje o procesie
+            with self.lock:
+                self.processes[server_name] = process
+                self.server_info[server_name] = {
+                    'process': process,
+                    'status': 'running',
+                    'type': server_data['type'],
+                    'start_time': datetime.now(),
+                    'output_buffer': []
+                }
+            
+            # Uruchom wątek do przechwytywania outputu
+            thread = threading.Thread(
+                target=self._capture_output, 
+                args=(server_name, process),
+                daemon=True
+            )
+            thread.start()
+            
+            return True, f"Server {server_name} started with PID: {process.pid}"
+            
+        except Exception as e:
+            return False, f"Failed to start server: {str(e)}"
+    
+    def _get_java_start_command(self, server_path, jar_file, server_data):
+        """Przygotuj komendę startową z optymalizacją pamięci"""
+        # Pobierz dostępną pamięć systemową
+        try:
+            total_memory = psutil.virtual_memory().total / (1024 * 1024 * 1024)  # GB
+            available_memory = psutil.virtual_memory().available / (1024 * 1024 * 1024)  # GB
+        
+            # Automatycznie dostosuj pamięć na podstawie dostępnej
+            if available_memory >= 8:  # Jeśli jest 8+ GB dostępne
+                default_memory = '4G'
+            elif available_memory >= 4:  # Jeśli jest 4-8 GB dostępne
+                default_memory = '2G'
+            elif available_memory >= 2:  # Jeśli jest 2-4 GB dostępne
+                default_memory = '1G'
+            else:  # Mniej niż 2 GB
+                default_memory = '512M'
+        except:
+            default_memory = '1G'  # Fallback
+    
+        # Użyj pamięci z konfiguracji lub automatycznie obliczonej
+        memory = server_data.get('memory', default_memory)
+    
+        logger.info(f"Memory settings - Available: {available_memory:.1f}GB, Using: {memory}")
+    
+        # Znajdź Javę
+        java_cmd = self._find_java_executable()
+    
+        # Optymalne argumenty JVM dla małej pamięci
+        jvm_args = [
+            f'-Xmx{memory}',
+            f'-Xms{memory}',
+            '-XX:+UseG1GC',
+            '-XX:+UnlockExperimentalVMOptions',
+            '-XX:MaxGCPauseMillis=100',
+            '-jar', jar_file,
+            'nogui'
+        ]
+    
+        # Dla małej pamięci (<2GB) użyj bardziej agresywnych ustawień
+        if 'M' in memory or ('G' in memory and float(memory.replace('G', '')) < 2):
+            jvm_args.extend([
+                '-XX:+DisableExplicitGC',
+                '-XX:G1NewSizePercent=30',
+                '-XX:G1MaxNewSizePercent=40',
+                '-XX:G1HeapRegionSize=8M',
+                '-XX:G1ReservePercent=20',
+                '-XX:InitiatingHeapOccupancyPercent=15'
+            ])
+    
+        cmd = [java_cmd] + jvm_args
+        return cmd
+    
+    def _get_bedrock_start_command(self, server_path, server_data):
+        """Przygotuj komendę startową dla Bedrock"""
+        if os.name == 'nt':  # Windows
+            return ['bedrock_server.exe']
+        else:  # Linux
+            return ['./bedrock_server']
+    
+    def stop_server(self, server_name):
+        """Zatrzymaj serwer"""
+        with self.lock:
+            if server_name not in self.processes:
+                return False, "Server not running"
+            
+            process = self.processes[server_name]
+            server_info = self.server_info.get(server_name, {})
+        
+        try:
+            # Wyślij komendę stop
+            if process.stdin and not process.stdin.closed:
+                process.stdin.write('stop\n')
+                process.stdin.flush()
+            
+            # Czekaj na zamknięcie
+            for _ in range(30):  # 30 sekund timeout
+                if process.poll() is not None:
+                    break
+                time.sleep(1)
+            
+            # Jeśli nadal działa, wymuś zamknięcie
+            if process.poll() is None:
+                process.terminate()
+                time.sleep(5)
+                if process.poll() is None:
+                    process.kill()
+            
+            # Wyczyść
+            with self.lock:
+                if server_name in self.processes:
+                    del self.processes[server_name]
+                if server_name in self.server_info:
+                    self.server_info[server_name]['status'] = 'stopped'
+            
+            return True, f"Server {server_name} stopped"
+            
+        except Exception as e:
+            return False, f"Error stopping server: {str(e)}"
+    
+    def restart_server(self, server_name, server_data):
+        """Restartuj serwer"""
+        # Najpierw zatrzymaj
+        success, message = self.stop_server(server_name)
+        if not success:
+            return False, f"Failed to stop server: {message}"
+        
+        # Poczekaj chwilę
+        time.sleep(3)
+        
+        # Uruchom ponownie
+        return self.start_server(server_name, server_data)
+    
+    def send_command(self, server_name, command):
+        """Wyślij komendę do serwera"""
+        with self.lock:
+            if server_name not in self.processes:
+                return False, "Server not running"
+            
+            process = self.processes[server_name]
+        
+        try:
+            if process.stdin and not process.stdin.closed:
+                if not command.endswith('\n'):
+                    command += '\n'
+                
+                process.stdin.write(command)
+                process.stdin.flush()
+                return True, f"Command sent: {command.strip()}"
+            else:
+                return False, "Cannot send command - stdin not available"
+                
+        except Exception as e:
+            return False, f"Error sending command: {str(e)}"
+    
+    def _capture_output(self, server_name, process):
+        """Przechwytuj output serwera"""
+        output_buffer = []
+        
+        while True:
+            try:
+                line = process.stdout.readline()
+                if not line and process.poll() is not None:
+                    break
+                
+                if line:
+                    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    formatted_line = f"[{timestamp}] {line.strip()}\n"
+                    output_buffer.append(formatted_line)
+                    
+                    # Ogranicz bufor do 1000 linii
+                    if len(output_buffer) > 1000:
+                        output_buffer.pop(0)
+                    
+                    # Zapisz w pamięci
+                    with self.lock:
+                        if server_name in self.server_info:
+                            self.server_info[server_name]['output_buffer'] = output_buffer
+                    
+                    # Zapisz do pliku
+                    self._write_to_log_file(server_name, formatted_line)
+                    
+            except Exception as e:
+                logger.error(f"Error capturing output for {server_name}: {e}")
+                break
+        
+        # Serwer się zakończył
+        with self.lock:
+            if server_name in self.server_info:
+                self.server_info[server_name]['status'] = 'stopped'
+    
+    def _write_to_log_file(self, server_name, line):
+        """Zapisz linię do pliku logu"""
+        try:
+            server_path = self.get_server_path(server_name)
+            logs_dir = os.path.join(server_path, 'logs')
+            os.makedirs(logs_dir, exist_ok=True)
+            
+            log_file = os.path.join(logs_dir, 'latest.log')
+            with open(log_file, 'a', encoding='utf-8') as f:
+                f.write(line)
+        except Exception as e:
+            logger.error(f"Error writing to log file: {e}")
+    
+    def get_server_output(self, server_name, lines=100):
+        """Pobierz output serwera"""
+        with self.lock:
+            if server_name in self.server_info:
+                output_buffer = self.server_info[server_name].get('output_buffer', [])
+                recent_lines = output_buffer[-lines:] if len(output_buffer) > lines else output_buffer
+                return ''.join(recent_lines)
+        return ""
+    
+    def get_server_status(self, server_name):
+        """Pobierz status serwera"""
+        with self.lock:
+            if server_name in self.processes:
+                process = self.processes[server_name]
+                return_code = process.poll()
+                
+                if return_code is None:
+                    return {
+                        'running': True,
+                        'pid': process.pid,
+                        'status': 'running'
+                    }
+                else:
+                    # Proces zakończony
+                    if server_name in self.processes:
+                        del self.processes[server_name]
+                    if server_name in self.server_info:
+                        self.server_info[server_name]['status'] = 'stopped'
+                    
+                    return {
+                        'running': False,
+                        'pid': None,
+                        'status': 'stopped',
+                        'returncode': return_code
+                    }
+            else:
+                return {
+                    'running': False,
+                    'pid': None,
+                    'status': 'stopped'
+                }
+
 class MCPanelAgent:
     def __init__(self, panel_url, agent_token, agent_name, capacity=5, port=8080, base_path="./servers"):
         self.panel_url = panel_url.rstrip('/')
@@ -27,8 +628,10 @@ class MCPanelAgent:
         self.capacity = capacity
         self.port = port
         self.base_path = base_path
-        self.running_servers = {}
         self.status = 'online'
+        
+        # Inicjalizuj menedżer serwerów
+        self.server_manager = ServerManager(base_path)
         
         self.headers = {
             'Authorization': f'Bearer {agent_token}',
@@ -43,7 +646,7 @@ class MCPanelAgent:
         self.setup_routes()
         
     def setup_cors(self):
-        """Najprostszy CORS - pozwala wszystkim"""
+        """Konfiguracja CORS"""
         
         @self.app.after_request
         def add_cors_headers(response):
@@ -70,7 +673,7 @@ class MCPanelAgent:
                 'name': self.agent_name,
                 'status': self.status,
                 'system_status': self._get_system_status(),
-                'running_servers': list(self.running_servers.keys()),
+                'running_servers': list(self.server_manager.processes.keys()),
                 'timestamp': datetime.now().isoformat()
             }
             return jsonify(status_data)
@@ -84,15 +687,193 @@ class MCPanelAgent:
         @self.app.route('/servers', methods=['GET'])
         def list_servers():
             servers = []
-            for server_name, server_info in self.running_servers.items():
+            for server_name in self.server_manager.processes.keys():
+                status = self.server_manager.get_server_status(server_name)
                 servers.append({
                     'name': server_name,
-                    'status': server_info['status'],
-                    'pid': server_info['process'].pid if server_info['process'] else None,
-                    'type': server_info['type'],
-                    'start_time': server_info['start_time'].isoformat()
+                    'status': status['status'],
+                    'pid': status['pid'],
+                    'running': status['running']
                 })
             return jsonify({'servers': servers})
+
+        @self.app.route('/server/install', methods=['POST'])
+        def install_server():
+            """Endpoint do instalacji serwera"""
+            try:
+                server_data = request.json
+                server_name = server_data.get('name')
+                
+                if not server_name:
+                    return jsonify({'error': 'Server name is required'}), 400
+                
+                success, message = self.server_manager.install_server(server_data)
+                
+                if success:
+                    return jsonify({
+                        'success': True,
+                        'message': message,
+                        'server': server_name
+                    })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'error': message
+                    }), 500
+                    
+            except Exception as e:
+                logger.error(f"Installation error: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/server/<server_name>/start', methods=['POST'])
+        def start_server(server_name):
+            """Endpoint do uruchamiania serwera"""
+            try:
+                server_data = request.json or {}
+                
+                success, message = self.server_manager.start_server(server_name, server_data)
+                
+                if success:
+                    return jsonify({
+                        'success': True,
+                        'message': message,
+                        'server': server_name
+                    })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'error': message
+                    }), 500
+                    
+            except Exception as e:
+                logger.error(f"Start error: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/server/<server_name>/stop', methods=['POST'])
+        def stop_server(server_name):
+            """Endpoint do zatrzymywania serwera"""
+            try:
+                success, message = self.server_manager.stop_server(server_name)
+                
+                if success:
+                    return jsonify({
+                        'success': True,
+                        'message': message,
+                        'server': server_name
+                    })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'error': message
+                    }), 500
+                    
+            except Exception as e:
+                logger.error(f"Stop error: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/server/<server_name>/restart', methods=['POST'])
+        def restart_server(server_name):
+            """Endpoint do restartowania serwera"""
+            try:
+                server_data = request.json or {}
+                
+                success, message = self.server_manager.restart_server(server_name, server_data)
+                
+                if success:
+                    return jsonify({
+                        'success': True,
+                        'message': message,
+                        'server': server_name
+                    })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'error': message
+                    }), 500
+                    
+            except Exception as e:
+                logger.error(f"Restart error: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/server/<server_name>/command', methods=['POST'])
+        def send_command(server_name):
+            """Endpoint do wysyłania komend do serwera"""
+            try:
+                data = request.json
+                command = data.get('command')
+                
+                if not command:
+                    return jsonify({'error': 'Command is required'}), 400
+                
+                success, message = self.server_manager.send_command(server_name, command)
+                
+                if success:
+                    return jsonify({
+                        'success': True,
+                        'message': message
+                    })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'error': message
+                    }), 500
+                    
+            except Exception as e:
+                logger.error(f"Command error: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/server/<server_name>/console', methods=['GET'])
+        def get_console(server_name):
+            """Endpoint do pobierania konsoli serwera"""
+            try:
+                lines = request.args.get('lines', 100, type=int)
+                output = self.server_manager.get_server_output(server_name, lines)
+                
+                return jsonify({
+                    'server': server_name,
+                    'output': output,
+                    'lines': len(output.split('\n')) if output else 0
+                })
+                
+            except Exception as e:
+                logger.error(f"Console error: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/server/<server_name>/status', methods=['GET'])
+        def get_server_status(server_name):
+            """Endpoint do pobierania statusu serwera"""
+            try:
+                status = self.server_manager.get_server_status(server_name)
+                return jsonify({
+                    'server': server_name,
+                    'status': status
+                })
+                
+            except Exception as e:
+                logger.error(f"Status error: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/server/<server_name>/delete', methods=['POST'])
+        def delete_server_files(server_name):
+            """Endpoint do usuwania plików serwera na agencie"""
+            try:
+                success, message = self.server_manager.delete_server_files(server_name)
+            
+                if success:
+                    return jsonify({
+                        'success': True,
+                        'message': message,
+                        'server': server_name
+                    })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'error': message
+                    }), 500
+                
+            except Exception as e:
+                logger.error(f"Delete files error: {e}")
+                return jsonify({'error': str(e)}), 500
 
         @self.app.route('/logs/agent', methods=['GET'])
         def get_agent_logs():
@@ -117,7 +898,7 @@ class MCPanelAgent:
         @self.app.route('/logs/server/<server_name>', methods=['GET'])
         def get_server_logs(server_name):
             try:
-                server_path = os.path.join(self.base_path, server_name)
+                server_path = self.server_manager.get_server_path(server_name)
                 if not os.path.exists(server_path):
                     return jsonify({'error': 'Server not found'}), 404
                 
@@ -154,15 +935,46 @@ class MCPanelAgent:
             except Exception as e:
                 logger.error(f"Error reading server logs: {e}")
                 return jsonify({'error': str(e)}), 500
-
+          
         @self.app.route('/', methods=['GET'])
         def root():
             return jsonify({
                 'message': 'MCPanel Agent API',
                 'agent_name': self.agent_name,
-                'version': '2.4.1',
-                'status': self.status
+                'version': '3.0.0',
+                'status': self.status,
+                'endpoints': {
+                    'agent_status': '/status',
+                    'list_servers': '/servers',
+                    'install_server': '/server/install (POST)',
+                    'start_server': '/server/<name>/start (POST)',
+                    'stop_server': '/server/<name>/stop (POST)',
+                    'restart_server': '/server/<name>/restart (POST)',
+                    'delete_server': '/server/<name>/delete (POST)',  # DODANE
+                    'send_command': '/server/<name>/command (POST)',
+                    'get_console': '/server/<name>/console (GET)',
+                    'get_status': '/server/<name>/status (GET)',
+                    'files_check': '/server/<name>/files/check (GET)',
+                    'agent_logs': '/logs/agent (GET)',
+                    'server_logs': '/logs/server/<name> (GET)',
+                    'system_check': '/system/check (GET)'
+                }
             })
+            
+        @self.app.route('/server/<server_name>/files/check', methods=['GET'])
+        def check_server_files(server_name):
+            """Endpoint do sprawdzania plików serwera na agencie"""
+            try:
+                result = self.server_manager.check_server_files(server_name)
+                return jsonify(result)
+            except Exception as e:
+                logger.error(f"Error checking server files: {e}")
+                return jsonify({
+                    'hasFiles': False,
+                    'message': f'Error: {str(e)}',
+                    'fileCount': 0,
+                    'serverType': 'unknown'
+                }), 500
 
     def _get_agent_log_file(self):
         possible_locations = [
@@ -180,12 +992,11 @@ class MCPanelAgent:
             f.write(f"MCPanel Agent Log File\nStarted at: {datetime.now()}\n")
         return default_location
 
-    # ... reszta metod bez zmian (_install_bedrock_server, _install_java_server, etc.)
-
     def start(self):
         logger.info(f"Starting MCPanel Agent: {self.agent_name}")
         logger.info(f"Panel URL: {self.panel_url}")
         logger.info(f"Agent port: {self.port}")
+        logger.info(f"Base path: {self.base_path}")
         
         self.status = 'online'
         
@@ -243,7 +1054,7 @@ class MCPanelAgent:
                 'cpu_usage': round(cpu_percent, 1),
                 'memory_usage': round(memory_percent, 1),
                 'disk_usage': round(disk_percent, 1),
-                'running_servers': len(self.running_servers),
+                'running_servers': len(self.server_manager.processes),
                 'max_servers': self.capacity,
                 'timestamp': datetime.now().isoformat()
             }
@@ -255,7 +1066,7 @@ class MCPanelAgent:
                 'cpu_usage': 0.0,
                 'memory_usage': 0.0,
                 'disk_usage': 0.0,
-                'running_servers': len(self.running_servers),
+                'running_servers': len(self.server_manager.processes),
                 'max_servers': self.capacity,
                 'timestamp': datetime.now().isoformat()
             }
@@ -266,26 +1077,25 @@ class MCPanelAgent:
                 server_id = server['id']
                 server_name = server['name']
                 
-                is_running = server_name in self.running_servers
-                status = 'running' if is_running else 'stopped'
-                pid = self.running_servers[server_name]['process'].pid if is_running else None
+                status = self.server_manager.get_server_status(server_name)
+                current_status = 'running' if status['running'] else 'stopped'
                 
-                if server['status'] != status:
+                if server['status'] != current_status:
                     response = requests.post(
                         f"{self.panel_url}/api/agent/servers/{server_id}/status",
                         headers=self.headers,
-                        json={'status': status, 'pid': pid},
+                        json={'status': current_status, 'pid': status['pid']},
                         timeout=5
                     )
                     if response.status_code == 200:
-                        logger.debug(f"Server {server_name} status updated")
+                        logger.debug(f"Server {server_name} status updated to {current_status}")
             except Exception as e:
                 logger.error(f"Error updating server status: {e}")
 
 def main():
     panel_url = os.environ.get('PANEL_URL')
     agent_token = os.environ.get('AGENT_TOKEN')
-    agent_name = os.environ.get('AGENT_NAME', 'DefaultAgentName')
+    agent_name = os.environ.get('AGENT_NAME', 'DefaultAgent')
     capacity = int(os.environ.get('AGENT_CAPACITY', '5'))
     agent_port = int(os.environ.get('AGENT_PORT', '9292'))
     base_path = os.environ.get('AGENT_BASE_PATH', '/opt/mcpanel-agent/servers')
@@ -294,7 +1104,7 @@ def main():
         logger.critical("PANEL_URL and AGENT_TOKEN environment variables must be set.")
         return
 
-    logger.info("--- MCPanel Agent Starting ---")
+    logger.info("--- MCPanel Agent v3.0 Starting ---")
     
     agent = MCPanelAgent(
         panel_url=panel_url,
