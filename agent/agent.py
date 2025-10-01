@@ -13,6 +13,7 @@ import glob
 import zipfile
 import tarfile
 import signal
+from werkzeug.utils import secure_filename
 
 # Configure logging
 logging.basicConfig(
@@ -620,6 +621,186 @@ class ServerManager:
                     'status': 'stopped'
                 }
 
+    def _secure_path(self, server_name, path=''):
+        """Zabezpiecza ścieżkę, aby uniknąć path traversal."""
+        server_path = self.get_server_path(server_name)
+
+        if not os.path.exists(server_path):
+            os.makedirs(server_path)
+
+        # Normalizuj ścieżkę, aby usunąć '..' i inne
+        safe_path = os.path.normpath(os.path.join(server_path, path))
+
+        # Sprawdź, czy znormalizowana ścieżka nadal jest w katalogu serwera
+        if os.path.commonprefix((safe_path, server_path)) != server_path:
+            raise ValueError("Path traversal attempt detected")
+
+        return safe_path
+
+    def list_files(self, server_name, path=''):
+        """Listuje pliki i katalogi w podanej ścieżce."""
+        try:
+            full_path = self._secure_path(server_name, path)
+            if not os.path.exists(full_path) or not os.path.isdir(full_path):
+                return [], "Path not found or is not a directory"
+
+            items = []
+            for item in os.listdir(full_path):
+                item_path = os.path.join(full_path, item)
+                stat = os.stat(item_path)
+                items.append({
+                    'name': item,
+                    'is_dir': os.path.isdir(item_path),
+                    'size': stat.st_size,
+                    'modified': stat.st_mtime
+                })
+            return items, None
+        except Exception as e:
+            return [], str(e)
+
+    def read_file(self, server_name, file_path):
+        """Czyta zawartość pliku."""
+        try:
+            full_path = self._secure_path(server_name, file_path)
+            if not os.path.isfile(full_path):
+                return None, "File not found"
+
+            with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+            return content, None
+        except Exception as e:
+            return None, str(e)
+
+    def write_file(self, server_name, file_path, content):
+        """Zapisuje zawartość do pliku."""
+        try:
+            full_path = self._secure_path(server_name, file_path)
+
+            # Utwórz katalogi, jeśli nie istnieją
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+
+            with open(full_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            return True, None
+        except Exception as e:
+            return False, str(e)
+
+    def create_directory(self, server_name, dir_path):
+        """Tworzy nowy katalog."""
+        try:
+            full_path = self._secure_path(server_name, dir_path)
+            os.makedirs(full_path, exist_ok=True)
+            return True, None
+        except Exception as e:
+            return False, str(e)
+
+    def delete_item(self, server_name, item_path, is_directory):
+        """Usuwa plik lub katalog."""
+        try:
+            full_path = self._secure_path(server_name, item_path)
+            if not os.path.exists(full_path):
+                return False, "Item not found"
+
+            if is_directory:
+                shutil.rmtree(full_path)
+            else:
+                os.remove(full_path)
+            return True, None
+        except Exception as e:
+            return False, str(e)
+
+    def rename_item(self, server_name, old_path, new_path):
+        """Zmienia nazwę pliku lub katalogu."""
+        try:
+            full_old_path = self._secure_path(server_name, old_path)
+            full_new_path = self._secure_path(server_name, new_path)
+
+            if not os.path.exists(full_old_path):
+                return False, "Source item not found"
+
+            os.rename(full_old_path, full_new_path)
+            return True, None
+        except Exception as e:
+            return False, str(e)
+
+    def download_file(self, server_name, file_path):
+        """Zwraca bezpieczną ścieżkę do pliku do pobrania."""
+        try:
+            full_path = self._secure_path(server_name, file_path)
+            if not os.path.isfile(full_path):
+                return None, "File not found or is a directory"
+            return full_path, None
+        except Exception as e:
+            return None, str(e)
+
+    def upload_file(self, server_name, path, file_storage):
+        """Obsługuje upload plików."""
+        try:
+            filename = secure_filename(file_storage.filename)
+            upload_path = self._secure_path(server_name, os.path.join(path, filename))
+
+            os.makedirs(os.path.dirname(upload_path), exist_ok=True)
+            file_storage.save(upload_path)
+
+            return True, None
+        except Exception as e:
+            return False, str(e)
+
+    def list_plugins(self, server_name):
+        """Listuje pluginy (pliki .jar) w katalogu plugins."""
+        try:
+            plugins_path = self._secure_path(server_name, 'plugins')
+            if not os.path.isdir(plugins_path):
+                return [], None
+
+            plugins = []
+            for item in os.listdir(plugins_path):
+                if item.endswith('.jar'):
+                    item_path = os.path.join(plugins_path, item)
+                    stat = os.stat(item_path)
+                    plugins.append({
+                        'name': item,
+                        'size': stat.st_size,
+                        'modified': stat.st_mtime
+                    })
+            return plugins, None
+        except Exception as e:
+            return [], str(e)
+
+    def install_plugin(self, server_name, plugin_url):
+        """Instaluje plugin z URL."""
+        try:
+            plugins_path = self._secure_path(server_name, 'plugins')
+            os.makedirs(plugins_path, exist_ok=True)
+
+            filename = plugin_url.split('/')[-1]
+            if not filename.endswith('.jar'):
+                return False, "Invalid plugin URL (must end with .jar)"
+
+            plugin_path = os.path.join(plugins_path, secure_filename(filename))
+
+            success = self._download_file(plugin_url, plugin_path)
+            if not success:
+                return False, "Failed to download plugin"
+
+            return True, None
+        except Exception as e:
+            return False, str(e)
+
+    def delete_plugin(self, server_name, plugin_filename):
+        """Usuwa plik pluginu."""
+        try:
+            plugin_path = self._secure_path(server_name, os.path.join('plugins', plugin_filename))
+
+            if not os.path.isfile(plugin_path) or not plugin_path.endswith('.jar'):
+                 return False, "Plugin not found or invalid filename"
+
+            os.remove(plugin_path)
+            return True, None
+        except Exception as e:
+            return False, str(e)
+
+
 class MCPanelAgent:
     def __init__(self, panel_url, agent_token, agent_name, capacity=5, port=8080, base_path="./servers"):
         self.panel_url = panel_url.rstrip('/')
@@ -950,14 +1131,25 @@ class MCPanelAgent:
                     'start_server': '/server/<name>/start (POST)',
                     'stop_server': '/server/<name>/stop (POST)',
                     'restart_server': '/server/<name>/restart (POST)',
-                    'delete_server': '/server/<name>/delete (POST)',  # DODANE
+                    'delete_server': '/server/<name>/delete (POST)',
                     'send_command': '/server/<name>/command (POST)',
                     'get_console': '/server/<name>/console (GET)',
                     'get_status': '/server/<name>/status (GET)',
                     'files_check': '/server/<name>/files/check (GET)',
                     'agent_logs': '/logs/agent (GET)',
                     'server_logs': '/logs/server/<name> (GET)',
-                    'system_check': '/system/check (GET)'
+                    'system_check': '/system/check (GET)',
+                    'list_files': '/server/<name>/files (GET)',
+                    'read_file': '/server/<name>/files/read (GET)',
+                    'write_file': '/server/<name>/files/write (POST)',
+                    'mkdir': '/server/<name>/files/mkdir (POST)',
+                    'delete_item': '/server/<name>/files/delete (POST)',
+                    'rename_item': '/server/<name>/files/rename (POST)',
+                    'upload_file': '/server/<name>/files/upload (POST)',
+                    'list_plugins': '/server/<name>/plugins (GET)',
+                    'install_plugin': '/server/<name>/plugins/install (POST)',
+                    'delete_plugin': '/server/<name>/plugins/delete (POST)',
+                    'upload_plugin': '/server/<name>/plugins/upload (POST)'
                 }
             })
             
@@ -975,6 +1167,123 @@ class MCPanelAgent:
                     'fileCount': 0,
                     'serverType': 'unknown'
                 }), 500
+
+        @self.app.route('/server/<server_name>/files', methods=['GET'])
+        def list_files(server_name):
+            path = request.args.get('path', '')
+            files, error = self.server_manager.list_files(server_name, path)
+            if error:
+                return jsonify({'error': error}), 500
+            return jsonify(files)
+
+        @self.app.route('/server/<server_name>/files/read', methods=['GET'])
+        def read_file(server_name):
+            file_path = request.args.get('path', '')
+            content, error = self.server_manager.read_file(server_name, file_path)
+            if error:
+                return jsonify({'error': error}), 500
+            return jsonify({'content': content})
+
+        @self.app.route('/server/<server_name>/files/write', methods=['POST'])
+        def write_file(server_name):
+            data = request.get_json()
+            file_path = data.get('path')
+            content = data.get('content')
+            success, error = self.server_manager.write_file(server_name, file_path, content)
+            if error:
+                return jsonify({'error': error}), 500
+            return jsonify({'success': success})
+
+        @self.app.route('/server/<server_name>/files/mkdir', methods=['POST'])
+        def create_directory(server_name):
+            data = request.get_json()
+            dir_path = data.get('path')
+            success, error = self.server_manager.create_directory(server_name, dir_path)
+            if error:
+                return jsonify({'error': error}), 500
+            return jsonify({'success': success})
+
+        @self.app.route('/server/<server_name>/files/delete', methods=['POST'])
+        def delete_item(server_name):
+            data = request.get_json()
+            item_path = data.get('path')
+            is_directory = data.get('is_directory', False)
+            success, error = self.server_manager.delete_item(server_name, item_path, is_directory)
+            if error:
+                return jsonify({'error': error}), 500
+            return jsonify({'success': success})
+
+        @self.app.route('/server/<server_name>/files/rename', methods=['POST'])
+        def rename_item(server_name):
+            data = request.get_json()
+            old_path = data.get('old_path')
+            new_path = data.get('new_path')
+            success, error = self.server_manager.rename_item(server_name, old_path, new_path)
+            if error:
+                return jsonify({'error': error}), 500
+            return jsonify({'success': success})
+
+        @self.app.route('/server/<server_name>/files/upload', methods=['POST'])
+        def upload_file(server_name):
+            if 'file' not in request.files:
+                return jsonify({'error': 'No file part'}), 400
+
+            file = request.files['file']
+            if file.filename == '':
+                return jsonify({'error': 'No selected file'}), 400
+
+            path = request.form.get('path', '')
+            success, error = self.server_manager.upload_file(server_name, path, file)
+
+            if error:
+                return jsonify({'error': error}), 500
+            return jsonify({'success': success})
+
+        @self.app.route('/server/<server_name>/files/download', methods=['GET'])
+        def download_file(server_name):
+            file_path = request.args.get('path', '')
+            if not file_path:
+                return jsonify({'error': 'Path is required'}), 400
+
+            full_path, error = self.server_manager.download_file(server_name, file_path)
+            if error:
+                return jsonify({'error': error}), 404
+
+            try:
+                return send_file(full_path, as_attachment=True)
+            except Exception as e:
+                return jsonify({'error': f"Failed to send file: {str(e)}"}), 500
+
+        @self.app.route('/server/<server_name>/plugins', methods=['GET'])
+        def list_plugins(server_name):
+            plugins, error = self.server_manager.list_plugins(server_name)
+            if error:
+                return jsonify({'error': error}), 500
+            return jsonify(plugins)
+
+        @self.app.route('/server/<server_name>/plugins/install', methods=['POST'])
+        def install_plugin(server_name):
+            data = request.get_json()
+            plugin_url = data.get('url')
+            if not plugin_url:
+                return jsonify({'error': 'Plugin URL is required'}), 400
+
+            success, error = self.server_manager.install_plugin(server_name, plugin_url)
+            if error:
+                return jsonify({'error': error}), 500
+            return jsonify({'success': success})
+
+        @self.app.route('/server/<server_name>/plugins/delete', methods=['POST'])
+        def delete_plugin(server_name):
+            data = request.get_json()
+            filename = data.get('filename')
+            if not filename:
+                return jsonify({'error': 'Plugin filename is required'}), 400
+
+            success, error = self.server_manager.delete_plugin(server_name, filename)
+            if error:
+                return jsonify({'error': error}), 500
+            return jsonify({'success': success})
 
     def _get_agent_log_file(self):
         possible_locations = [

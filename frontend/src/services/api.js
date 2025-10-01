@@ -37,8 +37,11 @@ api.interceptors.request.use((config) => {
     config.headers.Authorization = `Bearer ${token}`;
   }
   
-  // Dodaj nagłówki dla CORS
-  config.headers['Content-Type'] = 'application/json';
+  // Ustaw Content-Type warunkowo. Nie ustawiaj dla FormData (upload plików).
+  if (!(config.data instanceof FormData)) {
+    config.headers['Content-Type'] = 'application/json';
+  }
+
   config.headers['Accept'] = 'application/json';
   
   return config;

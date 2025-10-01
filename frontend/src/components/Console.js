@@ -248,32 +248,8 @@ function Console() {
   const [output, setOutput] = useState([]);
   const [error, setError] = useState(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [isBedrock, setIsBedrock] = useState(false);
   const consoleEndRef = useRef(null);
   const { t } = useLanguage();
-
-  useEffect(() => {
-    fetchServer();
-  }, [serverId]);
-
-  useEffect(() => {
-    if (server) {
-      setIsBedrock(server.type === 'bedrock');
-      if (server.status === 'running') {
-        fetchOutput();
-        
-        // Set up auto-refresh if server is running
-        let refreshInterval;
-        if (autoRefresh) {
-          refreshInterval = setInterval(fetchOutput, 2000); // Refresh every 2 seconds
-        }
-
-        return () => {
-          if (refreshInterval) clearInterval(refreshInterval);
-        };
-      }
-    }
-  }, [serverId, autoRefresh, server]);
 
   const fetchServer = async () => {
     try {
@@ -287,44 +263,56 @@ function Console() {
     }
   };
 
-const fetchOutput = async () => {
-  if (!server || server.status !== 'running') return;
+  const fetchOutput = async () => {
+    if (!server || server.status !== 'running') return;
 
-  try {
-    let response;
-    if (isBedrock) {
-      // Use real-time output for Bedrock servers
-      response = await api.get(`/servers/${serverId}/realtime-output`);
-    } else {
-      // Use log files for Java servers
-      response = await api.get(`/servers/${serverId}/logs`);
-    }
-    
-    if (response.data && response.data.output) {
-      let logContent = response.data.output;
-      
-      // Dla serwerów Java - usuń kod ANSI z logów
-      if (!isBedrock) {
+    try {
+      // Unified endpoint for console output. The backend handles if it's agent or local.
+      const response = await api.get(`/servers/${serverId}/console`);
+
+      if (response.data && response.data.output) {
+        let logContent = response.data.output;
+
+        // Remove ANSI codes, as they can be present in Java logs.
         logContent = removeAnsiCodes(logContent);
+
+        const lines = logContent.split('\n').filter(line => line.trim());
+        const formattedOutput = lines.map(line => {
+          const timestampMatch = line.match(/\[(.*?)\]/);
+          const timestamp = timestampMatch ? parseLogTimestamp(timestampMatch[1]) : new Date();
+          return {
+            timestamp: timestamp,
+            message: line.replace(/\[.*?\]\s*/, '')
+          };
+        });
+        setOutput(formattedOutput);
       }
-      
-      const lines = logContent.split('\n').filter(line => line.trim());
-      const formattedOutput = lines.map(line => {
-        // Parse timestamp from log line if available
-        const timestampMatch = line.match(/\[(.*?)\]/);
-        const timestamp = timestampMatch ? parseLogTimestamp(timestampMatch[1]) : new Date();
-        return {
-          timestamp: timestamp,
-          message: line.replace(/\[.*?\]\s*/, '') // Remove timestamp from message
-        };
-      });
-      setOutput(formattedOutput);
+    } catch (error) {
+      console.error('Error fetching console output:', error);
+      // Optional: show a non-intrusive error message
     }
-  } catch (error) {
-    console.error('Error fetching output:', error);
-    // Don't set error state for output to avoid breaking the UI
-  }
-};
+  };
+
+  useEffect(() => {
+    fetchServer();
+  }, [serverId]);
+
+  useEffect(() => {
+    if (server) {
+      if (server.status === 'running') {
+        fetchOutput();
+        
+        let refreshInterval;
+        if (autoRefresh) {
+          refreshInterval = setInterval(fetchOutput, 2500); // Refresh every 2.5 seconds
+        }
+
+        return () => {
+          if (refreshInterval) clearInterval(refreshInterval);
+        };
+      }
+    }
+  }, [serverId, autoRefresh, server]);
 
 // Funkcja do usuwania kodów ANSI
 const removeAnsiCodes = (text) => {
@@ -483,7 +471,7 @@ const parseLogTimestamp = (timestampStr) => {
 
       <ConsoleContainer>
         <ConsoleHeader>
-          <ConsoleTitle>{t('server.console.title')} {isBedrock && '(Real-time)'}</ConsoleTitle>
+          <ConsoleTitle>{t('server.console.title')}</ConsoleTitle>
           <ConsoleActions>
             <ConsoleButton 
               onClick={handleRefreshOutput}
