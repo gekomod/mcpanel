@@ -14,6 +14,7 @@ import zipfile
 import tarfile
 import signal
 from werkzeug.utils import secure_filename
+from bs4 import BeautifulSoup
 
 # Configure logging
 logging.basicConfig(
@@ -186,41 +187,45 @@ class ServerManager:
             return False, f"Error deleting server files: {str(e)}"
     
     def _install_java_server(self, server_data, server_path):
-        """Instalacja serwera Java"""
+        """Installs a Java server, delegating to the correct method."""
         try:
             implementation = server_data.get('implementation', 'vanilla')
             version = server_data['version']
             
-            # Pobierz URL serwera
+            # Create eula.txt first, as it's needed by all Java servers
+            eula_path = os.path.join(server_path, 'eula.txt')
+            with open(eula_path, 'w') as f:
+                f.write("eula=true\n")
+
+            # Handle installer-based implementations
+            if implementation == 'fabric':
+                return self._install_fabric_server(server_path, version)
+            if implementation == 'forge':
+                return self._install_forge_server(server_path, version)
+            if implementation == 'neoforge':
+                return self._install_neoforge_server(server_path, version)
+
+            # Handle direct download implementations
             jar_url = self._get_java_server_url(implementation, version)
             if not jar_url:
                 return False, f"Could not find server URL for {implementation} {version}"
             
-            jar_filename = f"server_{version}.jar"
             if implementation == 'paper':
-                jar_filename = f"paper-{version}.jar"
+                jar_filename = jar_url.split('/')[-1]
             elif implementation == 'purpur':
                 jar_filename = f"purpur-{version}.jar"
+            else: # vanilla
+                jar_filename = f"vanilla-{version}.jar"
             
             jar_path = os.path.join(server_path, jar_filename)
             
-            # Pobierz plik JAR
-            success = self._download_file(jar_url, jar_path)
-            if not success:
+            if not self._download_file(jar_url, jar_path):
                 return False, "Failed to download server JAR"
-            
-            # Utwórz eula.txt
-            eula_path = os.path.join(server_path, 'eula.txt')
-            with open(eula_path, 'w') as f:
-                f.write("eula=true\n")
-            
-            # Dla Fabric - specjalna instalacja
-            if implementation == 'fabric':
-                return self._install_fabric_server(server_path, version)
             
             return True, f"Java server installed successfully: {jar_filename}"
             
         except Exception as e:
+            logger.error(f"Java server installation error: {e}")
             return False, f"Java server installation error: {str(e)}"
     
     def _install_bedrock_server(self, server_data, server_path):
@@ -259,75 +264,200 @@ class ServerManager:
             return False, f"Bedrock server installation error: {str(e)}"
     
     def _get_java_server_url(self, implementation, version):
-        """Pobierz URL serwera Java"""
+        """Get download URL for Java server based on implementation and version"""
         if implementation == 'vanilla':
-            return f"https://piston-data.mojang.com/v1/objects/{self._get_vanilla_hash(version)}/server.jar"
+            version_manifest_url = "https://launchermeta.mojang.com/mc/game/version_manifest.json"
+            try:
+                version_manifest = requests.get(version_manifest_url).json()
+                for v in version_manifest['versions']:
+                    if v['id'] == version and v['type'] == 'release':
+                        version_info = requests.get(v['url']).json()
+                        return version_info['downloads']['server']['url']
+            except Exception as e:
+                logger.error(f"Could not fetch vanilla manifest: {e}")
+                # Fallback for popular versions
+                fallback_urls = {
+                    '1.20.1': 'https://piston-data.mojang.com/v1/objects/84194a2f286ef7c14ed7ce0090dba59902951553/server.jar',
+                    '1.19.4': 'https://piston-data.mojang.com/v1/objects/8f3112a1049751cc472ec13e397eade5336ca7ae/server.jar',
+                }
+                return fallback_urls.get(version)
+
         elif implementation == 'paper':
-            return f"https://api.papermc.io/v2/projects/paper/versions/{version}/builds/{self._get_latest_paper_build(version)}/downloads/paper-{version}-{self._get_latest_paper_build(version)}.jar"
+            build_data = self._get_latest_paper_build(version)
+            if build_data:
+                return f"https://api.papermc.io/v2/projects/paper/versions/{version}/builds/{build_data['build']}/downloads/{build_data['download']}"
+
         elif implementation == 'purpur':
             return f"https://api.purpurmc.org/v2/purpur/{version}/latest/download"
+
+        elif implementation == 'fabric':
+            return self._get_fabric_installer_url(version)
+
+        elif implementation == 'forge':
+            return self._get_forge_installer_url(version)
+
+        elif implementation == 'neoforge':
+            return self._get_neoforge_installer_url(version)
+
         return None
+
+    def _get_forge_installer_url(self, version):
+        """Scrape the Forge website to get the installer URL"""
+        try:
+            url = f"https://files.minecraftforge.net/net/minecraftforge/forge/index_{version}.html"
+            response = requests.get(url)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, 'html.parser')
+            download_link = soup.find('div', {'class': 'download'}).find('a', href=True)
+            if download_link and 'installer' in download_link['href']:
+                redirect_url = download_link['href']
+                final_url = requests.head(redirect_url, allow_redirects=True).url
+                return final_url
+        except Exception as e:
+            logger.error(f"Error getting Forge URL: {e}")
+        return None
+
+    def _get_neoforge_installer_url(self, version):
+        """Get the NeoForge installer URL from their API"""
+        try:
+            api_url = f"https://api.neoforged.net/v1/versions/minecraft/{version}"
+            response = requests.get(api_url)
+            response.raise_for_status()
+            data = response.json()
+            if data and len(data) > 0:
+                latest_version = data[0]
+                return f"https://maven.neoforged.net/net/neoforged/neoforge/{latest_version}/neoforge-{latest_version}-installer.jar"
+        except Exception as e:
+            logger.error(f"Error getting NeoForge URL: {e}")
+        return None
+
+    def _get_fabric_installer_url(self, version):
+        """Get Fabric installer URL from their API"""
+        try:
+            fabric_versions_url = "https://meta.fabricmc.net/v2/versions"
+            response = requests.get(fabric_versions_url)
+            if response.status_code == 200:
+                data = response.json()
+                installer_version = next((i['version'] for i in data.get('installer', []) if i['stable']), None)
+                if installer_version:
+                    return f"https://meta.fabricmc.net/v2/versions/loader/{version}/{data['loader'][0]['version']}/{installer_version}/server/jar"
+        except Exception as e:
+            logger.error(f"Error getting Fabric URL: {e}")
+        return f"https://meta.fabricmc.net/v2/versions/loader/{version}/latest/stable/server/jar"
     
     def _get_bedrock_server_url(self, version, platform):
-        """Pobierz URL serwera Bedrock"""
-        # Tutaj możesz dodać logikę pobierania URLi dla Bedrock
-        # Na potrzeby przykładu zwracamy None
+        """Get Bedrock server URL (placeholder)"""
         return None
     
-    def _get_vanilla_hash(self, version):
-        """Pobierz hash dla vanilla servera"""
-        # Dla uproszczenia - w pełnej implementacji pobierz z manifestu Mojang
-        hashes = {
-            '1.20.1': '84194a2f286ef7c14ed7ce0090dba59902951553',
-            '1.19.4': '8f3112a1049751cc472ec13e397eade5336ca7ae',
-            '1.18.2': 'c8f83c5655308435b3dcf03c06d9fe8740a77469'
-        }
-        return hashes.get(version, hashes['1.20.1'])
-    
     def _get_latest_paper_build(self, version):
-        """Pobierz najnowszy build Paper"""
-        # Dla uproszczenia - w pełnej implementacji zapytaj API
-        return 'latest'
-    
-    def _install_fabric_server(self, server_path, version):
-        """Specjalna instalacja Fabric"""
+        """Get latest Paper build for a version"""
         try:
-            fabric_url = f"https://meta.fabricmc.net/v2/versions/loader/{version}/latest/stable/server/jar"
-            fabric_jar = os.path.join(server_path, 'fabric-server.jar')
-            
-            success = self._download_file(fabric_url, fabric_jar)
-            if not success:
-                return False, "Failed to download Fabric installer"
-            
-            # Uruchom instalator
-            process = subprocess.Popen(
-                ['java', '-jar', 'fabric-server.jar', 'nogui'],
-                cwd=server_path,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT
-            )
-            
-            # Czekaj na instalację
-            process.wait(timeout=120)
-            
-            # Sprawdź czy instalacja się powiodła
-            fabric_launcher = os.path.join(server_path, 'fabric-server-launcher.jar')
-            if os.path.exists(fabric_launcher):
-                # Zmień nazwę na server.jar
-                server_jar = os.path.join(server_path, 'server.jar')
-                if os.path.exists(server_jar):
-                    os.remove(server_jar)
-                os.rename(fabric_launcher, server_jar)
-                
-                # Usuń instalator
-                if os.path.exists(fabric_jar):
-                    os.remove(fabric_jar)
-                
-                return True, "Fabric server installed successfully"
-            else:
-                return False, "Fabric installation failed - no launcher found"
-                
+            url = f"https://api.papermc.io/v2/projects/paper/versions/{version}"
+            response = requests.get(url)
+            if response.status_code == 200:
+                data = response.json()
+                builds = data.get('builds', [])
+                if builds:
+                    latest_build = max(builds)
+                    build_info_url = f"https://api.papermc.io/v2/projects/paper/versions/{version}/builds/{latest_build}"
+                    build_info = requests.get(build_info_url).json()
+                    download_name = build_info['downloads']['application']['name']
+                    return {'build': latest_build, 'download': download_name}
         except Exception as e:
+            logger.error(f"Error getting Paper build: {e}")
+        return None
+    
+    def _run_installer_and_cleanup(self, server_path, installer_jar, implementation_name):
+        """Helper function to run a server installer and handle cleanup."""
+        logger.info(f'Running {implementation_name.capitalize()} installer...')
+
+        install_cmd = ['java', '-jar', installer_jar]
+        if implementation_name in ['forge', 'neoforge']:
+            install_cmd.append('--installServer')
+        elif implementation_name == 'fabric':
+            install_cmd.extend(['server', '-downloadMinecraft'])
+
+        process = subprocess.Popen(install_cmd, cwd=server_path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+
+        try:
+            process.wait(timeout=300) # 5-minute timeout
+        except subprocess.TimeoutExpired:
+            process.kill()
+            logger.error(f"{implementation_name.capitalize()} installer timed out.")
+            return False, f"{implementation_name.capitalize()} installer timed out."
+
+        # Verify installation
+        success = False
+        message = ""
+        run_script = 'run.sh' if os.name != 'nt' else 'run.bat'
+        fabric_launcher = os.path.join(server_path, 'fabric-server-launch.jar')
+
+        if implementation_name in ['forge', 'neoforge'] and os.path.exists(os.path.join(server_path, run_script)):
+            success = True
+        elif implementation_name == 'fabric' and os.path.exists(fabric_launcher):
+            server_jar = os.path.join(server_path, 'server.jar')
+            if os.path.exists(server_jar):
+                os.remove(server_jar)
+            os.rename(fabric_launcher, server_jar)
+            success = True
+
+        if os.path.exists(installer_jar):
+            os.remove(installer_jar)
+
+        if success:
+            return True, f"{implementation_name.capitalize()} server installed successfully."
+        else:
+            return False, f"{implementation_name.capitalize()} installation failed."
+
+    def _install_forge_server(self, server_path, version):
+        """Special installation for Forge"""
+        try:
+            logger.info('Downloading Forge installer...')
+            forge_url = self._get_forge_installer_url(version)
+            if not forge_url:
+                return False, 'Could not find Forge installer URL.'
+
+            forge_installer_jar = os.path.join(server_path, 'forge-installer.jar')
+            if not self._download_file(forge_url, forge_installer_jar):
+                return False, "Failed to download Forge installer"
+
+            return self._run_installer_and_cleanup(server_path, forge_installer_jar, 'forge')
+        except Exception as e:
+            logger.error(f"Forge installation error: {e}")
+            return False, f'An unexpected error occurred: {e}'
+
+    def _install_neoforge_server(self, server_path, version):
+        """Special installation for NeoForge"""
+        try:
+            logger.info('Downloading NeoForge installer...')
+            neoforge_url = self._get_neoforge_installer_url(version)
+            if not neoforge_url:
+                return False, 'Could not find NeoForge installer URL.'
+
+            neoforge_installer_jar = os.path.join(server_path, 'neoforge-installer.jar')
+            if not self._download_file(neoforge_url, neoforge_installer_jar):
+                return False, "Failed to download NeoForge installer"
+            
+            return self._run_installer_and_cleanup(server_path, neoforge_installer_jar, 'neoforge')
+        except Exception as e:
+            logger.error(f"NeoForge installation error: {e}")
+            return False, f'An unexpected error occurred: {e}'
+
+    def _install_fabric_server(self, server_path, version):
+        """Special installation for Fabric"""
+        try:
+            logger.info("Downloading Fabric installer...")
+            fabric_url = self._get_fabric_installer_url(version)
+            if not fabric_url:
+                return False, "Could not find Fabric installer URL."
+
+            fabric_installer_jar = os.path.join(server_path, 'fabric-installer.jar')
+            if not self._download_file(fabric_url, fabric_installer_jar):
+                return False, "Failed to download Fabric installer"
+
+            return self._run_installer_and_cleanup(server_path, fabric_installer_jar, 'fabric')
+        except Exception as e:
+            logger.error(f"Fabric installation error: {e}")
             return False, f"Fabric installation error: {str(e)}"
     
     def _download_file(self, url, file_path):
@@ -396,57 +526,61 @@ class ServerManager:
         except Exception as e:
             return False, f"Failed to start server: {str(e)}"
     
-    def _get_java_start_command(self, server_path, jar_file, server_data):
-        """Przygotuj komendę startową z optymalizacją pamięci"""
-        # Pobierz dostępną pamięć systemową
+    def _get_java_start_command(self, server_path, server_data):
+        """Prepares the start command for a Java server, handling different implementations."""
+        implementation = server_data.get('implementation', 'vanilla')
+        run_script_path = os.path.join(server_path, 'run.sh')
+
+        # For Forge/NeoForge, use the generated run script
+        if implementation in ['forge', 'neoforge'] and os.path.exists(run_script_path):
+            os.chmod(run_script_path, 0o755)
+            return [run_script_path, 'nogui']
+
+        # For other types, find the JAR file and build a java command
+        jar_file = None
+        # Prioritize specific server jars
+        for file in os.listdir(server_path):
+            if file.endswith('.jar') and ('server' in file or 'fabric' in file or 'paper' in file or 'purpur' in file or 'vanilla' in file):
+                jar_file = file
+                break
+
+        # If no specific jar found, find any jar
+        if not jar_file:
+            for file in os.listdir(server_path):
+                if file.endswith('.jar'):
+                    jar_file = file
+                    break
+
+        if not jar_file:
+            raise FileNotFoundError("Could not find a runnable JAR file in the server directory.")
+
         try:
-            total_memory = psutil.virtual_memory().total / (1024 * 1024 * 1024)  # GB
             available_memory = psutil.virtual_memory().available / (1024 * 1024 * 1024)  # GB
-        
-            # Automatycznie dostosuj pamięć na podstawie dostępnej
-            if available_memory >= 8:  # Jeśli jest 8+ GB dostępne
-                default_memory = '4G'
-            elif available_memory >= 4:  # Jeśli jest 4-8 GB dostępne
-                default_memory = '2G'
-            elif available_memory >= 2:  # Jeśli jest 2-4 GB dostępne
-                default_memory = '1G'
-            else:  # Mniej niż 2 GB
-                default_memory = '512M'
+            if available_memory >= 8: default_memory = '4G'
+            elif available_memory >= 4: default_memory = '2G'
+            elif available_memory >= 2: default_memory = '1G'
+            else: default_memory = '512M'
         except:
-            default_memory = '1G'  # Fallback
-    
-        # Użyj pamięci z konfiguracji lub automatycznie obliczonej
+            default_memory = '1G'
+
         memory = server_data.get('memory', default_memory)
-    
-        logger.info(f"Memory settings - Available: {available_memory:.1f}GB, Using: {memory}")
-    
-        # Znajdź Javę
-        java_cmd = self._find_java_executable()
-    
-        # Optymalne argumenty JVM dla małej pamięci
+        logger.info(f"Memory settings - Using: {memory}")
+
         jvm_args = [
-            f'-Xmx{memory}',
-            f'-Xms{memory}',
-            '-XX:+UseG1GC',
-            '-XX:+UnlockExperimentalVMOptions',
-            '-XX:MaxGCPauseMillis=100',
-            '-jar', jar_file,
-            'nogui'
+            f'-Xmx{memory}', f'-Xms{memory}',
+            '-XX:+UseG1GC', '-XX:+UnlockExperimentalVMOptions', '-XX:MaxGCPauseMillis=100',
+            '-jar', jar_file, 'nogui'
         ]
-    
-        # Dla małej pamięci (<2GB) użyj bardziej agresywnych ustawień
-        if 'M' in memory or ('G' in memory and float(memory.replace('G', '')) < 2):
+
+        # Simple check for smaller memory sizes
+        is_small_memory = 'M' in memory.upper() or ('G' in memory.upper() and float(memory.upper().replace('G', '')) < 2)
+        if is_small_memory:
             jvm_args.extend([
-                '-XX:+DisableExplicitGC',
-                '-XX:G1NewSizePercent=30',
-                '-XX:G1MaxNewSizePercent=40',
-                '-XX:G1HeapRegionSize=8M',
-                '-XX:G1ReservePercent=20',
-                '-XX:InitiatingHeapOccupancyPercent=15'
+                '-XX:+DisableExplicitGC', '-XX:G1NewSizePercent=30', '-XX:G1MaxNewSizePercent=40',
+                '-XX:G1HeapRegionSize=8M', '-XX:G1ReservePercent=20', '-XX:InitiatingHeapOccupancyPercent=15'
             ])
-    
-        cmd = [java_cmd] + jvm_args
-        return cmd
+
+        return ['java'] + jvm_args
     
     def _get_bedrock_start_command(self, server_path, server_data):
         """Przygotuj komendę startową dla Bedrock"""

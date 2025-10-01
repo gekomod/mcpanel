@@ -14,7 +14,9 @@ import {
   FiHome,
   FiArrowRight,
   FiArrowLeft,
-  FiCheck
+  FiCheck,
+  FiTool,
+  FiGitMerge
 } from 'react-icons/fi';
 import api from '../services/api';
 import { useLanguage } from '../context/LanguageContext';
@@ -472,7 +474,9 @@ function AddServer({ isOpen, onClose, onServerAdded }) {
     { id: 'paper', name: 'Paper', icon: FiBox },
     { id: 'purpur', name: 'Purpur', icon: FiServer },
     { id: 'vanilla', name: 'Vanilla', icon: FiCode },
-    { id: 'fabric', name: 'Fabric', icon: FiCpu }
+    { id: 'fabric', name: 'Fabric', icon: FiCpu },
+    { id: 'forge', name: 'Forge', icon: FiTool },
+    { id: 'neoforge', name: 'NeoForge', icon: FiGitMerge }
   ];
 
   useEffect(() => {
@@ -518,7 +522,6 @@ function AddServer({ isOpen, onClose, onServerAdded }) {
         const data = await response.json();
         versionsData = data.versions
           .filter(v => v.type === 'release')
-          .slice(0, 15)
           .map(v => ({ id: v.id, name: v.id }));
       } else {
         versionsData = [

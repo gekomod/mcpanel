@@ -7,6 +7,7 @@ import threading
 import requests
 import zipfile
 import tarfile
+from bs4 import BeautifulSoup
 from .models import db, Server
 from flask import current_app
 from pathlib import Path
@@ -88,8 +89,57 @@ class ServerManager:
             # Fabric używa specjalnego instalatora
             return self._get_fabric_installer_url(version)
     
+        elif implementation == 'forge':
+            return self._get_forge_installer_url(version)
+
+        elif implementation == 'neoforge':
+            return self._get_neoforge_installer_url(version)
+
         return None
     
+    def _get_forge_installer_url(self, version):
+        """Scrape the Forge website to get the installer URL"""
+        try:
+            # Forge has a consistent URL pattern for their download pages
+            url = f"https://files.minecraftforge.net/net/minecraftforge/forge/index_{version}.html"
+            response = requests.get(url)
+            response.raise_for_status()
+
+            soup = BeautifulSoup(response.text, 'html.parser')
+
+            # Find the download link for the installer
+            # This is brittle and might break if they change their website structure
+            download_link = soup.find('div', {'class': 'download'}).find('a', href=True)
+
+            if download_link and 'installer' in download_link['href']:
+                # The link is often a redirect, so we need to follow it
+                redirect_url = download_link['href']
+                final_url = requests.head(redirect_url, allow_redirects=True).url
+                return final_url
+        except Exception as e:
+            print(f"Error getting Forge URL: {e}")
+            # Fallback for a popular version if scraping fails
+            if version == '1.20.1':
+                return "https://maven.minecraftforge.net/net/minecraftforge/forge/1.20.1-47.2.0/forge-1.20.1-47.2.0-installer.jar"
+        return None
+
+    def _get_neoforge_installer_url(self, version):
+        """Get the NeoForge installer URL"""
+        try:
+            # NeoForge has a public Maven repository, making it easier
+            # We need to find the latest version of NeoForge for the given Minecraft version
+            api_url = f"https://api.neoforged.net/v1/versions/minecraft/{version}"
+            response = requests.get(api_url)
+            response.raise_for_status()
+            data = response.json()
+            if data and len(data) > 0:
+                # Get the latest version
+                latest_version = data[0]
+                return f"https://maven.neoforged.net/net/neoforged/neoforge/{latest_version}/neoforge-{latest_version}-installer.jar"
+        except Exception as e:
+            print(f"Error getting NeoForge URL: {e}")
+        return None
+
     def _get_fabric_installer_url(self, version):
         """Pobierz URL instalatora Fabric"""
         try:
@@ -183,6 +233,90 @@ class ServerManager:
             print(f"Fabric installation error: {e}")
             return False
     
+    def _run_installer_and_cleanup(self, server_path, installer_jar, server_id, implementation_name):
+        """Helper function to run a server installer and handle cleanup."""
+        self._update_progress(server_id, f'installing_{implementation_name}', 80, f'Running {implementation_name.capitalize()} installer...')
+
+        install_cmd = ['java', '-jar', installer_jar, '--installServer']
+        process = subprocess.Popen(
+            install_cmd,
+            cwd=server_path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True
+        )
+
+        # It can take a while to download the vanilla jar and apply patches
+        timeout = 300  # 5 minutes timeout
+        start_time = time.time()
+
+        while process.poll() is None:
+            if time.time() - start_time > timeout:
+                process.kill()
+                self._update_progress(server_id, 'error', 0, f'{implementation_name.capitalize()} installer timed out.')
+                return False
+
+            # Optionally, you can log installer output here for debugging
+            # line = process.stdout.readline()
+            # if line:
+            #     print(f"[{implementation_name} Installer]: {line.strip()}")
+
+            time.sleep(1)
+
+        # Verify installation by checking for the run script
+        run_script = 'run.sh' if os.name != 'nt' else 'run.bat'
+        run_script_path = os.path.join(server_path, run_script)
+
+        if not os.path.exists(run_script_path):
+            self._update_progress(server_id, 'error', 0, f'Installation failed: {run_script} not found.')
+            return False
+
+        # Cleanup the installer
+        if os.path.exists(installer_jar):
+            os.remove(installer_jar)
+
+        return True
+
+    def _install_forge_server(self, server_path, version, server_id):
+        """Special installation for Forge"""
+        try:
+            self._update_progress(server_id, 'installing_forge', 50, 'Downloading Forge installer...')
+            forge_url = self._get_forge_installer_url(version)
+            if not forge_url:
+                self._update_progress(server_id, 'error', 0, 'Could not find Forge installer URL.')
+                return False
+
+            forge_installer_jar = os.path.join(server_path, 'forge-installer.jar')
+            if not self._download_file_with_progress(forge_url, forge_installer_jar, server_id):
+                return False
+
+            return self._run_installer_and_cleanup(server_path, forge_installer_jar, server_id, 'forge')
+
+        except Exception as e:
+            print(f"Forge installation error: {e}")
+            self._update_progress(server_id, 'error', 0, f'An unexpected error occurred: {e}')
+            return False
+
+    def _install_neoforge_server(self, server_path, version, server_id):
+        """Special installation for NeoForge"""
+        try:
+            self._update_progress(server_id, 'installing_neoforge', 50, 'Downloading NeoForge installer...')
+            neoforge_url = self._get_neoforge_installer_url(version)
+            if not neoforge_url:
+                self._update_progress(server_id, 'error', 0, 'Could not find NeoForge installer URL.')
+                return False
+
+            neoforge_installer_jar = os.path.join(server_path, 'neoforge-installer.jar')
+            if not self._download_file_with_progress(neoforge_url, neoforge_installer_jar, server_id):
+                return False
+
+            return self._run_installer_and_cleanup(server_path, neoforge_installer_jar, server_id, 'neoforge')
+
+        except Exception as e:
+            print(f"NeoForge installation error: {e}")
+            self._update_progress(server_id, 'error', 0, f'An unexpected error occurred: {e}')
+            return False
+
     def _get_latest_paper_build(self, version):
         """Get latest Paper build for a version"""
         try:
@@ -630,13 +764,27 @@ class ServerManager:
                             self._update_progress(server_id, 'error', 0, f'Nie można znaleźć URL dla {server.implementation} {server.version}')
                             return
                     
-                        # Specjalna obsługa Fabric
+                        # Specjalna obsługa Fabric / Forge / NeoForge
                         if server.implementation == 'fabric':
                             success = self._install_fabric_server(server_path, server.version, server_id)
                             if not success:
                                 self._update_progress(server_id, 'error', 0, 'Błąd instalacji Fabric')
                                 return
                             jar_filename = "server.jar"
+                        elif server.implementation == 'forge':
+                            success = self._install_forge_server(server_path, server.version, server_id)
+                            if not success:
+                                self._update_progress(server_id, 'error', 0, 'Błąd instalacji Forge')
+                                return
+                            # Forge uses a startup script, we will handle this later
+                            jar_filename = None
+                        elif server.implementation == 'neoforge':
+                            success = self._install_neoforge_server(server_path, server.version, server_id)
+                            if not success:
+                                self._update_progress(server_id, 'error', 0, 'Błąd instalacji NeoForge')
+                                return
+                            # NeoForge also uses a startup script
+                            jar_filename = None
                         else:
                             # Określ nazwę pliku JAR dla innych implementacji
                             if server.implementation == 'paper':
@@ -674,13 +822,18 @@ class ServerManager:
             time.sleep(1)
         
             if server.type == 'java':
-                cmd = ['java', 
-                       '-Xmx6G', '-Xms3G',
-                       '-XX:+UseG1GC', '-XX:+ParallelRefProcEnabled', '-XX:MaxGCPauseMillis=200',
-                       '-XX:+UnlockExperimentalVMOptions', '-XX:+DisableExplicitGC', 
-                       '-XX:G1NewSizePercent=30', '-XX:G1MaxNewSizePercent=40',
-                       '-XX:G1HeapRegionSize=8M', '-XX:G1ReservePercent=20',
-                       '-jar', jar_file, 'nogui']
+                run_script_path = os.path.join(server_path, 'run.sh')
+                if os.path.exists(run_script_path) and server.implementation in ['forge', 'neoforge']:
+                    os.chmod(run_script_path, 0o755)
+                    cmd = [run_script_path, 'nogui']
+                else:
+                    cmd = ['java',
+                           '-Xmx6G', '-Xms3G',
+                           '-XX:+UseG1GC', '-XX:+ParallelRefProcEnabled', '-XX:MaxGCPauseMillis=200',
+                           '-XX:+UnlockExperimentalVMOptions', '-XX:+DisableExplicitGC',
+                           '-XX:G1NewSizePercent=30', '-XX:G1MaxNewSizePercent=40',
+                           '-XX:G1HeapRegionSize=8M', '-XX:G1ReservePercent=20',
+                           '-jar', jar_file, 'nogui']
             else:
                 if os.name == 'nt':
                     cmd = ['bedrock_server.exe']
