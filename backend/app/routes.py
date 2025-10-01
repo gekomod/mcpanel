@@ -108,6 +108,47 @@ class AgentClient:
         """Usuwa pliki serwera na agencie"""
         return self._make_request('POST', f'/server/{server_name}/delete')
 
+    def list_files(self, server_name, path=''):
+        """Listuje pliki na agencie"""
+        return self._make_request('GET', f'/server/{server_name}/files?path={path}')
+
+    def read_file(self, server_name, file_path):
+        """Czyta plik na agencie"""
+        return self._make_request('GET', f'/server/{server_name}/files/read?path={file_path}')
+
+    def write_file(self, server_name, file_path, content):
+        """Zapisuje plik na agencie"""
+        return self._make_request('POST', f'/server/{server_name}/files/write', json={'path': file_path, 'content': content})
+
+    def create_directory(self, server_name, dir_path):
+        """Tworzy katalog na agencie"""
+        return self._make_request('POST', f'/server/{server_name}/files/mkdir', json={'path': dir_path})
+
+    def delete_item(self, server_name, item_path, is_directory):
+        """Usuwa plik/katalog na agencie"""
+        return self._make_request('POST', f'/server/{server_name}/files/delete', json={'path': item_path, 'is_directory': is_directory})
+
+    def rename_item(self, server_name, old_path, new_path):
+        """Zmienia nazwę pliku/katalogu na agencie"""
+        return self._make_request('POST', f'/server/{server_name}/files/rename', json={'old_path': old_path, 'new_path': new_path})
+
+    def upload_file(self, server_name, path, file):
+        """Wysyła plik na agenta"""
+        files = {'file': (file.filename, file.stream, file.mimetype)}
+        data = {'path': path}
+        # _make_request nie jest przystosowane do multipart/form-data, więc robimy to ręcznie
+        try:
+            url = f"{self.base_url}/server/{server_name}/files/upload"
+            response = requests.post(url, headers={'Authorization': self.headers['Authorization']}, files=files, data=data, timeout=120)
+
+            if response.status_code == 200:
+                return True, response.json()
+            else:
+                error_msg = f"Agent error {response.status_code}: {response.text}"
+                return False, error_msg
+        except requests.exceptions.RequestException as e:
+            return False, f"Connection error: {str(e)}"
+
 @main.route('/servers', methods=['GET'])
 @jwt_required()
 def get_servers():
@@ -425,16 +466,25 @@ def list_files(server_id):
     current_user_id = get_jwt_identity()
     server = Server.query.get_or_404(server_id)
     path = request.args.get('path', '')
-    
-    # Check permissions
+
     if not _check_permission(current_user_id, server_id, 'can_edit_files'):
         return jsonify({'error': 'Access denied'}), 403
-    
-    files, error = file_manager.list_files(server.name, path)
-    if error:
-        return jsonify({'error': error}), 500
-    
-    return jsonify(files)
+
+    if server.agent_id:
+        agent_client = _get_agent_client(server_id=server_id)
+        if not agent_client:
+            return jsonify({'error': 'Agent not available'}), 500
+
+        success, result = agent_client.list_files(server.name, path)
+        if success:
+            return jsonify(result)
+        else:
+            return jsonify({'error': f'Agent error: {result}'}), 500
+    else:
+        files, error = file_manager.list_files(server.name, path)
+        if error:
+            return jsonify({'error': error}), 500
+        return jsonify(files)
 
 @main.route('/servers/<int:server_id>/files/read', methods=['GET'])
 @jwt_required()
@@ -442,16 +492,25 @@ def read_file(server_id):
     current_user_id = get_jwt_identity()
     server = Server.query.get_or_404(server_id)
     file_path = request.args.get('path', '')
-    
-    # Check permissions
+
     if not _check_permission(current_user_id, server_id, 'can_edit_files'):
         return jsonify({'error': 'Access denied'}), 403
-    
-    content, error = file_manager.read_file(server.name, file_path)
-    if error:
-        return jsonify({'error': error}), 500
-    
-    return jsonify({'content': content})
+
+    if server.agent_id:
+        agent_client = _get_agent_client(server_id=server_id)
+        if not agent_client:
+            return jsonify({'error': 'Agent not available'}), 500
+
+        success, result = agent_client.read_file(server.name, file_path)
+        if success:
+            return jsonify(result)
+        else:
+            return jsonify({'error': f'Agent error: {result}'}), 500
+    else:
+        content, error = file_manager.read_file(server.name, file_path)
+        if error:
+            return jsonify({'error': error}), 500
+        return jsonify({'content': content})
 
 @main.route('/servers/<int:server_id>/files/write', methods=['POST'])
 @jwt_required()
@@ -461,102 +520,110 @@ def write_file(server_id):
     data = request.get_json()
     file_path = data.get('path', '')
     content = data.get('content', '')
-    
-    # Check permissions
+
     if not _check_permission(current_user_id, server_id, 'can_edit_files'):
         return jsonify({'error': 'Access denied'}), 403
-    
-    success, error = file_manager.write_file(server.name, file_path, content)
-    if error:
-        return jsonify({'error': error}), 500
-    
-    return jsonify({'message': 'File saved successfully'})
-    
+
+    if server.agent_id:
+        agent_client = _get_agent_client(server_id=server_id)
+        if not agent_client:
+            return jsonify({'error': 'Agent not available'}), 500
+
+        success, result = agent_client.write_file(server.name, file_path, content)
+        if success:
+            return jsonify(result)
+        else:
+            return jsonify({'error': f'Agent error: {result}'}), 500
+    else:
+        success, error = file_manager.write_file(server.name, file_path, content)
+        if error:
+            return jsonify({'error': error}), 500
+        return jsonify({'message': 'File saved successfully'})
+
 @main.route('/servers/<int:server_id>/files/upload', methods=['POST'])
 @jwt_required()
 def upload_file(server_id):
-    """Upload pliku do serwera"""
     current_user_id = get_jwt_identity()
     server = Server.query.get_or_404(server_id)
-    
-    # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_edit_files'):
         return jsonify({'error': 'Access denied'}), 403
-    
+
     if 'file' not in request.files:
-        print("DEBUG: No 'file' in request.files")
         return jsonify({'error': 'No file provided'}), 400
     
     file = request.files['file']
     if file.filename == '':
-        print("DEBUG: Empty filename")
         return jsonify({'error': 'No file selected'}), 400
     
     path = request.form.get('path', '')
-    
-    print(f"DEBUG: Uploading file '{file.filename}' to path '{path}' for server {server.name}")
-    print(f"DEBUG: File content type: {file.content_type}")
-    print(f"DEBUG: File content length: {file.content_length}")
-    
-    try:
-        # Użyj file_manager do zapisania pliku
-        success, error = file_manager.upload_file(server.name, path, file)
-        if error:
-            print(f"DEBUG: File manager error: {error}")
-            return jsonify({'error': error}), 500
+
+    if server.agent_id:
+        agent_client = _get_agent_client(server_id=server_id)
+        if not agent_client:
+            return jsonify({'error': 'Agent not available'}), 500
         
-        return jsonify({'message': f'File {file.filename} uploaded successfully'})
-    
-    except Exception as e:
-        print(f"DEBUG: Upload exception: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': f'Upload failed: {str(e)}'}), 500
+        success, result = agent_client.upload_file(server.name, path, file)
+        if success:
+            return jsonify(result)
+        else:
+            return jsonify({'error': f'Agent error: {result}'}), 500
+    else:
+        try:
+            success, error = file_manager.upload_file(server.name, path, file)
+            if error:
+                return jsonify({'error': error}), 500
+            return jsonify({'message': f'File {file.filename} uploaded successfully'})
+        except Exception as e:
+            return jsonify({'error': f'Upload failed: {str(e)}'}), 500
 
 @main.route('/servers/<int:server_id>/files/mkdir', methods=['POST'])
 @jwt_required()
 def create_directory(server_id):
-    """Tworzy nowy katalog"""
     current_user_id = get_jwt_identity()
     server = Server.query.get_or_404(server_id)
     data = request.get_json()
     dir_path = data.get('path', '')
-    
-    # Check permissions
+
     if not _check_permission(current_user_id, server_id, 'can_edit_files'):
         return jsonify({'error': 'Access denied'}), 403
     
     if not dir_path:
         return jsonify({'error': 'Path is required'}), 400
-    
-    try:
-        # Użyj file_manager do utworzenia katalogu
-        success, error = file_manager.create_directory(server.name, dir_path)
-        if error:
-            return jsonify({'error': error}), 500
+
+    if server.agent_id:
+        agent_client = _get_agent_client(server_id=server_id)
+        if not agent_client:
+            return jsonify({'error': 'Agent not available'}), 500
         
-        return jsonify({'message': f'Directory {dir_path} created successfully'})
-    
-    except Exception as e:
-        return jsonify({'error': f'Failed to create directory: {str(e)}'}), 500
+        success, result = agent_client.create_directory(server.name, dir_path)
+        if success:
+            return jsonify(result)
+        else:
+            return jsonify({'error': f'Agent error: {result}'}), 500
+    else:
+        try:
+            success, error = file_manager.create_directory(server.name, dir_path)
+            if error:
+                return jsonify({'error': error}), 500
+            return jsonify({'message': f'Directory {dir_path} created successfully'})
+        except Exception as e:
+            return jsonify({'error': f'Failed to create directory: {str(e)}'}), 500
 
 @main.route('/servers/<int:server_id>/files/download', methods=['GET'])
 @jwt_required()
 def download_file(server_id):
-    """Pobiera plik z serwera"""
     current_user_id = get_jwt_identity()
     server = Server.query.get_or_404(server_id)
     file_path = request.args.get('path', '')
     
-    # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_edit_files'):
         return jsonify({'error': 'Access denied'}), 403
     
     if not file_path:
         return jsonify({'error': 'Path is required'}), 400
     
+    # No agent implementation for download for now
     try:
-        # Użyj file_manager do pobrania pełnej ścieżki pliku
         full_path, error = file_manager.get_full_path(server.name, file_path)
         if error:
             return jsonify({'error': error}), 500
@@ -564,7 +631,6 @@ def download_file(server_id):
         if not os.path.exists(full_path) or not os.path.isfile(full_path):
             return jsonify({'error': 'File not found'}), 404
         
-        # Pobierz nazwę pliku z ścieżki
         filename = os.path.basename(file_path)
         
         return send_file(
@@ -580,59 +646,73 @@ def download_file(server_id):
 @main.route('/servers/<int:server_id>/files/delete', methods=['POST'])
 @jwt_required()
 def delete_file(server_id):
-    """Usuwa plik lub katalog"""
     current_user_id = get_jwt_identity()
     server = Server.query.get_or_404(server_id)
     data = request.get_json()
     item_path = data.get('path', '')
     is_directory = data.get('is_directory', False)
-    
-    # Check permissions
+
     if not _check_permission(current_user_id, server_id, 'can_edit_files'):
         return jsonify({'error': 'Access denied'}), 403
     
     if not item_path:
         return jsonify({'error': 'Path is required'}), 400
-    
-    try:
-        # Użyj file_manager do usunięcia
-        success, error = file_manager.delete_item(server.name, item_path, is_directory)
-        if error:
-            return jsonify({'error': error}), 500
+
+    if server.agent_id:
+        agent_client = _get_agent_client(server_id=server_id)
+        if not agent_client:
+            return jsonify({'error': 'Agent not available'}), 500
         
-        item_type = 'Directory' if is_directory else 'File'
-        return jsonify({'message': f'{item_type} {item_path} deleted successfully'})
-    
-    except Exception as e:
-        return jsonify({'error': f'Delete failed: {str(e)}'}), 500
+        success, result = agent_client.delete_item(server.name, item_path, is_directory)
+        if success:
+            return jsonify(result)
+        else:
+            return jsonify({'error': f'Agent error: {result}'}), 500
+    else:
+        try:
+            success, error = file_manager.delete_item(server.name, item_path, is_directory)
+            if error:
+                return jsonify({'error': error}), 500
+
+            item_type = 'Directory' if is_directory else 'File'
+            return jsonify({'message': f'{item_type} {item_path} deleted successfully'})
+        except Exception as e:
+            return jsonify({'error': f'Delete failed: {str(e)}'}), 500
 
 @main.route('/servers/<int:server_id>/files/rename', methods=['POST'])
 @jwt_required()
 def rename_file(server_id):
-    """Zmienia nazwę pliku lub katalogu"""
     current_user_id = get_jwt_identity()
     server = Server.query.get_or_404(server_id)
     data = request.get_json()
     old_path = data.get('old_path', '')
     new_path = data.get('new_path', '')
-    
-    # Check permissions
+
     if not _check_permission(current_user_id, server_id, 'can_edit_files'):
         return jsonify({'error': 'Access denied'}), 403
     
     if not old_path or not new_path:
         return jsonify({'error': 'Both old_path and new_path are required'}), 400
-    
-    try:
-        # Użyj file_manager do zmiany nazwy
-        success, error = file_manager.rename_item(server.name, old_path, new_path)
-        if error:
-            return jsonify({'error': error}), 500
+
+    if server.agent_id:
+        agent_client = _get_agent_client(server_id=server_id)
+        if not agent_client:
+            return jsonify({'error': 'Agent not available'}), 500
         
-        return jsonify({'message': f'Item renamed from {old_path} to {new_path}'})
-    
-    except Exception as e:
-        return jsonify({'error': f'Rename failed: {str(e)}'}), 500
+        success, result = agent_client.rename_item(server.name, old_path, new_path)
+        if success:
+            return jsonify(result)
+        else:
+            return jsonify({'error': f'Agent error: {result}'}), 500
+    else:
+        try:
+            success, error = file_manager.rename_item(server.name, old_path, new_path)
+            if error:
+                return jsonify({'error': error}), 500
+
+            return jsonify({'message': f'Item renamed from {old_path} to {new_path}'})
+        except Exception as e:
+            return jsonify({'error': f'Rename failed: {str(e)}'}), 500
 
 @main.route('/servers/<int:server_id>/files/copy', methods=['POST'])
 @jwt_required()
