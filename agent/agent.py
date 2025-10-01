@@ -736,6 +736,60 @@ class ServerManager:
         except Exception as e:
             return False, str(e)
 
+    def list_plugins(self, server_name):
+        """Listuje pluginy (pliki .jar) w katalogu plugins."""
+        try:
+            plugins_path = self._secure_path(server_name, 'plugins')
+            if not os.path.isdir(plugins_path):
+                return [], None
+
+            plugins = []
+            for item in os.listdir(plugins_path):
+                if item.endswith('.jar'):
+                    item_path = os.path.join(plugins_path, item)
+                    stat = os.stat(item_path)
+                    plugins.append({
+                        'name': item,
+                        'size': stat.st_size,
+                        'modified': stat.st_mtime
+                    })
+            return plugins, None
+        except Exception as e:
+            return [], str(e)
+
+    def install_plugin(self, server_name, plugin_url):
+        """Instaluje plugin z URL."""
+        try:
+            plugins_path = self._secure_path(server_name, 'plugins')
+            os.makedirs(plugins_path, exist_ok=True)
+
+            filename = plugin_url.split('/')[-1]
+            if not filename.endswith('.jar'):
+                return False, "Invalid plugin URL (must end with .jar)"
+
+            plugin_path = os.path.join(plugins_path, secure_filename(filename))
+
+            success = self._download_file(plugin_url, plugin_path)
+            if not success:
+                return False, "Failed to download plugin"
+
+            return True, None
+        except Exception as e:
+            return False, str(e)
+
+    def delete_plugin(self, server_name, plugin_filename):
+        """Usuwa plik pluginu."""
+        try:
+            plugin_path = self._secure_path(server_name, os.path.join('plugins', plugin_filename))
+
+            if not os.path.isfile(plugin_path) or not plugin_path.endswith('.jar'):
+                 return False, "Plugin not found or invalid filename"
+
+            os.remove(plugin_path)
+            return True, None
+        except Exception as e:
+            return False, str(e)
+
 
 class MCPanelAgent:
     def __init__(self, panel_url, agent_token, agent_name, capacity=5, port=8080, base_path="./servers"):
@@ -1081,7 +1135,11 @@ class MCPanelAgent:
                     'mkdir': '/server/<name>/files/mkdir (POST)',
                     'delete_item': '/server/<name>/files/delete (POST)',
                     'rename_item': '/server/<name>/files/rename (POST)',
-                    'upload_file': '/server/<name>/files/upload (POST)'
+                    'upload_file': '/server/<name>/files/upload (POST)',
+                    'list_plugins': '/server/<name>/plugins (GET)',
+                    'install_plugin': '/server/<name>/plugins/install (POST)',
+                    'delete_plugin': '/server/<name>/plugins/delete (POST)',
+                    'upload_plugin': '/server/<name>/plugins/upload (POST)'
                 }
             })
             
@@ -1170,6 +1228,53 @@ class MCPanelAgent:
             if error:
                 return jsonify({'error': error}), 500
             return jsonify({'success': success})
+
+        @self.app.route('/server/<server_name>/plugins', methods=['GET'])
+        def list_plugins(server_name):
+            plugins, error = self.server_manager.list_plugins(server_name)
+            if error:
+                return jsonify({'error': error}), 500
+            return jsonify(plugins)
+
+        @self.app.route('/server/<server_name>/plugins/install', methods=['POST'])
+        def install_plugin(server_name):
+            data = request.get_json()
+            plugin_url = data.get('url')
+            if not plugin_url:
+                return jsonify({'error': 'Plugin URL is required'}), 400
+
+            success, error = self.server_manager.install_plugin(server_name, plugin_url)
+            if error:
+                return jsonify({'error': error}), 500
+            return jsonify({'success': success})
+
+        @self.app.route('/server/<server_name>/plugins/delete', methods=['POST'])
+        def delete_plugin(server_name):
+            data = request.get_json()
+            filename = data.get('filename')
+            if not filename:
+                return jsonify({'error': 'Plugin filename is required'}), 400
+
+            success, error = self.server_manager.delete_plugin(server_name, filename)
+            if error:
+                return jsonify({'error': error}), 500
+            return jsonify({'success': success})
+
+        @self.app.route('/server/<server_name>/plugins/upload', methods=['POST'])
+        def upload_plugin(server_name):
+            if 'file' not in request.files:
+                return jsonify({'error': 'No file part'}), 400
+
+            file = request.files['file']
+            if file.filename == '' or not file.filename.endswith('.jar'):
+                return jsonify({'error': 'No selected file or invalid file type (must be .jar)'}), 400
+
+            # For plugins, the path is always 'plugins'
+            success, error = self.server_manager.upload_file(server_name, 'plugins', file)
+
+            if error:
+                return jsonify({'error': error}), 500
+            return jsonify({'success': success, 'message': f'Plugin {file.filename} uploaded successfully.'})
 
     def _get_agent_log_file(self):
         possible_locations = [

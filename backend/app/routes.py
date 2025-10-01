@@ -149,6 +149,31 @@ class AgentClient:
         except requests.exceptions.RequestException as e:
             return False, f"Connection error: {str(e)}"
 
+    def list_plugins(self, server_name):
+        """Listuje pluginy na agencie."""
+        return self._make_request('GET', f'/server/{server_name}/plugins')
+
+    def install_plugin(self, server_name, plugin_url):
+        """Instaluje plugin na agencie."""
+        return self._make_request('POST', f'/server/{server_name}/plugins/install', json={'url': plugin_url})
+
+    def delete_plugin(self, server_name, filename):
+        """Usuwa plugin na agencie."""
+        return self._make_request('POST', f'/server/{server_name}/plugins/delete', json={'filename': filename})
+
+    def upload_plugin(self, server_name, file):
+        """Wysyła plik pluginu na agenta."""
+        files = {'file': (file.filename, file.stream, file.mimetype)}
+        try:
+            url = f"{self.base_url}/server/{server_name}/plugins/upload"
+            response = requests.post(url, headers={'Authorization': self.headers['Authorization']}, files=files, timeout=120)
+            if response.status_code == 200:
+                return True, response.json()
+            else:
+                return False, f"Agent error {response.status_code}: {response.text}"
+        except requests.exceptions.RequestException as e:
+            return False, f"Connection error: {str(e)}"
+
 @main.route('/servers', methods=['GET'])
 @jwt_required()
 def get_servers():
@@ -1354,76 +1379,102 @@ def update_addon(addon_id):
 @jwt_required()
 def get_installed_addons(server_id):
     current_user_id = get_jwt_identity()
-    
-    # Check permissions
+    server = Server.query.get_or_404(server_id)
+
     if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
         return jsonify({'error': 'Access denied'}), 403
-    
-    # Pobierz zainstalowane addony dla tego serwera
-    installed_addons = Addon.query.filter_by(is_installed=True).all()
+
+    # Handle agent-managed Java servers
+    if server.agent_id and server.type == 'java':
+        agent_client = _get_agent_client(server_id=server_id)
+        if not agent_client:
+            return jsonify({'error': 'Agent not available'}), 500
+
+        success, plugins_list = agent_client.list_plugins(server.name)
+        if not success:
+            return jsonify({'error': f'Agent error: {plugins_list}'}), 500
+
+        installed_plugin_files = [p['name'] for p in plugins_list]
+        all_plugins = Addon.query.filter_by(type='plugin').all()
+        installed_addons = []
+        for plugin in all_plugins:
+            if plugin.download_url and plugin.download_url.split('/')[-1] in installed_plugin_files:
+                installed_addons.append(plugin)
+        return jsonify([addon.to_dict() for addon in installed_addons])
+
+    # Handle local Java servers
+    if not server.agent_id and server.type == 'java':
+        # Placeholder for local Java plugin management
+        return jsonify([])
+
+    # Fallback to existing logic for Bedrock servers
+    installed_addons = Addon.query.filter(Addon.installed_on_servers.any(id=server_id)).all()
     return jsonify([addon.to_dict() for addon in installed_addons])
 
-# Dodaj endpoint do instalacji/odinstalowania addona
 @main.route('/servers/<int:server_id>/addons/<int:addon_id>/install', methods=['POST'])
 @jwt_required()
 def install_addon(server_id, addon_id):
     current_user_id = get_jwt_identity()
-    
-    # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
         return jsonify({'error': 'Access denied'}), 403
-    
+
     addon = Addon.query.get_or_404(addon_id)
     server = Server.query.get_or_404(server_id)
-    
-    # Tylko dla serwerów Bedrock
-    if server.type != 'bedrock':
-        return jsonify({'error': 'Addons can only be installed on Bedrock servers'}), 400
-    
-    # Sprawdź kompatybilność wersji
-    if addon.minecraft_version != server.version:
-        return jsonify({'error': f'Addon is for Minecraft {addon.minecraft_version}, server is running {server.version}'}), 400
-    
-    # Utwórz manager
-    bedrock_manager = get_bedrock_manager()
-    
-    # Instaluj addon
-    success, result = bedrock_manager.install_addon(addon, server.name)
-    
-    if success:
-        print(f"Install result: {result}")
+
+    # Handle agent-managed Java servers for plugins
+    if server.agent_id and server.type == 'java' and addon.type == 'plugin':
+        agent_client = _get_agent_client(server_id=server_id)
+        if not agent_client:
+            return jsonify({'error': 'Agent not available'}), 500
         
-        # Dla addonów (nie światów) - zapisz informacje o packach
-        if addon.type != 'worlds' and 'pack_info' in result:
-            pack_info = result['pack_info']
-            if 'behavior_pack_uuid' in pack_info:
-                addon.behavior_pack_uuid = pack_info['behavior_pack_uuid']
-            if 'behavior_pack_version' in pack_info:
-                addon.behavior_pack_version = pack_info['behavior_pack_version']
-            if 'resource_pack_uuid' in pack_info:
-                addon.resource_pack_uuid = pack_info['resource_pack_uuid']
-            if 'resource_pack_version' in pack_info:
-                addon.resource_pack_version = pack_info['resource_pack_version']
+        if not addon.download_url:
+            return jsonify({'error': 'Plugin has no download URL'}), 400
+
+        success, result = agent_client.install_plugin(server.name, addon.download_url)
         
-        # UŻYJ NOWYCH METOD do zarządzania installed_on_servers
-        addon.add_installed_server(server.id)
-        addon.is_installed = True
-        
-        # Dla światów nie ustawiamy enabled (światy nie mają stanu enabled/disabled)
-        if addon.type != 'worlds':
-            addon.enabled = True
-        
-        db.session.commit()
-        
-        return jsonify({
-            'message': f"{addon.type.capitalize()} installed successfully",
-            'details': result.get('results', {}),
-            'server_added': server.id in addon.get_installed_servers()
-        })
-    else:
-        # Obsłuż błąd - result może być stringiem lub dict z polem 'error'
-        error_message = result.get('error', result) if isinstance(result, dict) else result
-        return jsonify({'error': error_message}), 500
+        if success:
+            return jsonify({'message': f'Plugin {addon.name} installation initiated on agent.'})
+        else:
+            return jsonify({'error': f'Agent error: {result}'}), 500
+
+    # Handle local Bedrock servers for addons/worlds
+    elif server.type == 'bedrock':
+        if addon.minecraft_version != server.version:
+            return jsonify({'error': f'Addon is for Minecraft {addon.minecraft_version}, server is running {server.version}'}), 400
+
+        bedrock_manager = get_bedrock_manager()
+        success, result = bedrock_manager.install_addon(addon, server.name)
+
+        if success:
+            if addon.type != 'worlds' and 'pack_info' in result:
+                pack_info = result['pack_info']
+                if 'behavior_pack_uuid' in pack_info:
+                    addon.behavior_pack_uuid = pack_info['behavior_pack_uuid']
+                if 'behavior_pack_version' in pack_info:
+                    addon.behavior_pack_version = pack_info['behavior_pack_version']
+                if 'resource_pack_uuid' in pack_info:
+                    addon.resource_pack_uuid = pack_info['resource_pack_uuid']
+                if 'resource_pack_version' in pack_info:
+                    addon.resource_pack_version = pack_info['resource_pack_version']
+
+            addon.add_installed_server(server.id)
+            addon.is_installed = True
+
+            if addon.type != 'worlds':
+                addon.enabled = True
+
+            db.session.commit()
+
+            return jsonify({
+                'message': f"{addon.type.capitalize()} installed successfully",
+                'details': result.get('results', {}),
+                'server_added': server.id in addon.get_installed_servers()
+            })
+        else:
+            error_message = result.get('error', result) if isinstance(result, dict) else result
+            return jsonify({'error': error_message}), 500
+
+    return jsonify({'error': 'This operation is not supported for the given server and addon type.'}), 400
         
 @main.route('/admin/fix-installed-addons', methods=['POST'])
 @jwt_required()
@@ -1499,45 +1550,54 @@ def fix_installed_addons():
 @jwt_required()
 def uninstall_addon(server_id, addon_id):
     current_user_id = get_jwt_identity()
-    
-    # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
         return jsonify({'error': 'Access denied'}), 403
-    
+
     addon = Addon.query.get_or_404(addon_id)
     server = Server.query.get_or_404(server_id)
-    
-    # Utwórz manager
-    bedrock_manager = get_bedrock_manager()
-    
-    # Odinstaluj addon
-    success, result = bedrock_manager.uninstall_addon(addon, server.name)
-    
-    if success:
-        # UŻYJ NOWYCH METOD do zarządzania installed_on_servers
-        addon.remove_installed_server(server.id)
+
+    # Handle agent-managed Java servers for plugins
+    if server.agent_id and server.type == 'java' and addon.type == 'plugin':
+        agent_client = _get_agent_client(server_id=server_id)
+        if not agent_client:
+            return jsonify({'error': 'Agent not available'}), 500
+
+        if not addon.download_url:
+            return jsonify({'error': 'Cannot determine plugin filename without download URL'}), 400
+
+        filename = addon.download_url.split('/')[-1]
+        success, result = agent_client.delete_plugin(server.name, filename)
         
-        # Jeśli nie zainstalowany na żadnym serwerze, zresetuj status
-        if not addon.get_installed_servers():
-            addon.is_installed = False
-            # Dla addonów (nie światów) - zresetuj informacje o packach
-            if addon.type != 'worlds':
-                addon.behavior_pack_uuid = None
-                addon.behavior_pack_version = None
-                addon.resource_pack_uuid = None
-                addon.resource_pack_version = None
-        
-        db.session.commit()
-        
-        # Zwróć odpowiedź w zależności od typu wyniku
-        if isinstance(result, dict) and 'message' in result:
-            return jsonify({'message': result['message']})
+        if success:
+            return jsonify({'message': f'Plugin {addon.name} uninstalled from agent.'})
         else:
-            return jsonify({'message': result})
-    else:
-        # Obsłuż błąd - result może być stringiem lub dict z polem 'error'
-        error_message = result.get('error', result) if isinstance(result, dict) else result
-        return jsonify({'error': error_message}), 500
+            return jsonify({'error': f'Agent error: {result}'}), 500
+
+    # Handle local Bedrock servers for addons/worlds
+    elif server.type == 'bedrock':
+        bedrock_manager = get_bedrock_manager()
+        success, result = bedrock_manager.uninstall_addon(addon, server.name)
+        
+        if success:
+            addon.remove_installed_server(server.id)
+            if not addon.get_installed_servers():
+                addon.is_installed = False
+                if addon.type != 'worlds':
+                    addon.behavior_pack_uuid = None
+                    addon.behavior_pack_version = None
+                    addon.resource_pack_uuid = None
+                    addon.resource_pack_version = None
+            db.session.commit()
+
+            if isinstance(result, dict) and 'message' in result:
+                return jsonify({'message': result['message']})
+            else:
+                return jsonify({'message': result})
+        else:
+            error_message = result.get('error', result) if isinstance(result, dict) else result
+            return jsonify({'error': error_message}), 500
+
+    return jsonify({'error': 'This operation is not supported for the given server and addon type.'}), 400
         
 @main.route('/servers/<int:server_id>/addons/<int:addon_id>/enable', methods=['POST'])
 @jwt_required()
