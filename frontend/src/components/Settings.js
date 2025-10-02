@@ -18,8 +18,18 @@ import {
   FiFolder,
   FiUser,
   FiDownload,
-  FiBox
+  FiBox,
+  FiEye,
+  FiEyeOff,
+  FiLock,
+  FiUnlock,
+  FiCode,
+  FiMessageSquare,
+  FiUsers,
+  FiMap,
+  FiLayers
 } from 'react-icons/fi';
+import { LuNetwork } from "react-icons/lu";
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { toast } from 'react-toastify';
@@ -84,6 +94,7 @@ const Tabs = styled.div`
   display: flex;
   margin-bottom: 15px;
   border-bottom: 1px solid #3a3f57;
+  flex-wrap: wrap;
 `;
 
 const Tab = styled.button`
@@ -95,6 +106,7 @@ const Tab = styled.button`
   font-size: 0.9rem;
   color: #a4aabc;
   border-bottom: 2px solid transparent;
+  white-space: nowrap;
   
   ${props => props.$active && `
     color: #3b82f6;
@@ -269,7 +281,7 @@ const Description = styled.p`
 
 const ErrorMessage = styled.div`
   background: #991b1b;
-  color: #ef4444;
+  color: #fecaca;
   padding: 15px;
   border-radius: 6px;
   margin-bottom: 20px;
@@ -372,6 +384,490 @@ function Settings() {
   const [worlds, setWorlds] = useState([]);
   const [loadingWorlds, setLoadingWorlds] = useState(false);
   const { t } = useLanguage();
+
+  // Lista wszystkich właściwości Java z pliku server(java).properties z oficjalnymi opisami
+  const javaPropertiesConfig = {
+    general: [
+      { 
+        key: 'server-name', 
+        label: 'Server Name', 
+        type: 'text', 
+        description: 'The name of your Minecraft server as shown in the server list' 
+      },
+      { 
+        key: 'motd', 
+        label: 'MOTD (Message of the Day)', 
+        type: 'textarea', 
+        description: 'Message shown when players connect to your server. Supports formatting codes with §' 
+      },
+      { 
+        key: 'max-players', 
+        label: 'Max Players', 
+        type: 'number', 
+        min: 1, 
+        max: 1000, 
+        description: 'Maximum number of players allowed on the server simultaneously' 
+      },
+      { 
+        key: 'server-port', 
+        label: 'Server Port', 
+        type: 'number', 
+        min: 1, 
+        max: 65535, 
+        description: 'The port the server will listen on (default: 25565)' 
+      },
+    ],
+    game: [
+      { 
+        key: 'gamemode', 
+        label: 'Default Game Mode', 
+        type: 'select', 
+        options: [
+          { value: 'survival', label: 'Survival' },
+          { value: 'creative', label: 'Creative' },
+          { value: 'adventure', label: 'Adventure' },
+          { value: 'spectator', label: 'Spectator' }
+        ], 
+        description: 'Default game mode for new players' 
+      },
+      { 
+        key: 'difficulty', 
+        label: 'Difficulty', 
+        type: 'select', 
+        options: [
+          { value: 'peaceful', label: 'Peaceful' },
+          { value: 'easy', label: 'Easy' },
+          { value: 'normal', label: 'Normal' },
+          { value: 'hard', label: 'Hard' }
+        ], 
+        description: 'Difficulty level of the server. Affects monster damage and other game mechanics' 
+      },
+      { 
+        key: 'hardcore', 
+        label: 'Hardcore Mode', 
+        type: 'checkbox', 
+        description: 'If true, players are set to spectator mode on death and cannot respawn' 
+      },
+      { 
+        key: 'pvp', 
+        label: 'PvP', 
+        type: 'checkbox', 
+        description: 'Allow player vs player combat. If false, players cannot damage each other' 
+      },
+      { 
+        key: 'force-gamemode', 
+        label: 'Force Game Mode', 
+        type: 'checkbox', 
+        description: 'Force players to join in the default game mode, overriding their previous mode' 
+      },
+    ],
+    world: [
+      { 
+        key: 'level-name', 
+        label: 'World Name', 
+        type: 'text', 
+        description: 'Name of the world folder. The server will look for this folder in the server directory' 
+      },
+      { 
+        key: 'level-seed', 
+        label: 'World Seed', 
+        type: 'text', 
+        description: 'Seed for world generation. Leave empty for random seed' 
+      },
+      { 
+        key: 'level-type', 
+        label: 'World Type', 
+        type: 'select', 
+        options: [
+          { value: 'default', label: 'Default' },
+          { value: 'flat', label: 'Flat' },
+          { value: 'largeBiomes', label: 'Large Biomes' },
+          { value: 'amplified', label: 'Amplified' },
+          { value: 'single_biome_surface', label: 'Single Biome' }
+        ], 
+        description: 'Type of world generation algorithm to use' 
+      },
+      { 
+        key: 'generate-structures', 
+        label: 'Generate Structures', 
+        type: 'checkbox', 
+        description: 'Generate structures like villages, strongholds, and temples' 
+      },
+      { 
+        key: 'allow-nether', 
+        label: 'Allow Nether', 
+        type: 'checkbox', 
+        description: 'Enable the Nether dimension. Players can build nether portals if true' 
+      },
+      { 
+        key: 'max-world-size', 
+        label: 'Max World Size', 
+        type: 'number', 
+        min: 1, 
+        max: 29999984, 
+        description: 'Maximum possible size of the world in blocks (radius from center)' 
+      },
+    ],
+    performance: [
+      { 
+        key: 'view-distance', 
+        label: 'View Distance', 
+        type: 'number', 
+        min: 3, 
+        max: 32, 
+        description: 'The number of chunks the server sends to clients. Higher values increase RAM usage' 
+      },
+      { 
+        key: 'simulation-distance', 
+        label: 'Simulation Distance', 
+        type: 'number', 
+        min: 3, 
+        max: 32, 
+        description: 'The number of chunks away from players the server updates entities and block ticks' 
+      },
+      { 
+        key: 'max-tick-time', 
+        label: 'Max Tick Time', 
+        type: 'number', 
+        min: 1000, 
+        max: 180000, 
+        description: 'Maximum time a single tick can take (ms) before server watchdog stops it' 
+      },
+      { 
+        key: 'network-compression-threshold', 
+        label: 'Network Compression Threshold', 
+        type: 'number', 
+        min: 0, 
+        max: 65535, 
+        description: 'Minimum size for network compression. 0 = disable, -1 = compress everything' 
+      },
+      { 
+        key: 'entity-broadcast-range-percentage', 
+        label: 'Entity Broadcast Range', 
+        type: 'number', 
+        min: 10, 
+        max: 1000, 
+        description: 'Percentage of view distance for entity updates. Lower values reduce network usage' 
+      },
+    ],
+    security: [
+      { 
+        key: 'online-mode', 
+        label: 'Online Mode', 
+        type: 'checkbox', 
+        description: 'Verify players with Mojang/Microsoft servers. Prevents cracked clients from joining' 
+      },
+      { 
+        key: 'enforce-whitelist', 
+        label: 'Enforce Whitelist', 
+        type: 'checkbox', 
+        description: 'Automatically whitelist players when a server operator adds them' 
+      },
+      { 
+        key: 'white-list', 
+        label: 'Whitelist Enabled', 
+        type: 'checkbox', 
+        description: 'Enable whitelist functionality. Only whitelisted players can join' 
+      },
+      { 
+        key: 'enable-command-block', 
+        label: 'Enable Command Blocks', 
+        type: 'checkbox', 
+        description: 'Allow command blocks to be used in the world' 
+      },
+      { 
+        key: 'spawn-protection', 
+        label: 'Spawn Protection', 
+        type: 'number', 
+        min: 0, 
+        max: 10000, 
+        description: 'Radius of spawn protection (0 to disable). Non-ops cannot build in this area' 
+      },
+      { 
+        key: 'op-permission-level', 
+        label: 'OP Permission Level', 
+        type: 'select', 
+        options: [
+          { value: '1', label: 'Level 1 - Basic commands' },
+          { value: '2', label: 'Level 2 - Moderate commands' },
+          { value: '3', label: 'Level 3 - Advanced commands' },
+          { value: '4', label: 'Level 4 - All commands' }
+        ], 
+        description: 'Permission level for server operators. Level 4 grants all commands including stop' 
+      },
+      { 
+        key: 'function-permission-level', 
+        label: 'Function Permission Level', 
+        type: 'select', 
+        options: [
+          { value: '1', label: 'Level 1' },
+          { value: '2', label: 'Level 2' },
+          { value: '3', label: 'Level 3' },
+          { value: '4', label: 'Level 4' }
+        ], 
+        description: 'Permission level required to use functions' 
+      },
+      { 
+        key: 'prevent-proxy-connections', 
+        label: 'Prevent Proxy Connections', 
+        type: 'checkbox', 
+        description: 'Prevent players from connecting through proxies/VPNs' 
+      },
+    ],
+    features: [
+      { 
+        key: 'allow-flight', 
+        label: 'Allow Flight', 
+        type: 'checkbox', 
+        description: 'Allow players to fly (may require client mods like Creative mode)' 
+      },
+      { 
+        key: 'spawn-animals', 
+        label: 'Spawn Animals', 
+        type: 'checkbox', 
+        description: 'Allow animals to spawn naturally' 
+      },
+      { 
+        key: 'spawn-monsters', 
+        label: 'Spawn Monsters', 
+        type: 'checkbox', 
+        description: 'Allow monsters to spawn naturally' 
+      },
+      { 
+        key: 'spawn-npcs', 
+        label: 'Spawn NPCs', 
+        type: 'checkbox', 
+        description: 'Allow NPCs (villagers) to spawn naturally' 
+      },
+      { 
+        key: 'enable-query', 
+        label: 'Enable Query', 
+        type: 'checkbox', 
+        description: 'Enable GameSpy4 query protocol. Allows server monitoring tools to get info' 
+      },
+      { 
+        key: 'enable-rcon', 
+        label: 'Enable RCON', 
+        type: 'checkbox', 
+        description: 'Enable Remote Console. Allows remote administration via RCON protocol' 
+      },
+      { 
+        key: 'enable-status', 
+        label: 'Enable Status', 
+        type: 'checkbox', 
+        description: 'Respond to status requests from clients. If false, server appears offline' 
+      },
+      { 
+        key: 'enable-jmx-monitoring', 
+        label: 'Enable JMX Monitoring', 
+        type: 'checkbox', 
+        description: 'Enable Java Management Extensions monitoring' 
+      },
+      { 
+        key: 'sync-chunk-writes', 
+        label: 'Sync Chunk Writes', 
+        type: 'checkbox', 
+        description: 'Synchronize chunk writes to disk. Disable for better performance but higher corruption risk' 
+      },
+      { 
+        key: 'use-native-transport', 
+        label: 'Use Native Transport', 
+        type: 'checkbox', 
+        description: 'Use native transport system for better performance on Linux' 
+      },
+    ],
+    network: [
+      { 
+        key: 'server-ip', 
+        label: 'Server IP', 
+        type: 'text', 
+        description: 'IP address to bind to. Leave empty to bind to all available addresses' 
+      },
+      { 
+        key: 'query.port', 
+        label: 'Query Port', 
+        type: 'number', 
+        min: 1, 
+        max: 65535, 
+        description: 'Port for query protocol (default: same as server-port)' 
+      },
+      { 
+        key: 'rcon.port', 
+        label: 'RCON Port', 
+        type: 'number', 
+        min: 1, 
+        max: 65535, 
+        description: 'Port for Remote Console (default: 25575)' 
+      },
+      { 
+        key: 'rate-limit', 
+        label: 'Rate Limit', 
+        type: 'number', 
+        min: 0, 
+        max: 1000, 
+        description: 'Maximum number of packets per second per client (0 = unlimited)' 
+      },
+    ],
+    chat: [
+      { 
+        key: 'text-filtering-config', 
+        label: 'Text Filtering Config', 
+        type: 'text', 
+        description: 'Configuration file for text filtering' 
+      },
+      { 
+        key: 'broadcast-console-to-ops', 
+        label: 'Broadcast Console to OPs', 
+        type: 'checkbox', 
+        description: 'Send console messages to all online operators' 
+      },
+      { 
+        key: 'broadcast-rcon-to-ops', 
+        label: 'Broadcast RCON to OPs', 
+        type: 'checkbox', 
+        description: 'Send RCON messages to all online operators' 
+      },
+      { 
+        key: 'log-ips', 
+        label: 'Log IP Addresses', 
+        type: 'checkbox', 
+        description: 'Log player IP addresses in server logs' 
+      },
+    ],
+    resourcepacks: [
+      { 
+        key: 'require-resource-pack', 
+        label: 'Require Resource Pack', 
+        type: 'checkbox', 
+        description: 'Force clients to use the server resource pack' 
+      },
+      { 
+        key: 'resource-pack', 
+        label: 'Resource Pack URL', 
+        type: 'text', 
+        description: 'URL to the resource pack file. Must be a direct download link' 
+      },
+      { 
+        key: 'resource-pack-prompt', 
+        label: 'Resource Pack Prompt', 
+        type: 'text', 
+        description: 'Custom message shown when requiring a resource pack' 
+      },
+      { 
+        key: 'resource-pack-sha1', 
+        label: 'Resource Pack SHA1', 
+        type: 'text', 
+        description: 'SHA1 hash of the resource pack for verification' 
+      },
+    ],
+    advanced: [
+      { 
+        key: 'max-chained-neighbor-updates', 
+        label: 'Max Chained Updates', 
+        type: 'number', 
+        min: 0, 
+        max: 1000000, 
+        description: 'Limit for chain of neighbor updates before skipping additional updates' 
+      },
+      { 
+        key: 'player-idle-timeout', 
+        label: 'Player Idle Timeout', 
+        type: 'number', 
+        min: 0, 
+        max: 1440, 
+        description: 'Minutes before idle players are kicked (0 = disabled)' 
+      },
+      { 
+        key: 'region-file-compression', 
+        label: 'Region File Compression', 
+        type: 'select', 
+        options: [
+          { value: 'deflate', label: 'Deflate' },
+          { value: 'gzip', label: 'Gzip' },
+          { value: 'none', label: 'None' }
+        ], 
+        description: 'Compression algorithm for region files' 
+      },
+      { 
+        key: 'pause-when-empty', 
+        label: 'Pause When Empty', 
+        type: 'checkbox', 
+        description: 'Pause the server when no players are online to reduce CPU usage' 
+      },
+      { 
+        key: 'hide-online-players', 
+        label: 'Hide Online Players', 
+        type: 'checkbox', 
+        description: 'Hide online player list from server status requests' 
+      },
+    ]
+  };
+
+  // Lista wszystkich właściwości Bedrock z pliku server(bedrock).properties
+  const bedrockPropertiesConfig = {
+    general: [
+      { key: 'server-name', label: 'Server Name', type: 'text', description: 'The name of your Minecraft server' },
+      { key: 'motd', label: 'MOTD (Message of the Day)', type: 'textarea', description: 'Message shown when players connect to your server' },
+      { key: 'max-players', label: 'Max Players', type: 'number', min: 1, max: 30, description: 'Maximum number of players that can play on the server' },
+      { key: 'server-port', label: 'Server Port (IPv4)', type: 'number', min: 1, max: 65535, description: 'Which IPv4 port the server should listen to' },
+      { key: 'server-portv6', label: 'Server Port (IPv6)', type: 'number', min: 1, max: 65535, description: 'Which IPv6 port the server should listen to' },
+    ],
+    game: [
+      { key: 'gamemode', label: 'Game Mode', type: 'select', options: [
+        { value: 'survival', label: 'Survival' },
+        { value: 'creative', label: 'Creative' },
+        { value: 'adventure', label: 'Adventure' }
+      ], description: 'Sets the game mode for new players' },
+      { key: 'difficulty', label: 'Difficulty', type: 'select', options: [
+        { value: 'peaceful', label: 'Peaceful' },
+        { value: 'easy', label: 'Easy' },
+        { value: 'normal', label: 'Normal' },
+        { value: 'hard', label: 'Hard' }
+      ], description: 'Sets the difficulty of the world' },
+      { key: 'allow-cheats', label: 'Allow Cheats', type: 'checkbox', description: 'If true then cheats like commands can be used' },
+      { key: 'force-gamemode', label: 'Force Game Mode', type: 'checkbox', description: 'Force the server gamemode on clients' },
+      { key: 'default-player-permission-level', label: 'Default Player Permission', type: 'select', options: [
+        { value: 'visitor', label: 'Visitor' },
+        { value: 'member', label: 'Member' },
+        { value: 'operator', label: 'Operator' }
+      ], description: 'Permission level for new players joining for the first time' },
+    ],
+    world: [
+      { key: 'level-name', label: 'World Name', type: 'text', description: 'Name of the world folder' },
+      { key: 'level-seed', label: 'Seed', type: 'text', description: 'Use to randomize the world' },
+      { key: 'level-type', label: 'World Type', type: 'select', options: [
+        { value: 'DEFAULT', label: 'Default' },
+        { value: 'FLAT', label: 'Flat' },
+        { value: 'largeBiomes', label: 'Large Biomes' }
+      ], description: 'Type of world generation' },
+      { key: 'spawn-protection', label: 'Spawn Protection', type: 'number', min: 0, max: 10000, description: 'Radius of spawn protection' },
+      { key: 'texturepack-required', label: 'Texture Pack Required', type: 'checkbox', description: 'Force clients to use texture packs in the current world' },
+    ],
+    performance: [
+      { key: 'view-distance', label: 'View Distance', type: 'number', min: 5, max: 96, description: 'The maximum allowed view distance in number of chunks' },
+      { key: 'tick-distance', label: 'Tick Distance', type: 'number', min: 4, max: 12, description: 'The world will be ticked this many chunks away from any player' },
+      { key: 'max-threads', label: 'Max Threads', type: 'number', min: 1, max: 32, description: 'Maximum number of threads the server will try to use' },
+      { key: 'compression-threshold', label: 'Compression Threshold', type: 'number', min: 0, max: 65535, description: 'Determines the smallest size of raw network payload to compress' },
+      { key: 'compression-algorithm', label: 'Compression Algorithm', type: 'select', options: [
+        { value: 'zlib', label: 'Zlib' },
+        { value: 'snappy', label: 'Snappy' }
+      ], description: 'Determines the compression algorithm to use for networking' },
+    ],
+    security: [
+      { key: 'online-mode', label: 'Online Mode', type: 'checkbox', description: 'If true then all connected players must be authenticated to Xbox Live' },
+      { key: 'allow-list', label: 'Allow List', type: 'checkbox', description: 'If true then all connected players must be listed in the separate allowlist.json file' },
+      { key: 'enable-lan-visibility', label: 'LAN Visibility', type: 'checkbox', description: 'Listen and respond to clients that are looking for servers on the LAN' },
+      { key: 'enable-command-block', label: 'Enable Command Block', type: 'checkbox', description: 'Enable command blocks on the server' },
+      { key: 'disable-custom-skins', label: 'Disable Custom Skins', type: 'checkbox', description: 'Disable players customized skins that were customized outside of the Minecraft store' },
+    ],
+    advanced: [
+      { key: 'player-idle-timeout', label: 'Player Idle Timeout', type: 'number', min: 0, max: 1440, description: 'After a player has idled for this many minutes they will be kicked' },
+      { key: 'content-log-file-enabled', label: 'Content Log File', type: 'checkbox', description: 'Enables logging content errors to a file' },
+      { key: 'server-authoritative-movement-strict', label: 'Strict Movement', type: 'checkbox', description: 'Set at true to be more strict toward the Player position' },
+      { key: 'server-authoritative-block-breaking-pick-range-scalar', label: 'Block Breaking Range', type: 'number', min: 1, max: 10, step: 0.1, description: 'Server authoritative block breaking pick range scalar' },
+      { key: 'client-side-chunk-generation-enabled', label: 'Client Side Chunk Generation', type: 'checkbox', description: 'If true, the server will inform clients that they have the ability to generate visual level chunks' },
+    ]
+  };
 
   useEffect(() => {
     checkPermissions();
@@ -542,88 +1038,88 @@ function Settings() {
     }
   };
 
-const updateWorldPacksFiles = async (worldName) => {
-  try {
-    const addonsResponse = await api.get(`/servers/${serverId}/installed-addons`);
-    const installedAddons = addonsResponse.data;
-
-    const serverAddons = installedAddons.filter(addon => 
-      addon.installed_on_servers && addon.installed_on_servers.includes(parseInt(serverId))
-    );
-
-    const newBehaviorPacks = serverAddons
-      .filter(addon => addon.behavior_pack_uuid && addon.enabled)
-      .map(addon => ({
-        pack_id: addon.behavior_pack_uuid,
-        version: addon.behavior_pack_version || [1, 0, 0]
-      }));
-
-    const newResourcePacks = serverAddons
-      .filter(addon => addon.resource_pack_uuid && addon.enabled)
-      .map(addon => ({
-        pack_id: addon.resource_pack_uuid,
-        version: addon.resource_pack_version || [1, 0, 0]
-      }));
-
+  const updateWorldPacksFiles = async (worldName) => {
     try {
-      const existingBehaviorPacksResponse = await api.get(`/servers/${serverId}/files/read?path=worlds/${worldName}/world_behavior_packs.json`);
-      const existingBehaviorPacks = JSON.parse(existingBehaviorPacksResponse.data.content);
-      
-      const mergedBehaviorPacks = [...existingBehaviorPacks];
-      newBehaviorPacks.forEach(newPack => {
-        if (!mergedBehaviorPacks.some(existingPack => existingPack.pack_id === newPack.pack_id)) {
-          mergedBehaviorPacks.push(newPack);
-        }
-      });
+      const addonsResponse = await api.get(`/servers/${serverId}/installed-addons`);
+      const installedAddons = addonsResponse.data;
 
-      await api.post(`/servers/${serverId}/files/write`, {
-        path: `worlds/${worldName}/world_behavior_packs.json`,
-        content: JSON.stringify(mergedBehaviorPacks, null, 2)
-      });
-    } catch (error) {
-      if (error.response?.status === 404 || error.response?.status === 500) {
+      const serverAddons = installedAddons.filter(addon => 
+        addon.installed_on_servers && addon.installed_on_servers.includes(parseInt(serverId))
+      );
+
+      const newBehaviorPacks = serverAddons
+        .filter(addon => addon.behavior_pack_uuid && addon.enabled)
+        .map(addon => ({
+          pack_id: addon.behavior_pack_uuid,
+          version: addon.behavior_pack_version || [1, 0, 0]
+        }));
+
+      const newResourcePacks = serverAddons
+        .filter(addon => addon.resource_pack_uuid && addon.enabled)
+        .map(addon => ({
+          pack_id: addon.resource_pack_uuid,
+          version: addon.resource_pack_version || [1, 0, 0]
+        }));
+
+      try {
+        const existingBehaviorPacksResponse = await api.get(`/servers/${serverId}/files/read?path=worlds/${worldName}/world_behavior_packs.json`);
+        const existingBehaviorPacks = JSON.parse(existingBehaviorPacksResponse.data.content);
+        
+        const mergedBehaviorPacks = [...existingBehaviorPacks];
+        newBehaviorPacks.forEach(newPack => {
+          if (!mergedBehaviorPacks.some(existingPack => existingPack.pack_id === newPack.pack_id)) {
+            mergedBehaviorPacks.push(newPack);
+          }
+        });
+
         await api.post(`/servers/${serverId}/files/write`, {
           path: `worlds/${worldName}/world_behavior_packs.json`,
-          content: JSON.stringify(newBehaviorPacks, null, 2)
+          content: JSON.stringify(mergedBehaviorPacks, null, 2)
         });
-      } else {
-        throw error;
-      }
-    }
-
-    try {
-      const existingResourcePacksResponse = await api.get(`/servers/${serverId}/files/read?path=worlds/${worldName}/world_resource_packs.json`);
-      const existingResourcePacks = JSON.parse(existingResourcePacksResponse.data.content);
-      
-      const mergedResourcePacks = [...existingResourcePacks];
-      newResourcePacks.forEach(newPack => {
-        if (!mergedResourcePacks.some(existingPack => existingPack.pack_id === newPack.pack_id)) {
-          mergedResourcePacks.push(newPack);
+      } catch (error) {
+        if (error.response?.status === 404 || error.response?.status === 500) {
+          await api.post(`/servers/${serverId}/files/write`, {
+            path: `worlds/${worldName}/world_behavior_packs.json`,
+            content: JSON.stringify(newBehaviorPacks, null, 2)
+          });
+        } else {
+          throw error;
         }
-      });
+      }
 
-      await api.post(`/servers/${serverId}/files/write`, {
-        path: `worlds/${worldName}/world_resource_packs.json`,
-        content: JSON.stringify(mergedResourcePacks, null, 2)
-      });
-    } catch (error) {
-      if (error.response?.status === 404 || error.response?.status === 500) {
+      try {
+        const existingResourcePacksResponse = await api.get(`/servers/${serverId}/files/read?path=worlds/${worldName}/world_resource_packs.json`);
+        const existingResourcePacks = JSON.parse(existingResourcePacksResponse.data.content);
+        
+        const mergedResourcePacks = [...existingResourcePacks];
+        newResourcePacks.forEach(newPack => {
+          if (!mergedResourcePacks.some(existingPack => existingPack.pack_id === newPack.pack_id)) {
+            mergedResourcePacks.push(newPack);
+          }
+        });
+
         await api.post(`/servers/${serverId}/files/write`, {
           path: `worlds/${worldName}/world_resource_packs.json`,
-          content: JSON.stringify(newResourcePacks, null, 2)
+          content: JSON.stringify(mergedResourcePacks, null, 2)
         });
-      } else {
-        throw error;
+      } catch (error) {
+        if (error.response?.status === 404 || error.response?.status === 500) {
+          await api.post(`/servers/${serverId}/files/write`, {
+            path: `worlds/${worldName}/world_resource_packs.json`,
+            content: JSON.stringify(newResourcePacks, null, 2)
+          });
+        } else {
+          throw error;
+        }
       }
+
+      showInfo(t('server.settings.worldPacksUpdated', { worldName }) || `World pack files updated for ${worldName}`);
+
+    } catch (error) {
+      console.error('Error updating world pack files:', error);
+      showError(t('server.settings.worldPacksError') || 'Could not update world pack files automatically');
     }
-
-    showInfo(t('server.settings.worldPacksUpdated', { worldName }) || `World pack files updated for ${worldName}`);
-
-  } catch (error) {
-    console.error('Error updating world pack files:', error);
-    showError(t('server.settings.worldPacksError') || 'Could not update world pack files automatically');
-  }
-};
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -642,8 +1138,229 @@ const updateWorldPacksFiles = async (worldName) => {
     }
   };
 
+  const renderPropertyField = (propertyConfig) => {
+    const value = properties[propertyConfig.key] || '';
+    
+    switch (propertyConfig.type) {
+      case 'text':
+        return (
+          <Input
+            type="text"
+            value={value}
+            onChange={(e) => handlePropertyChange(propertyConfig.key, e.target.value)}
+            placeholder={propertyConfig.placeholder || ''}
+          />
+        );
+      
+      case 'textarea':
+        return (
+          <TextArea
+            value={value}
+            onChange={(e) => handlePropertyChange(propertyConfig.key, e.target.value)}
+            placeholder={propertyConfig.placeholder || ''}
+            rows={3}
+          />
+        );
+      
+      case 'number':
+        return (
+          <Input
+            type="number"
+            value={value}
+            onChange={(e) => handlePropertyChange(propertyConfig.key, e.target.value)}
+            min={propertyConfig.min}
+            max={propertyConfig.max}
+            step={propertyConfig.step || 1}
+          />
+        );
+      
+      case 'checkbox':
+        return (
+          <CheckboxLabel>
+            <Checkbox
+              type="checkbox"
+              checked={value === 'true'}
+              onChange={(e) => handlePropertyChange(propertyConfig.key, e.target.checked ? 'true' : 'false')}
+            />
+            {propertyConfig.description}
+          </CheckboxLabel>
+        );
+      
+      case 'select':
+        return (
+          <Select
+            value={value}
+            onChange={(e) => handlePropertyChange(propertyConfig.key, e.target.value)}
+          >
+            {propertyConfig.options.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        );
+      
+      default:
+        return (
+          <Input
+            type="text"
+            value={value}
+            onChange={(e) => handlePropertyChange(propertyConfig.key, e.target.value)}
+          />
+        );
+    }
+  };
+
+  const renderPropertiesSection = (sectionKey, sectionTitle, icon) => {
+    const config = server?.type === 'java' ? javaPropertiesConfig : bedrockPropertiesConfig;
+    const sectionProperties = config[sectionKey] || [];
+    
+    if (sectionProperties.length === 0) return null;
+
+    return (
+      <Section>
+        <SectionTitle>
+          {icon} {sectionTitle}
+        </SectionTitle>
+        {sectionProperties.map(prop => (
+          <FormGroup key={prop.key}>
+            {prop.type !== 'checkbox' && (
+              <>
+                <Label>{prop.label}</Label>
+                {renderPropertyField(prop)}
+                {prop.description && (
+                  <Description>{prop.description}</Description>
+                )}
+              </>
+            )}
+            {prop.type === 'checkbox' && renderPropertyField(prop)}
+          </FormGroup>
+        ))}
+      </Section>
+    );
+  };
+
+  const renderTabContent = () => {
+    if (!server) return null;
+
+    const isJava = server.type === 'java';
+    const isBedrock = server.type === 'bedrock';
+
+    switch (activeTab) {
+      case 'general':
+        return renderPropertiesSection('general', 'General Settings', <FiServer />);
+      
+      case 'game':
+        return renderPropertiesSection('game', 'Game Settings', <FiUsers />);
+      
+      case 'world':
+        return renderPropertiesSection('world', 'World Settings', <FiMap />);
+      
+      case 'performance':
+        return renderPropertiesSection('performance', 'Performance Settings', <FiCpu />);
+      
+      case 'security':
+        return renderPropertiesSection('security', 'Security Settings', <FiShield />);
+      
+      case 'network':
+        return renderPropertiesSection('network', 'Network Settings', <LuNetwork />);
+      
+      case 'chat':
+        return renderPropertiesSection('chat', 'Chat Settings', <FiMessageSquare />);
+      
+      case 'resourcepacks':
+        return renderPropertiesSection('resourcepacks', 'Resource Pack Settings', <FiDownload />);
+      
+      case 'features':
+        return renderPropertiesSection('features', 'Server Features', <FiLayers />);
+      
+      case 'advanced':
+        return renderPropertiesSection('advanced', 'Advanced Settings', <FiCode />);
+
+      case 'bedrock-worlds':
+        if (!isBedrock) return null;
+        return (
+          <Section>
+            <SectionHeader>
+              <SectionTitle>
+                <FiGlobe /> Bedrock Worlds
+              </SectionTitle>
+              <RefreshButton onClick={fetchWorlds} disabled={loadingWorlds}>
+                <FiRefreshCw /> Refresh
+              </RefreshButton>
+            </SectionHeader>
+            
+            {loadingWorlds ? (
+              <div>Loading worlds...</div>
+            ) : worlds.length === 0 ? (
+              <div>
+                No Bedrock worlds found in the server directory.
+                <br />
+                Worlds will appear here once you create them in the server's main folder.
+              </div>
+            ) : (
+              <WorldList>
+                {worlds.map(world => (
+                  <WorldItem
+                    key={world.name}
+                    $active={world.name === (properties['level-name'] || 'Bedrock level')}
+                    onClick={() => handleWorldChange(world.name)}
+                  >
+                    <WorldName>{world.name}</WorldName>
+                    <WorldPath>/{world.path}</WorldPath>
+                    {world.name === (properties['level-name'] || 'Bedrock level') && (
+                      <div style={{ fontSize: '0.8rem', color: '#10b981', marginTop: '5px' }}>
+                        ✓ Active World
+                      </div>
+                    )}
+                  </WorldItem>
+                ))}
+              </WorldList>
+            )}
+            
+            <Description>
+              Select a world to make it active. The server will use this world when starting. 
+              Changing worlds will automatically update the world pack files with installed addons.
+            </Description>
+          </Section>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  const getTabs = () => {
+    if (server?.type === 'bedrock') {
+      // Dla Bedrock używamy prostszego zestawu zakładek
+      return [
+        { id: 'general', label: 'General', icon: <FiServer /> },
+        { id: 'game', label: 'Game', icon: <FiUsers /> },
+        { id: 'world', label: 'World', icon: <FiMap /> },
+        { id: 'bedrock-worlds', label: 'Bedrock Worlds', icon: <FiGlobe /> },
+        { id: 'performance', label: 'Performance', icon: <FiCpu /> },
+        { id: 'security', label: 'Security', icon: <FiShield /> },
+        { id: 'advanced', label: 'Advanced', icon: <FiCode /> },
+      ];
+    }
+
+    // Dla Java używamy pełnego zestawu zakładek
+    return [
+      { id: 'general', label: 'General', icon: <FiServer /> },
+      { id: 'game', label: 'Game', icon: <FiUsers /> },
+      { id: 'world', label: 'World', icon: <FiMap /> },
+      { id: 'performance', label: 'Performance', icon: <FiCpu /> },
+      { id: 'security', label: 'Security', icon: <FiShield /> },
+      { id: 'network', label: 'Network', icon: <LuNetwork /> },
+      { id: 'chat', label: 'Chat', icon: <FiMessageSquare /> },
+      { id: 'resourcepacks', label: 'Resource Packs', icon: <FiDownload /> },
+      { id: 'features', label: 'Features', icon: <FiLayers /> },
+      { id: 'advanced', label: 'Advanced', icon: <FiCode /> },
+    ];
+  };
+
   if (loading) {
-    return <Container>{t('common.loading') || 'Loading settings...'}</Container>;
+    return <Container>Loading settings...</Container>;
   }
 
   return (
@@ -695,477 +1412,36 @@ const updateWorldPacksFiles = async (worldName) => {
 
       <Header>
         <Title>
-          <FiSettings /> {t('page.server.settings') || 'Settings'} - {server?.name}
+          <FiSettings /> {t('page.server.settings') || 'Settings'} - {server?.name} ({server?.type?.toUpperCase()})
         </Title>
       </Header>
 
       <Tabs>
-        <Tab 
-          $active={activeTab === 'general'} 
-          onClick={() => setActiveTab('general')}
-        >
-          <FiServer /> {t('server.settings.general') || 'General'}
-        </Tab>
-        <Tab 
-          $active={activeTab === 'performance'} 
-          onClick={() => setActiveTab('performance')}
-        >
-          <FiCpu /> {t('server.settings.performance') || 'Performance'}
-        </Tab>
-        <Tab 
-          $active={activeTab === 'world'} 
-          onClick={() => setActiveTab('world')}
-        >
-          <FiHardDrive /> {t('server.settings.world') || 'World'}
-        </Tab>
-        {server?.type === 'bedrock' && (
-          <Tab 
-            $active={activeTab === 'bedrock-worlds'} 
-            onClick={() => setActiveTab('bedrock-worlds')}
+        {getTabs().map(tab => (
+          <Tab
+            key={tab.id}
+            $active={activeTab === tab.id}
+            onClick={() => setActiveTab(tab.id)}
           >
-            <FiGlobe /> {t('server.settings.bedrockWorlds') || 'Bedrock Worlds'}
+            {tab.icon} {tab.label}
           </Tab>
-        )}
-        <Tab 
-          $active={activeTab === 'security'} 
-          onClick={() => setActiveTab('security')}
-        >
-          <FiShield /> {t('server.settings.security') || 'Security'}
-        </Tab>
-        <Tab 
-          $active={activeTab === 'notifications'} 
-          onClick={() => setActiveTab('notifications')}
-        >
-          <FiBell /> {t('server.settings.notifications') || 'Notifications'}
-        </Tab>
+        ))}
       </Tabs>
 
       <Content>
-        {activeTab === 'general' && (
-          <>
-            <Section>
-              <SectionTitle>{t('server.settings.general') || 'General Settings'}</SectionTitle>
-              
-              <FormGroup>
-                <Label>{t('server.settings.serverName') || 'Server Name'}</Label>
-                <Input
-                  type="text"
-                  value={properties['server-name'] || ''}
-                  onChange={(e) => handlePropertyChange('server-name', e.target.value)}
-                  placeholder={t('server.settings.serverNamePlaceholder') || 'My Minecraft Server'}
-                />
-                <Description>{t('server.settings.serverNameDesc') || 'The name of your Minecraft server'}</Description>
-              </FormGroup>
-              
-              <FormGroup>
-                <Label>{t('server.settings.motd') || 'MOTD (Message of the Day)'}</Label>
-                <TextArea
-                  value={properties['motd'] || ''}
-                  onChange={(e) => handlePropertyChange('motd', e.target.value)}
-                  placeholder={t('server.settings.motdPlaceholder') || 'Welcome to our Minecraft server!'}
-                />
-                <Description>{t('server.settings.motdDesc') || 'Message shown when players connect to your server'}</Description>
-              </FormGroup>
-              
-              <TwoColumnGrid>
-                <FormGroup>
-                  <Label>{t('server.settings.maxPlayers') || 'Max Players'}</Label>
-                  <Input
-                    type="number"
-                    value={properties['max-players'] || ''}
-                    onChange={(e) => handlePropertyChange('max-players', e.target.value)}
-                    min="1"
-                    max="100"
-                  />
-                  <Description>{t('server.settings.maxPlayersDesc') || 'Maximum number of players allowed on the server'}</Description>
-                </FormGroup>
-                
-                <FormGroup>
-                  <Label>{t('server.settings.serverPort') || 'Server Port'}</Label>
-                  <Input
-                    type="number"
-                    value={properties['server-port'] || ''}
-                    onChange={(e) => handlePropertyChange('server-port', e.target.value)}
-                    min="1"
-                    max="65535"
-                  />
-                  <Description>{t('server.settings.serverPortDesc') || 'The port the server will listen on'}</Description>
-                </FormGroup>
-              </TwoColumnGrid>
-            </Section>
-            
-            <Section>
-              <SectionTitle>{t('server.settings.gameSettings') || 'Game Settings'}</SectionTitle>
-              
-              <TwoColumnGrid>
-                <FormGroup>
-                  <Label>{t('server.settings.gameMode') || 'Game Mode'}</Label>
-                  <Select
-                    value={properties['gamemode'] || 'survival'}
-                    onChange={(e) => handlePropertyChange('gamemode', e.target.value)}
-                  >
-                    <option value="survival">{t('server.settings.survival') || 'Survival'}</option>
-                    <option value="creative">{t('server.settings.creative') || 'Creative'}</option>
-                    <option value="adventure">{t('server.settings.adventure') || 'Adventure'}</option>
-                    <option value="spectator">{t('server.settings.spectator') || 'Spectator'}</option>
-                  </Select>
-                  <Description>{t('server.settings.gameModeDesc') || 'Default game mode for new players'}</Description>
-                </FormGroup>
-                
-                <FormGroup>
-                  <Label>{t('server.settings.difficulty') || 'Difficulty'}</Label>
-                  <Select
-                    value={properties['difficulty'] || 'easy'}
-                    onChange={(e) => handlePropertyChange('difficulty', e.target.value)}
-                  >
-                    <option value="peaceful">{t('server.settings.peaceful') || 'Peaceful'}</option>
-                    <option value="easy">{t('server.settings.easy') || 'Easy'}</option>
-                    <option value="normal">{t('server.settings.normal') || 'Normal'}</option>
-                    <option value="hard">{t('server.settings.hard') || 'Hard'}</option>
-                  </Select>
-                  <Description>{t('server.settings.difficultyDesc') || 'Difficulty level of the server'}</Description>
-                </FormGroup>
-              </TwoColumnGrid>
-              
-              {server?.type !== 'bedrock' && (
-                <FormGroup>
-                  <Label>{t('server.settings.worldType') || 'Default World Type'}</Label>
-                  <Select
-                    value={properties['level-type'] || 'default'}
-                    onChange={(e) => handlePropertyChange('level-type', e.target.value)}
-                  >
-                    <option value="default">{t('server.settings.default') || 'Default'}</option>
-                    <option value="flat">{t('server.settings.flat') || 'Flat'}</option>
-                    <option value="largeBiomes">{t('server.settings.largeBiomes') || 'Large Biomes'}</option>
-                    <option value="amplified">{t('server.settings.amplified') || 'Amplified'}</option>
-                    <option value="customized">{t('server.settings.customized') || 'Customized'}</option>
-                  </Select>
-                  <Description>{t('server.settings.worldTypeDesc') || 'Type of world generation'}</Description>
-                </FormGroup>
-              )}
-            </Section>
-          </>
-        )}
+        {renderTabContent()}
         
-        {activeTab === 'bedrock-worlds' && server?.type === 'bedrock' && (
-          <Section>
-            <SectionHeader>
-              <SectionTitle>
-                <FiGlobe /> {t('server.settings.bedrockWorlds') || 'Bedrock Worlds'}
-              </SectionTitle>
-              <RefreshButton onClick={fetchWorlds} disabled={loadingWorlds}>
-                <FiRefreshCw /> {t('common.refresh') || 'Refresh'}
-              </RefreshButton>
-            </SectionHeader>
-            
-            {loadingWorlds ? (
-              <div>{t('common.loading') || 'Loading worlds...'}</div>
-            ) : worlds.length === 0 ? (
-              <div>
-                {t('server.settings.noWorldsFound') || 'No Bedrock worlds found in the server directory.'}
-                <br />
-                {t('server.settings.worldsWillAppear') || 'Worlds will appear here once you create them in the server\'s main folder.'}
-              </div>
-            ) : (
-              <WorldList>
-                {worlds.map(world => (
-                  <WorldItem
-                    key={world.name}
-                    $active={world.name === (properties['level-name'] || 'Bedrock level')}
-                    onClick={() => handleWorldChange(world.name)}
-                  >
-                    <WorldName>{world.name}</WorldName>
-                    <WorldPath>/{world.path}</WorldPath>
-                    {world.name === (properties['level-name'] || 'Bedrock level') && (
-                      <div style={{ fontSize: '0.8rem', color: '#10b981', marginTop: '5px' }}>
-                        ✓ {t('server.settings.activeWorld') || 'Active World'}
-                      </div>
-                    )}
-                  </WorldItem>
-                ))}
-              </WorldList>
-            )}
-            
-            <Description>
-              {t('server.settings.worldsDescription') || 'Select a world to make it active. The server will use this world when starting. Changing worlds will automatically update the world pack files with installed addons.'}
-            </Description>
-          </Section>
-        )}
-        
-        {activeTab === 'world' && (
-          <>
-            <Section>
-              <SectionTitle>{t('server.settings.worldSettings') || 'World Settings'}</SectionTitle>
-              
-              <FormGroup>
-                <Label>{t('server.settings.worldName') || 'World Name'}</Label>
-                <Input
-                  type="text"
-                  value={properties['level-name'] || 'world'}
-                  onChange={(e) => handlePropertyChange('level-name', e.target.value)}
-                />
-                <Description>{t('server.settings.worldNameDesc') || 'Name of the world folder'}</Description>
-              </FormGroup>
-              
-              {server?.type !== 'bedrock' && (
-                <>
-                  <FormGroup>
-                    <Label>{t('server.settings.seed') || 'Seed'}</Label>
-                    <Input
-                      type="text"
-                      value={properties['level-seed'] || ''}
-                      onChange={(e) => handlePropertyChange('level-seed', e.target.value)}
-                      placeholder={t('server.settings.seedPlaceholder') || 'Leave empty for random'}
-                    />
-                    <Description>{t('server.settings.seedDesc') || 'Seed for world generation'}</Description>
-                  </FormGroup>
-                  
-                  <FormGroup>
-                    <Label>{t('server.settings.allowNether') || 'Allow Nether'}</Label>
-                    <CheckboxLabel>
-                      <Checkbox
-                        type="checkbox"
-                        checked={properties['allow-nether'] !== 'false'}
-                        onChange={(e) => handlePropertyChange('allow-nether', e.target.checked ? 'true' : 'false')}
-                      />
-                      {t('server.settings.allowNetherDesc') || 'Enable the Nether dimension'}
-                    </CheckboxLabel>
-                  </FormGroup>
-                  
-                  <FormGroup>
-                    <Label>{t('server.settings.generateStructures') || 'Generate Structures'}</Label>
-                    <CheckboxLabel>
-                      <Checkbox
-                        type="checkbox"
-                        checked={properties['generate-structures'] !== 'false'}
-                        onChange={(e) => handlePropertyChange('generate-structures', e.target.checked ? 'true' : 'false')}
-                      />
-                      {t('server.settings.generateStructuresDesc') || 'Generate villages, strongholds, etc.'}
-                    </CheckboxLabel>
-                  </FormGroup>
-                </>
-              )}
-            </Section>
-            
-            <Section>
-              <SectionTitle>{t('server.settings.worldManagement') || 'World Management'}</SectionTitle>
-              
-              <FormGroup>
-                <Label>{t('server.settings.spawnProtection') || 'Spawn Protection'}</Label>
-                <Input
-                  type="number"
-                  value={properties['spawn-protection'] || '16'}
-                  onChange={(e) => handlePropertyChange('spawn-protection', e.target.value)}
-                  min="0"
-                  max="10000"
-                />
-                <Description>{t('server.settings.spawnProtectionDesc') || 'Radius of spawn protection (0 to disable)'}</Description>
-              </FormGroup>
-              
-              <FormGroup>
-                <Label>{t('server.settings.allowFlight') || 'Allow Flight'}</Label>
-                <CheckboxLabel>
-                  <Checkbox
-                        type="checkbox"
-                        checked={properties['allow-flight'] === 'true'}
-                        onChange={(e) => handlePropertyChange('allow-flight', e.target.checked ? 'true' : 'false')}
-                      />
-                      {t('server.settings.allowFlightDesc') || 'Allow players to fly (may require client mods)'}
-                    </CheckboxLabel>
-                  </FormGroup>
-                </Section>
-              </>
-            )}
-            
-            {activeTab === 'performance' && (
-              <>
-                <Section>
-                  <SectionTitle>{t('server.settings.performanceSettings') || 'Performance Settings'}</SectionTitle>
-                  
-                  <TwoColumnGrid>
-                    <FormGroup>
-                      <Label>{t('server.settings.viewDistance') || 'View Distance'}</Label>
-                      <Input
-                        type="number"
-                        value={properties['view-distance'] || '10'}
-                        onChange={(e) => handlePropertyChange('view-distance', e.target.value)}
-                        min="3"
-                        max="32"
-                      />
-                      <Description>{t('server.settings.viewDistanceDesc') || 'How many chunks the server sends to clients (higher = more RAM usage)'}</Description>
-                    </FormGroup>
-                    
-                    <FormGroup>
-                      <Label>{t('server.settings.simulationDistance') || 'Simulation Distance'}</Label>
-                      <Input
-                        type="number"
-                        value={properties['simulation-distance'] || '10'}
-                        onChange={(e) => handlePropertyChange('simulation-distance', e.target.value)}
-                        min="3"
-                        max="32"
-                      />
-                      <Description>{t('server.settings.simulationDistanceDesc') || 'How many chunks away from players the server updates entities'}</Description>
-                    </FormGroup>
-                  </TwoColumnGrid>
-                  
-                  <FormGroup>
-                    <Label>{t('server.settings.maxWorldSize') || 'Max World Size'}</Label>
-                    <Input
-                      type="number"
-                      value={properties['max-world-size'] || '29999984'}
-                      onChange={(e) => handlePropertyChange('max-world-size', e.target.value)}
-                      min="1"
-                      max="29999984"
-                    />
-                    <Description>{t('server.settings.maxWorldSizeDesc') || 'Maximum possible size of the world (in blocks)'}</Description>
-                  </FormGroup>
-                </Section>
-                
-                <Section>
-                  <SectionTitle>{t('server.settings.resourceLimits') || 'Resource Limits'}</SectionTitle>
-                  
-                  <TwoColumnGrid>
-                    <FormGroup>
-                      <Label>{t('server.settings.maxBuildHeight') || 'Max Build Height'}</Label>
-                      <Input
-                        type="number"
-                        value={properties['max-build-height'] || '256'}
-                        onChange={(e) => handlePropertyChange('max-build-height', e.target.value)}
-                        min="64"
-                        max="2048"
-                      />
-                      <Description>{t('server.settings.maxBuildHeightDesc') || 'Maximum building height'}</Description>
-                    </FormGroup>
-                    
-                    <FormGroup>
-                      <Label>{t('server.settings.maxTickTime') || 'Max Tick Time'}</Label>
-                      <Input
-                        type="number"
-                        value={properties['max-tick-time'] || '60000'}
-                        onChange={(e) => handlePropertyChange('max-tick-time', e.target.value)}
-                        min="1000"
-                        max="180000"
-                      />
-                      <Description>{t('server.settings.maxTickTimeDesc') || 'Maximum time a single tick can take (ms) before server watchdog stops it'}</Description>
-                    </FormGroup>
-                  </TwoColumnGrid>
-                </Section>
-              </>
-            )}
-            
-            {activeTab === 'security' && (
-              <>
-                <Section>
-                  <SectionTitle>{t('server.settings.securitySettings') || 'Security Settings'}</SectionTitle>
-                  
-                  <FormGroup>
-                    <Label>{t('server.settings.onlineMode') || 'Online Mode'}</Label>
-                    <CheckboxLabel>
-                      <Checkbox
-                        type="checkbox"
-                        checked={properties['online-mode'] !== 'false'}
-                        onChange={(e) => handlePropertyChange('online-mode', e.target.checked ? 'true' : 'false')}
-                      />
-                      {t('server.settings.onlineModeDesc') || 'Verify players with Mojang/Microsoft servers (recommended)'}
-                    </CheckboxLabel>
-                  </FormGroup>
-                  
-                  <FormGroup>
-                    <Label>{t('server.settings.enforceWhitelist') || 'Enforce Whitelist'}</Label>
-                    <CheckboxLabel>
-                      <Checkbox
-                        type="checkbox"
-                        checked={properties['enforce-whitelist'] === 'true'}
-                        onChange={(e) => handlePropertyChange('enforce-whitelist', e.target.checked ? 'true' : 'false')}
-                      />
-                      {t('server.settings.enforceWhitelistDesc') || 'Only allow whitelisted players to join'}
-                    </CheckboxLabel>
-                  </FormGroup>
-                  
-                  <FormGroup>
-                    <Label>{t('server.settings.enableCommandBlock') || 'Enable Command Blocks'}</Label>
-                    <CheckboxLabel>
-                      <Checkbox
-                        type="checkbox"
-                        checked={properties['enable-command-block'] === 'true'}
-                        onChange={(e) => handlePropertyChange('enable-command-block', e.target.checked ? 'true' : 'false')}
-                      />
-                      {t('server.settings.enableCommandBlockDesc') || 'Allow command blocks to be used in the world'}
-                    </CheckboxLabel>
-                  </FormGroup>
-                </Section>
-                
-                <Section>
-                  <SectionTitle>{t('server.settings.playerProtection') || 'Player Protection'}</SectionTitle>
-                  
-                  <FormGroup>
-                    <Label>{t('server.settings.pvp') || 'PvP'}</Label>
-                    <CheckboxLabel>
-                      <Checkbox
-                        type="checkbox"
-                        checked={properties['pvp'] !== 'false'}
-                        onChange={(e) => handlePropertyChange('pvp', e.target.checked ? 'true' : 'false')}
-                      />
-                      {t('server.settings.pvpDesc') || 'Allow player vs player combat'}
-                    </CheckboxLabel>
-                  </FormGroup>
-                  
-                  <FormGroup>
-                    <Label>{t('server.settings.playerDamage') || 'Player Damage'}</Label>
-                    <CheckboxLabel>
-                      <Checkbox
-                        type="checkbox"
-                        checked={properties['player-damage'] !== 'false'}
-                        onChange={(e) => handlePropertyChange('player-damage', e.target.checked ? 'true' : 'false')}
-                      />
-                      {t('server.settings.playerDamageDesc') || 'Allow players to take damage'}
-                    </CheckboxLabel>
-                  </FormGroup>
-                </Section>
-              </>
-            )}
-            
-            {activeTab === 'notifications' && (
-              <Section>
-                <SectionTitle>{t('server.settings.notificationSettings') || 'Notification Settings'}</SectionTitle>
-                
-                <FormGroup>
-                  <Label>{t('server.settings.announceAchievements') || 'Announce Player Achievements'}</Label>
-                  <CheckboxLabel>
-                    <Checkbox
-                      type="checkbox"
-                      checked={properties['announce-player-achievements'] !== 'false'}
-                      onChange={(e) => handlePropertyChange('announce-player-achievements', e.target.checked ? 'true' : 'false')}
-                    />
-                    {t('server.settings.announceAchievementsDesc') || 'Announce when players earn achievements'}
-                  </CheckboxLabel>
-                </FormGroup>
-                
-                <FormGroup>
-                  <Label>{t('server.settings.logIPs') || 'Log IP Addresses'}</Label>
-                  <CheckboxLabel>
-                    <Checkbox
-                      type="checkbox"
-                      checked={properties['log-ips'] !== 'false'}
-                      onChange={(e) => handlePropertyChange('log-ips', e.target.checked ? 'true' : 'false')}
-                    />
-                    {t('server.settings.logIPsDesc') || 'Log player IP addresses in server logs'}
-                  </CheckboxLabel>
-                </FormGroup>
-              </Section>
-            )}
-            
-            <ButtonGroup>
-              <CancelButton onClick={() => navigate(`/servers/${serverId}`)}>
-                {t('common.cancel') || 'Cancel'}
-              </CancelButton>
-              <SaveButton onClick={handleSave} disabled={saving || !hasPermission}>
-                <FiSave /> {saving ? (t('common.saving') || 'Saving...') : (t('common.save') || 'Save Settings')}
-              </SaveButton>
-            </ButtonGroup>
-          </Content>
-        </Container>
-      );
-    }
-    
-    export default Settings;
+        <ButtonGroup>
+          <CancelButton onClick={() => navigate(`/servers/${serverId}`)}>
+            {t('common.cancel') || 'Cancel'}
+          </CancelButton>
+          <SaveButton onClick={handleSave} disabled={saving || !hasPermission}>
+            <FiSave /> {saving ? (t('common.saving') || 'Saving...') : (t('common.save') || 'Save Settings')}
+          </SaveButton>
+        </ButtonGroup>
+      </Content>
+    </Container>
+  );
+}
+
+export default Settings;

@@ -38,7 +38,9 @@ api.interceptors.request.use((config) => {
   }
   
   // Dodaj nagłówki dla CORS
-  config.headers['Content-Type'] = 'application/json';
+  if (!(config.data instanceof FormData)) {
+    config.headers['Content-Type'] = 'application/json';
+  }
   config.headers['Accept'] = 'application/json';
   
   return config;

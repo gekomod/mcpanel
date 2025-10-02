@@ -87,8 +87,43 @@ class ServerManager:
         elif implementation == 'fabric':
             # Fabric używa specjalnego instalatora
             return self._get_fabric_installer_url(version)
+            
+        elif implementation == 'forge':
+            return self._get_forge_installer_url(version)
+        elif implementation == 'neoforge':
+            return self._get_neoforge_installer_url(version)
     
         return None
+        
+    def _get_forge_installer_url(self, version):
+        """Pobierz URL instalatora Forge"""
+        try:
+            # Uproszczone pobieranie Forge - w praktyce może wymagać parsowania strony
+            # lub użycia alternatywnego API
+            forge_versions = {
+                '1.20.1': '47.2.0',
+                '1.19.4': '45.2.0',
+                '1.18.2': '40.2.0'
+            }
+            forge_version = forge_versions.get(version, forge_versions['1.20.1'])
+            return f"https://maven.minecraftforge.net/net/minecraftforge/forge/{version}-{forge_version}/forge-{version}-{forge_version}-installer.jar"
+        except Exception as e:
+            print(f"Error getting Forge URL: {e}")
+            return None
+            
+    def _get_neoforge_installer_url(self, version):
+        """Pobierz URL instalatora NeoForge"""
+        try:
+            # NeoForge - przykładowe URL (może wymagać aktualizacji)
+            neoforge_versions = {
+                '1.20.1': '20.4.0',
+                '1.19.4': '20.3.0'
+            }
+            neoforge_version = neoforge_versions.get(version, neoforge_versions['1.20.1'])
+            return f"https://maven.neoforged.net/net/neoforged/neoforge/{version}-{neoforge_version}/neoforge-{version}-{neoforge_version}-installer.jar"
+        except Exception as e:
+            print(f"Error getting NeoForge URL: {e}")
+            return None
     
     def _get_fabric_installer_url(self, version):
         """Pobierz URL instalatora Fabric"""
@@ -643,6 +678,12 @@ class ServerManager:
                                 jar_filename = f"paper-{server.version}.jar"
                             elif server.implementation == 'purpur':
                                 jar_filename = f"purpur-{server.version}.jar"
+                            elif server.implementation in ['forge', 'neoforge']:
+                                success = self._install_forge_server(server_path, server.version, server.implementation, server_id)
+                                if not success:
+                                    self._update_progress(server_id, 'error', 0, f'Błąd instalacji {server.implementation}')
+                                    return
+                                jar_filename = "server.jar"
                             else:  # vanilla
                                 jar_filename = f"server_{server.version}.jar"
                         
@@ -752,6 +793,69 @@ class ServerManager:
         with self.lock:
             if server_id in self.download_threads:
                 del self.download_threads[server_id]
+                
+    def _install_forge_server(self, server_path, version, implementation, server_id):
+        """Instalacja serwera Forge/NeoForge"""
+        try:
+            self._update_progress(server_id, f'installing_{implementation}', 50, f'Instalowanie {implementation} server...')
+        
+            # Pobierz instalator
+            if implementation == 'forge':
+                installer_url = self._get_forge_installer_url(version)
+                installer_name = 'forge-installer.jar'
+            else:  # neoforge
+                installer_url = self._get_neoforge_installer_url(version)
+                installer_name = 'neoforge-installer.jar'
+            
+            installer_path = os.path.join(server_path, installer_name)
+        
+            success = self._download_file_with_progress(installer_url, installer_path, server_id)
+            if not success:
+                return False
+        
+            # Uruchom instalator
+            self._update_progress(server_id, f'installing_{implementation}', 80, f'Uruchamianie instalatora {implementation}...')
+        
+            install_cmd = ['java', '-jar', installer_name, '--installServer']
+            process = subprocess.Popen(
+                install_cmd,
+                cwd=server_path,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True
+            )
+        
+            # Poczekaj na zakończenie instalacji
+            timeout = 180  # 3 minuty timeout dla Forge/NeoForge
+            start_time = time.time()
+        
+            while process.poll() is None:
+                if time.time() - start_time > timeout:
+                    process.kill()
+                    return False
+                time.sleep(1)
+        
+            # Sprawdź czy instalacja się powiodła
+            if implementation == 'forge':
+                forge_files = [f for f in os.listdir(server_path) 
+                             if f.startswith('forge-') and f.endswith('.jar') and 'installer' not in f]
+                if not forge_files:
+                    return False
+            else:  # neoforge
+                neoforge_files = [f for f in os.listdir(server_path) 
+                                if f.startswith('neoforge-') and f.endswith('.jar') and 'installer' not in f]
+                if not neoforge_files:
+                    return False
+        
+            # Usuń instalator
+            if os.path.exists(installer_path):
+                os.remove(installer_path)
+            
+            return True
+        
+        except Exception as e:
+            print(f"{implementation} installation error: {e}")
+            return False
 
     def start_server(self, server, bedrock_url=None):
         """Start the server - returns immediately, actual work happens in thread"""
