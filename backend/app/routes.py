@@ -10,6 +10,11 @@ import os
 import requests
 import shutil
 import logging
+from threading import Thread
+import threading
+import time
+import uuid
+import zipfile
 
 # Configure logging
 logging.basicConfig(
@@ -19,6 +24,8 @@ logging.basicConfig(
 logger = logging.getLogger('MCPanelRoutes')
 
 main = Blueprint('main', __name__)
+
+installation_progress = {}
 
 def get_bedrock_manager():
     from flask import current_app
@@ -146,6 +153,31 @@ class AgentClient:
             else:
                 error_msg = f"Agent error {response.status_code}: {response.text}"
                 return False, error_msg
+        except requests.exceptions.RequestException as e:
+            return False, f"Connection error: {str(e)}"
+
+    def list_plugins(self, server_name):
+        """Listuje pluginy na agencie."""
+        return self._make_request('GET', f'/server/{server_name}/plugins')
+
+    def install_plugin(self, server_name, plugin_url):
+        """Instaluje plugin na agencie."""
+        return self._make_request('POST', f'/server/{server_name}/plugins/install', json={'url': plugin_url})
+
+    def delete_plugin(self, server_name, filename):
+        """Usuwa plugin na agencie."""
+        return self._make_request('POST', f'/server/{server_name}/plugins/delete', json={'filename': filename})
+
+    def upload_plugin(self, server_name, file):
+        """Wysyła plik pluginu na agenta."""
+        files = {'file': (file.filename, file.stream, file.mimetype)}
+        try:
+            url = f"{self.base_url}/server/{server_name}/plugins/upload"
+            response = requests.post(url, headers={'Authorization': self.headers['Authorization']}, files=files, timeout=120)
+            if response.status_code == 200:
+                return True, response.json()
+            else:
+                return False, f"Agent error {response.status_code}: {response.text}"
         except requests.exceptions.RequestException as e:
             return False, f"Connection error: {str(e)}"
 
@@ -1354,76 +1386,102 @@ def update_addon(addon_id):
 @jwt_required()
 def get_installed_addons(server_id):
     current_user_id = get_jwt_identity()
-    
-    # Check permissions
+    server = Server.query.get_or_404(server_id)
+
     if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
         return jsonify({'error': 'Access denied'}), 403
-    
-    # Pobierz zainstalowane addony dla tego serwera
-    installed_addons = Addon.query.filter_by(is_installed=True).all()
+
+    # Handle agent-managed Java servers
+    if server.agent_id and server.type == 'java':
+        agent_client = _get_agent_client(server_id=server_id)
+        if not agent_client:
+            return jsonify({'error': 'Agent not available'}), 500
+
+        success, plugins_list = agent_client.list_plugins(server.name)
+        if not success:
+            return jsonify({'error': f'Agent error: {plugins_list}'}), 500
+
+        installed_plugin_files = [p['name'] for p in plugins_list]
+        all_plugins = Addon.query.filter_by(type='plugin').all()
+        installed_addons = []
+        for plugin in all_plugins:
+            if plugin.download_url and plugin.download_url.split('/')[-1] in installed_plugin_files:
+                installed_addons.append(plugin)
+        return jsonify([addon.to_dict() for addon in installed_addons])
+
+    # Handle local Java servers
+    if not server.agent_id and server.type == 'java':
+        # Placeholder for local Java plugin management
+        return jsonify([])
+
+    # Fallback to existing logic for Bedrock servers
+    installed_addons = Addon.query.filter(Addon.installed_on_servers.any(id=server_id)).all()
     return jsonify([addon.to_dict() for addon in installed_addons])
 
-# Dodaj endpoint do instalacji/odinstalowania addona
 @main.route('/servers/<int:server_id>/addons/<int:addon_id>/install', methods=['POST'])
 @jwt_required()
 def install_addon(server_id, addon_id):
     current_user_id = get_jwt_identity()
-    
-    # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
         return jsonify({'error': 'Access denied'}), 403
-    
+
     addon = Addon.query.get_or_404(addon_id)
     server = Server.query.get_or_404(server_id)
-    
-    # Tylko dla serwerów Bedrock
-    if server.type != 'bedrock':
-        return jsonify({'error': 'Addons can only be installed on Bedrock servers'}), 400
-    
-    # Sprawdź kompatybilność wersji
-    if addon.minecraft_version != server.version:
-        return jsonify({'error': f'Addon is for Minecraft {addon.minecraft_version}, server is running {server.version}'}), 400
-    
-    # Utwórz manager
-    bedrock_manager = get_bedrock_manager()
-    
-    # Instaluj addon
-    success, result = bedrock_manager.install_addon(addon, server.name)
-    
-    if success:
-        print(f"Install result: {result}")
+
+    # Handle agent-managed Java servers for plugins
+    if server.agent_id and server.type == 'java' and addon.type == 'plugin':
+        agent_client = _get_agent_client(server_id=server_id)
+        if not agent_client:
+            return jsonify({'error': 'Agent not available'}), 500
         
-        # Dla addonów (nie światów) - zapisz informacje o packach
-        if addon.type != 'worlds' and 'pack_info' in result:
-            pack_info = result['pack_info']
-            if 'behavior_pack_uuid' in pack_info:
-                addon.behavior_pack_uuid = pack_info['behavior_pack_uuid']
-            if 'behavior_pack_version' in pack_info:
-                addon.behavior_pack_version = pack_info['behavior_pack_version']
-            if 'resource_pack_uuid' in pack_info:
-                addon.resource_pack_uuid = pack_info['resource_pack_uuid']
-            if 'resource_pack_version' in pack_info:
-                addon.resource_pack_version = pack_info['resource_pack_version']
+        if not addon.download_url:
+            return jsonify({'error': 'Plugin has no download URL'}), 400
+
+        success, result = agent_client.install_plugin(server.name, addon.download_url)
         
-        # UŻYJ NOWYCH METOD do zarządzania installed_on_servers
-        addon.add_installed_server(server.id)
-        addon.is_installed = True
-        
-        # Dla światów nie ustawiamy enabled (światy nie mają stanu enabled/disabled)
-        if addon.type != 'worlds':
-            addon.enabled = True
-        
-        db.session.commit()
-        
-        return jsonify({
-            'message': f"{addon.type.capitalize()} installed successfully",
-            'details': result.get('results', {}),
-            'server_added': server.id in addon.get_installed_servers()
-        })
-    else:
-        # Obsłuż błąd - result może być stringiem lub dict z polem 'error'
-        error_message = result.get('error', result) if isinstance(result, dict) else result
-        return jsonify({'error': error_message}), 500
+        if success:
+            return jsonify({'message': f'Plugin {addon.name} installation initiated on agent.'})
+        else:
+            return jsonify({'error': f'Agent error: {result}'}), 500
+
+    # Handle local Bedrock servers for addons/worlds
+    elif server.type == 'bedrock':
+        if addon.minecraft_version != server.version:
+            return jsonify({'error': f'Addon is for Minecraft {addon.minecraft_version}, server is running {server.version}'}), 400
+
+        bedrock_manager = get_bedrock_manager()
+        success, result = bedrock_manager.install_addon(addon, server.name)
+
+        if success:
+            if addon.type != 'worlds' and 'pack_info' in result:
+                pack_info = result['pack_info']
+                if 'behavior_pack_uuid' in pack_info:
+                    addon.behavior_pack_uuid = pack_info['behavior_pack_uuid']
+                if 'behavior_pack_version' in pack_info:
+                    addon.behavior_pack_version = pack_info['behavior_pack_version']
+                if 'resource_pack_uuid' in pack_info:
+                    addon.resource_pack_uuid = pack_info['resource_pack_uuid']
+                if 'resource_pack_version' in pack_info:
+                    addon.resource_pack_version = pack_info['resource_pack_version']
+
+            addon.add_installed_server(server.id)
+            addon.is_installed = True
+
+            if addon.type != 'worlds':
+                addon.enabled = True
+
+            db.session.commit()
+
+            return jsonify({
+                'message': f"{addon.type.capitalize()} installed successfully",
+                'details': result.get('results', {}),
+                'server_added': server.id in addon.get_installed_servers()
+            })
+        else:
+            error_message = result.get('error', result) if isinstance(result, dict) else result
+            return jsonify({'error': error_message}), 500
+
+    return jsonify({'error': 'This operation is not supported for the given server and addon type.'}), 400
         
 @main.route('/admin/fix-installed-addons', methods=['POST'])
 @jwt_required()
@@ -1499,45 +1557,54 @@ def fix_installed_addons():
 @jwt_required()
 def uninstall_addon(server_id, addon_id):
     current_user_id = get_jwt_identity()
-    
-    # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
         return jsonify({'error': 'Access denied'}), 403
-    
+
     addon = Addon.query.get_or_404(addon_id)
     server = Server.query.get_or_404(server_id)
-    
-    # Utwórz manager
-    bedrock_manager = get_bedrock_manager()
-    
-    # Odinstaluj addon
-    success, result = bedrock_manager.uninstall_addon(addon, server.name)
-    
-    if success:
-        # UŻYJ NOWYCH METOD do zarządzania installed_on_servers
-        addon.remove_installed_server(server.id)
+
+    # Handle agent-managed Java servers for plugins
+    if server.agent_id and server.type == 'java' and addon.type == 'plugin':
+        agent_client = _get_agent_client(server_id=server_id)
+        if not agent_client:
+            return jsonify({'error': 'Agent not available'}), 500
+
+        if not addon.download_url:
+            return jsonify({'error': 'Cannot determine plugin filename without download URL'}), 400
+
+        filename = addon.download_url.split('/')[-1]
+        success, result = agent_client.delete_plugin(server.name, filename)
         
-        # Jeśli nie zainstalowany na żadnym serwerze, zresetuj status
-        if not addon.get_installed_servers():
-            addon.is_installed = False
-            # Dla addonów (nie światów) - zresetuj informacje o packach
-            if addon.type != 'worlds':
-                addon.behavior_pack_uuid = None
-                addon.behavior_pack_version = None
-                addon.resource_pack_uuid = None
-                addon.resource_pack_version = None
-        
-        db.session.commit()
-        
-        # Zwróć odpowiedź w zależności od typu wyniku
-        if isinstance(result, dict) and 'message' in result:
-            return jsonify({'message': result['message']})
+        if success:
+            return jsonify({'message': f'Plugin {addon.name} uninstalled from agent.'})
         else:
-            return jsonify({'message': result})
-    else:
-        # Obsłuż błąd - result może być stringiem lub dict z polem 'error'
-        error_message = result.get('error', result) if isinstance(result, dict) else result
-        return jsonify({'error': error_message}), 500
+            return jsonify({'error': f'Agent error: {result}'}), 500
+
+    # Handle local Bedrock servers for addons/worlds
+    elif server.type == 'bedrock':
+        bedrock_manager = get_bedrock_manager()
+        success, result = bedrock_manager.uninstall_addon(addon, server.name)
+        
+        if success:
+            addon.remove_installed_server(server.id)
+            if not addon.get_installed_servers():
+                addon.is_installed = False
+                if addon.type != 'worlds':
+                    addon.behavior_pack_uuid = None
+                    addon.behavior_pack_version = None
+                    addon.resource_pack_uuid = None
+                    addon.resource_pack_version = None
+            db.session.commit()
+
+            if isinstance(result, dict) and 'message' in result:
+                return jsonify({'message': result['message']})
+            else:
+                return jsonify({'message': result})
+        else:
+            error_message = result.get('error', result) if isinstance(result, dict) else result
+            return jsonify({'error': error_message}), 500
+
+    return jsonify({'error': 'This operation is not supported for the given server and addon type.'}), 400
         
 @main.route('/servers/<int:server_id>/addons/<int:addon_id>/enable', methods=['POST'])
 @jwt_required()
@@ -3146,6 +3213,715 @@ def test_agent_connection(agent_id):
             'message': f'Failed to connect to agent: {str(e)}'
         }), 400
 
+@main.route('/servers/<int:server_id>/modpacks', methods=['GET'])
+@jwt_required()
+def get_available_modpacks(server_id):
+    """Pobiera modpacki z lokalnego katalogu servers/modpacks/"""
+    current_user_id = get_jwt_identity()
+    
+    if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    return jsonify(_get_local_modpacks())
+
+def _get_local_modpacks():
+    """Zwraca modpacki z lokalnego katalogu"""
+    import os
+    import glob
+    
+    # Ścieżka do katalogu z modpackami
+    modpacks_dir = os.path.join(current_app.config['SERVER_BASE_PATH'], '..', 'modpacks')
+    modpacks_dir = os.path.abspath(modpacks_dir)
+    
+    print(f"📁 Looking for modpacks in: {modpacks_dir}")
+    
+    # Utwórz katalog jeśli nie istnieje
+    os.makedirs(modpacks_dir, exist_ok=True)
+    
+    modpacks = []
+    
+    # Szukaj plików .zip i .mrpack
+    zip_files = glob.glob(os.path.join(modpacks_dir, "*.zip"))
+    mrpack_files = glob.glob(os.path.join(modpacks_dir, "*.mrpack"))
+    
+    all_files = zip_files + mrpack_files
+    print(f"📦 Found {len(all_files)} modpack files")
+    
+    for file_path in all_files:
+        try:
+            filename = os.path.basename(file_path)
+            file_size = os.path.getsize(file_path)
+            file_size_mb = file_size / 1024 / 1024
+            
+            # Wyodrębnij nazwę modpacka z nazwy pliku
+            name = os.path.splitext(filename)[0]
+            name = name.replace('_', ' ').replace('-', ' ').title()
+            
+            # Spróbuj wykryć wersję Minecrafta z nazwy
+            minecraft_version = '1.20.1'  # domyślna
+            if '1.20' in filename:
+                minecraft_version = '1.20.1'
+            elif '1.19' in filename:
+                minecraft_version = '1.19.2'
+            elif '1.18' in filename:
+                minecraft_version = '1.18.2'
+            elif '1.17' in filename:
+                minecraft_version = '1.17.1'
+            elif '1.16' in filename:
+                minecraft_version = '1.16.5'
+            elif '1.15' in filename:
+                minecraft_version = '1.15.2'
+            elif '1.14' in filename:
+                minecraft_version = '1.14.4'
+            elif '1.13' in filename:
+                minecraft_version = '1.13.2'
+            elif '1.12' in filename:
+                minecraft_version = '1.12.2'
+            
+            # Wykryj loader
+            loader = 'forge'  # domyślny
+            if 'fabric' in filename.lower():
+                loader = 'fabric'
+            elif 'quilt' in filename.lower():
+                loader = 'quilt'
+            elif 'forge' in filename.lower():
+                loader = 'forge'
+            
+            modpack_data = {
+                'id': filename,
+                'name': name,
+                'description': f'Local modpack: {filename}',
+                'versions': ['1.0'],
+                'minecraft': minecraft_version,
+                'loader': loader,
+                'author': 'Local',
+                'modCount': 0,
+                'fileSize': f"{file_size_mb:.1f} MB",
+                'downloadUrl': f"/servers/modpacks/download/{filename}",
+                'filename': filename,  # ← WAŻNE: to pole musi być!
+                'filePath': file_path,
+                'installed': False,
+                'source': 'local'
+            }
+            
+            # Dla debugowania - wypisz dane modpacka
+            print(f"✅ Local modpack: {modpack_data}")
+            
+            modpacks.append(modpack_data)
+            
+        except Exception as e:
+            print(f"❌ Error processing {file_path}: {e}")
+            continue
+    
+    # Jeśli nie ma lokalnych modpacków, pokaż przykładowe
+    if not modpacks:
+        modpacks = _get_sample_modpacks_info()
+    
+    return modpacks
+
+def _get_sample_modpacks_info():
+    """Przykładowe informacje jak dodać modpacki"""
+    return [
+        {
+            'id': 'sample-info',
+            'name': 'How to Add Modpacks',
+            'description': 'Place .zip or .mrpack files in servers/modpacks/ directory',
+            'versions': ['1.0'],
+            'minecraft': '1.20.1',
+            'loader': 'forge',
+            'author': 'System',
+            'modCount': 0,
+            'fileSize': '0 MB',
+            'downloadUrl': '',
+            'filename': 'README.txt',
+            'installed': False,
+            'source': 'info'
+        }
+    ]
+
+@main.route('/servers/modpacks/download/<filename>', methods=['GET'])
+@jwt_required()
+def download_local_modpack(filename):
+    """Pobiera lokalny modpack"""
+    try:
+        import os
+        from flask import send_file
+        
+        # Bezpieczna ścieżka - zapobiegaj directory traversal
+        safe_filename = os.path.basename(filename)
+        modpacks_dir = os.path.join(current_app.config['SERVER_BASE_PATH'], '..', 'modpacks')
+        modpacks_dir = os.path.abspath(modpacks_dir)
+        file_path = os.path.join(modpacks_dir, safe_filename)
+        
+        print(f"📥 Download request: {safe_filename}")
+        print(f"📁 File path: {file_path}")
+        
+        # Sprawdź czy plik istnieje
+        if not os.path.exists(file_path):
+            return jsonify({'error': 'Modpack file not found'}), 404
+        
+        # Sprawdź czy jest w katalogu modpacks
+        if not file_path.startswith(modpacks_dir):
+            return jsonify({'error': 'Invalid file path'}), 403
+        
+        return send_file(
+            file_path,
+            as_attachment=True,
+            download_name=safe_filename,
+            mimetype='application/zip'
+        )
+        
+    except Exception as e:
+        print(f"❌ Download error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+def _detect_mod_loader(game_versions):
+    """Detect mod loader from game versions"""
+    versions = [v.lower() for v in game_versions]
+    if any('fabric' in v for v in versions):
+        return 'fabric'
+    elif any('forge' in v for v in versions):
+        return 'forge'
+    elif any('quilt' in v for v in versions):
+        return 'quilt'
+    elif any('neoforge' in v for v in versions):
+        return 'neoforge'
+    return 'forge'
+
+@main.route('/servers/<int:server_id>/modpacks/install', methods=['POST'])
+@jwt_required()
+def install_modpack(server_id):
+    current_user_id = get_jwt_identity()
+    server = Server.query.get_or_404(server_id)
+    
+    if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    if server.status == 'running':
+        return jsonify({'error': 'Server must be stopped to install modpack'}), 400
+    
+    data = request.get_json()
+    modpack_name = data.get('name')
+    download_url = data.get('downloadUrl')
+    filename = data.get('filename')
+    source = data.get('source', 'local')
+    
+    if not modpack_name:
+        return jsonify({'error': 'Modpack name is required'}), 400
+    
+    # Generate installation ID
+    installation_id = str(uuid.uuid4())
+    
+    # Store installation info
+    installation_info = {
+        'server_id': server_id,
+        'modpack_name': modpack_name,
+        'download_url': download_url,
+        'filename': filename,
+        'source': source,
+        'status': 'running',
+        'progress': 0,
+        'message': 'Starting installation...',
+        'started_at': datetime.utcnow().isoformat()
+    }
+    
+    # Store in global dict
+    if not hasattr(current_app, 'modpack_installations'):
+        current_app.modpack_installations = {}
+    current_app.modpack_installations[installation_id] = installation_info
+    
+    # Start async installation
+    thread = Thread(target=_async_install_modpack, args=(current_app._get_current_object(), installation_id, installation_info))
+    thread.daemon = True
+    thread.start()
+    
+    return jsonify({
+        'installation_id': installation_id,
+        'message': 'Modpack installation started',
+        'status': 'running'
+    })
+
+def _async_install_modpack(app, installation_id, installation_info):
+    """Async function to install modpack with application context - ADD files instead of replacing"""
+    with app.app_context():
+        try:
+            server_id = installation_info['server_id']
+            modpack_name = installation_info['modpack_name']
+            download_url = installation_info['download_url']
+            filename = installation_info['filename']
+            source = installation_info['source']
+            
+            server = Server.query.get(server_id)
+            if not server:
+                installation_info['status'] = 'error'
+                installation_info['message'] = 'Server not found'
+                return
+            
+            server_path = server_manager.get_server_path(server.name)
+            
+            # Update progress
+            installation_info['progress'] = 10
+            installation_info['message'] = 'Preparing installation...'
+            
+            # Stop server if running
+            if server.status == 'running':
+                installation_info['message'] = 'Stopping server...'
+                server_manager.stop_server(server_id)
+                time.sleep(5)
+            
+            # Download modpack
+            installation_info['progress'] = 20
+            installation_info['message'] = 'Downloading modpack...'
+            
+            modpack_path = None
+            if source == 'local' and filename:
+                # Use local modpack file
+                modpacks_dir = current_app.config.get('MODPACKS_PATH', os.path.join(current_app.config['SERVER_BASE_PATH'], '..', 'data', 'modpacks'))
+                modpack_path = os.path.join(modpacks_dir, filename)
+                
+                if not os.path.exists(modpack_path):
+                    installation_info['status'] = 'error'
+                    installation_info['message'] = f'Modpack file not found: {filename}'
+                    return
+            elif download_url:
+                # Download modpack
+                try:
+                    modpacks_dir = current_app.config.get('MODPACKS_PATH', os.path.join(current_app.config['SERVER_BASE_PATH'], '..', 'data', 'modpacks'))
+                    os.makedirs(modpacks_dir, exist_ok=True)
+                    
+                    # Generate filename if not provided
+                    if not filename:
+                        filename = f"modpack_{installation_id}.zip"
+                    
+                    modpack_path = os.path.join(modpacks_dir, filename)
+                    
+                    # Download file
+                    response = requests.get(download_url, stream=True)
+                    response.raise_for_status()
+                    
+                    total_size = int(response.headers.get('content-length', 0))
+                    downloaded_size = 0
+                    
+                    with open(modpack_path, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+                                downloaded_size += len(chunk)
+                                
+                                # Update progress
+                                if total_size > 0:
+                                    progress = 20 + (downloaded_size / total_size) * 50
+                                    installation_info['progress'] = min(progress, 70)
+                                    installation_info['message'] = f'Downloading: {downloaded_size/(1024*1024):.1f}MB / {total_size/(1024*1024):.1f}MB'
+                    
+                except Exception as e:
+                    installation_info['status'] = 'error'
+                    installation_info['message'] = f'Download failed: {str(e)}'
+                    return
+            else:
+                installation_info['status'] = 'error'
+                installation_info['message'] = 'No download URL or filename provided'
+                return
+            
+            # Extract modpack - ADD files instead of replacing
+            installation_info['progress'] = 70
+            installation_info['message'] = 'Extracting modpack files...'
+            
+            try:
+                with zipfile.ZipFile(modpack_path, 'r') as zip_ref:
+                    # Get list of all files in zip
+                    file_list = zip_ref.namelist()
+                    
+                    # Extract files one by one to handle conflicts
+                    extracted_count = 0
+                    total_files = len(file_list)
+                    
+                    for i, file_name in enumerate(file_list):
+                        # Skip directory entries
+                        if file_name.endswith('/'):
+                            continue
+                            
+                        # Calculate target path
+                        target_path = os.path.join(server_path, file_name)
+                        
+                        # Create directory if needed
+                        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                        
+                        # Extract file
+                        with zip_ref.open(file_name) as source_file:
+                            with open(target_path, 'wb') as target_file:
+                                target_file.write(source_file.read())
+                        
+                        extracted_count += 1
+                        
+                        # Update progress
+                        if i % 10 == 0:  # Update every 10 files to avoid too many updates
+                            progress = 70 + (i / total_files) * 25
+                            installation_info['progress'] = min(progress, 95)
+                            installation_info['message'] = f'Extracted {i}/{total_files} files...'
+                
+                installation_info['progress'] = 95
+                installation_info['message'] = f'Modpack extracted successfully ({extracted_count} files)'
+                
+            except Exception as e:
+                installation_info['status'] = 'error'
+                installation_info['message'] = f'Extraction failed: {str(e)}'
+                return
+            
+            # Update server properties with modpack info
+            installation_info['progress'] = 100
+            installation_info['message'] = 'Finalizing installation...'
+            
+            try:
+                properties = server_manager.get_server_properties(server.name) or {}
+                properties['modpack-name'] = modpack_name
+                properties['modpack-installed'] = 'true'
+                properties['modpack-install-date'] = datetime.utcnow().isoformat()
+                
+                # If this is a Forge modpack, update server type
+                if 'forge' in modpack_name.lower():
+                    properties['modpack-loader'] = 'forge'
+                elif 'fabric' in modpack_name.lower():
+                    properties['modpack-loader'] = 'fabric'
+                
+                server_manager.update_server_properties(server.name, properties)
+                
+                # Also update the server implementation if needed
+                if server.implementation == 'vanilla' and ('forge' in modpack_name.lower() or 'fabric' in modpack_name.lower()):
+                    server.implementation = 'modded'
+                    db.session.commit()
+                    
+            except Exception as e:
+                logger.warning(f"Could not update server properties: {e}")
+            
+            # Mark installation as complete
+            installation_info['status'] = 'completed'
+            installation_info['message'] = f'Modpack {modpack_name} installed successfully - files added to server'
+            installation_info['completed_at'] = datetime.utcnow().isoformat()
+            
+            logger.info(f"Modpack {modpack_name} installed successfully on server {server.name} - {extracted_count} files added")
+            
+        except Exception as e:
+            installation_info['status'] = 'error'
+            installation_info['message'] = f'Installation failed: {str(e)}'
+            logger.error(f"Modpack installation error: {e}")
+            import traceback
+            traceback.print_exc()
+
+@main.route('/servers/<int:server_id>/modpacks/install/progress/<installation_id>', methods=['GET'])
+@jwt_required()
+def get_modpack_installation_progress(server_id, installation_id):
+    current_user_id = get_jwt_identity()
+    
+    if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    if not hasattr(current_app, 'modpack_installations'):
+        return jsonify({'error': 'No installations found'}), 404
+    
+    installation_info = current_app.modpack_installations.get(installation_id)
+    if not installation_info:
+        return jsonify({'error': 'Installation not found'}), 404
+    
+    return jsonify({
+        'installation_id': installation_id,
+        'status': installation_info.get('status', 'unknown'),
+        'progress': installation_info.get('progress', 0),
+        'message': installation_info.get('message', ''),
+        'modpack_name': installation_info.get('modpack_name'),
+        'started_at': installation_info.get('started_at')
+    })
+
+def _install_from_local_file(server, modpack_path, modpack_name, modpack_filename):
+    """Instaluje modpack z lokalnego pliku"""
+    import zipfile
+    import os
+    import shutil
+    
+    # Sprawdź czy to ZIP
+    try:
+        with zipfile.ZipFile(modpack_path, 'r') as test_zip:
+            file_list = test_zip.namelist()
+            print(f"📦 ZIP contains {len(file_list)} files")
+    except zipfile.BadZipFile:
+        return jsonify({'error': 'File is not a valid ZIP archive'}), 400
+    
+    # Przygotuj ścieżkę serwera
+    server_path = server_manager.get_server_path(server.name)
+    print(f"📂 Server path: {server_path}")
+    
+    # Utwórz backup
+    if os.path.exists(server_path) and any(f for f in os.listdir(server_path) if not f.startswith('.')):
+        backup_path = f"{server_path}_backup_{int(datetime.utcnow().timestamp())}"
+        shutil.copytree(server_path, backup_path)
+        print(f"💾 Backup created: {backup_path}")
+    
+    # Wyczyść katalog serwera (zachowaj backups)
+    if os.path.exists(server_path):
+        for item in os.listdir(server_path):
+            if item == 'backups': 
+                continue
+            item_path = os.path.join(server_path, item)
+            if os.path.isfile(item_path):
+                os.unlink(item_path)
+            elif os.path.isdir(item_path):
+                shutil.rmtree(item_path)
+    
+    # Wypakuj modpack
+    extracted_count = 0
+    with zipfile.ZipFile(modpack_path, 'r') as zip_ref:
+        # Sprawdź strukturę archiwum
+        file_list = zip_ref.namelist()
+        
+        # Sprawdź czy ma jeden główny katalog
+        root_dirs = [f for f in file_list if f.count('/') == 1 and f.endswith('/')]
+        
+        if root_dirs and len(root_dirs) == 1:
+            # Wypakuj zawartość głównego katalogu (bez katalogu głównego)
+            root_dir = root_dirs[0]
+            
+            for file in file_list:
+                if file.startswith(root_dir) and not file.endswith('/'):
+                    relative_path = file[len(root_dir):]
+                    if relative_path:
+                        full_path = os.path.join(server_path, relative_path)
+                        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                        
+                        with zip_ref.open(file) as source, open(full_path, 'wb') as target:
+                            target.write(source.read())
+                        extracted_count += 1
+            
+            print(f"✅ Extracted {extracted_count} files from {root_dir}")
+        else:
+            # Wypakuj bezpośrednio
+            zip_ref.extractall(server_path)
+            extracted_count = len([f for f in file_list if not f.endswith('/')])
+            print(f"✅ Extracted {extracted_count} files directly")
+    
+    # Zaktualizuj properties serwera
+    properties = server_manager.get_server_properties(server.name) or {}
+    properties['modpack-name'] = modpack_name
+    properties['modpack-filename'] = modpack_filename
+    properties['modpack-source'] = 'local'
+    
+    server_manager.update_server_properties(server.name, properties)
+    
+    print(f"🎉 Successfully installed: {modpack_name}")
+    
+    return jsonify({
+        'message': f'Modpack {modpack_name} installed successfully!',
+        'files_extracted': extracted_count,
+        'source': 'local'
+    })
+
+@main.route('/servers/modpacks/upload', methods=['POST'])
+@jwt_required()
+def upload_modpack():
+    """Uploaduje nowy modpack do katalogu lokalnego"""
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    if user.role != 'admin':
+        return jsonify({'error': 'Only admins can upload modpacks'}), 403
+    
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+        
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        # Sprawdź rozszerzenie
+        if not (file.filename.endswith('.zip') or file.filename.endswith('.mrpack')):
+            return jsonify({'error': 'Only .zip and .mrpack files are allowed'}), 400
+        
+        # Utwórz katalog modpacks
+        modpacks_dir = os.path.join(current_app.config['SERVER_BASE_PATH'], '..', 'modpacks')
+        os.makedirs(modpacks_dir, exist_ok=True)
+        
+        # Zapisz plik
+        file_path = os.path.join(modpacks_dir, file.filename)
+        file.save(file_path)
+        
+        print(f"✅ Uploaded modpack: {file.filename}")
+        
+        return jsonify({
+            'message': f'Modpack {file.filename} uploaded successfully!',
+            'filename': file.filename,
+            'size': f"{os.path.getsize(file_path) / 1024 / 1024:.2f} MB"
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/servers/modpacks/list', methods=['GET'])
+@jwt_required()
+def list_local_modpacks():
+    """Listuje wszystkie lokalne modpacki"""
+    try:
+        import os
+        import glob
+        
+        modpacks_dir = os.path.join(current_app.config['SERVER_BASE_PATH'], '..', 'modpacks')
+        os.makedirs(modpacks_dir, exist_ok=True)
+        
+        zip_files = glob.glob(os.path.join(modpacks_dir, "*.zip"))
+        mrpack_files = glob.glob(os.path.join(modpacks_dir, "*.mrpack"))
+        
+        modpacks = []
+        for file_path in zip_files + mrpack_files:
+            filename = os.path.basename(file_path)
+            file_size = os.path.getsize(file_path)
+            
+            modpacks.append({
+                'filename': filename,
+                'size': file_size,
+                'size_mb': f"{file_size / 1024 / 1024:.2f} MB",
+                'modified': os.path.getmtime(file_path)
+            })
+        
+        return jsonify({'modpacks': modpacks})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/servers/<int:server_id>/modpacks/custom', methods=['POST'])
+@jwt_required()
+def create_custom_modpack(server_id):
+    """Tworzy custom modpack z listy modów"""
+    current_user_id = get_jwt_identity()
+    
+    if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    data = request.get_json()
+    modpack_name = data.get('name')
+    mods_list = data.get('mods', [])
+    minecraft_version = data.get('minecraft_version', '1.20.1')
+    loader = data.get('loader', 'fabric')
+    
+    try:
+        server = Server.query.get_or_404(server_id)
+        
+        if server.status == 'running':
+            return jsonify({'error': 'Server must be stopped'}), 400
+        
+        # Stwórz podstawową strukturę serwera
+        server_path = server_manager.get_server_path(server.name)
+        
+        # Pobierz server.jar dla danej wersji
+        success = _download_server_jar(server_path, minecraft_version, loader)
+        
+        if success:
+            # Zaktualizuj properties
+            properties = server_manager.get_server_properties(server.name) or {}
+            properties['modpack-name'] = modpack_name
+            properties['minecraft-version'] = minecraft_version
+            properties['modpack-loader'] = loader
+            properties['modpack-custom'] = 'true'
+            
+            server_manager.update_server_properties(server.name, properties)
+            
+            return jsonify({
+                'message': f'Custom modpack {modpack_name} created!',
+                'minecraft_version': minecraft_version,
+                'loader': loader
+            })
+        else:
+            return jsonify({'error': 'Failed to create modpack'}), 500
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+def _download_server_jar(server_path, minecraft_version, loader):
+    """Pobiera server.jar dla danej wersji"""
+    try:
+        import requests
+        
+        if loader == 'fabric':
+            # Fabric installer
+            url = f"https://maven.fabricmc.net/net/fabricmc/fabric-installer/0.11.2/fabric-installer-0.11.2.jar"
+        elif loader == 'forge':
+            # Forge installer  
+            url = f"https://files.minecraftforge.net/net/minecraftforge/forge/{minecraft_version}-latest/forge-{minecraft_version}-latest-installer.jar"
+        else:
+            # Vanilla
+            url = f"https://piston-data.mojang.com/v1/objects/8f3112a1049751cc472ec13e397eade5336ca7ae/server.jar"
+        
+        response = requests.get(url, stream=True, timeout=60)
+        
+        if response.status_code == 200:
+            jar_path = os.path.join(server_path, 'server.jar')
+            with open(jar_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            return True
+        
+        return False
+        
+    except Exception as e:
+        print(f"Error downloading server jar: {e}")
+        return False
+
+def _auto_detect_modpack_properties(server_path, properties):
+    """Automatycznie wykrywa właściwości modpacka"""
+    if not os.path.exists(server_path):
+        return
+    
+    # Wykryj loader
+    for file in os.listdir(server_path):
+        if file.endswith('.jar'):
+            file_lower = file.lower()
+            if 'fabric' in file_lower:
+                properties['modpack-loader'] = 'fabric'
+            elif 'forge' in file_lower:
+                properties['modpack-loader'] = 'forge'
+            elif 'quilt' in file_lower:
+                properties['modpack-loader'] = 'quilt'
+            elif 'neoforge' in file_lower:
+                properties['modpack-loader'] = 'neoforge'
+            
+            # Wykryj wersję Minecrafta
+            for mc_ver in ['1.20', '1.19', '1.18', '1.17', '1.16', '1.15', '1.14', '1.13', '1.12']:
+                if mc_ver in file:
+                    properties['minecraft-version'] = mc_ver
+                    break
+
+@main.route('/servers/<int:server_id>/modpacks/current', methods=['GET'])
+@jwt_required()
+def get_current_modpack(server_id):
+    """Pobiera informacje o aktualnie zainstalowanym modpacku"""
+    current_user_id = get_jwt_identity()
+    
+    if not _check_permission(current_user_id, server_id, 'view'):
+        return jsonify({'error': 'Access denied'}), 403
+    
+    server = Server.query.get_or_404(server_id)
+    
+    try:
+        properties = server_manager.get_server_properties(server.name)
+        if not properties:
+            return jsonify({'modpack': None})
+        
+        modpack_name = properties.get('modpack-name')
+        modpack_version = properties.get('modpack-version')
+        
+        if not modpack_name:
+            return jsonify({'modpack': None})
+        
+        return jsonify({
+            'modpack': {
+                'name': modpack_name,
+                'version': modpack_version,
+                'minecraft-version': properties.get('minecraft-version'),
+                'modpack-loader': properties.get('modpack-loader'),
+                'description': properties.get('modpack-description', '')
+            }
+        })
+    except Exception as e:
+        print(f"Error getting current modpack: {e}")
+        return jsonify({'modpack': None})
 
 def _check_permission(user_id, server_id, permission):
     user = User.query.get(user_id)

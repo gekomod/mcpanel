@@ -671,48 +671,48 @@ function FileEditor() {
     }
   };
 
-	const handleFileUpload = async (event) => {
-	  const file = event.target.files[0];
-	  if (!file) return;
+const handleFileUpload = async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
 
-	  try {
-		setLoading(true);
-		const formData = new FormData();
-		
-		// POPRAWIONE: Prawidłowe dodanie pliku z nazwą
-		formData.append('file', file, file.name);
-		
-		// Dodaj ścieżkę jako form field
-		if (currentPath) {
-		  formData.append('path', currentPath);
-		}
+  try {
+    setLoading(true);
+    const formData = new FormData();
+    
+    // POPRAWIONE: Prawidłowe dodanie pliku z nazwą
+    formData.append('file', file, file.name);
+    
+    // Dodaj ścieżkę jako form field
+    if (currentPath) {
+      formData.append('path', currentPath);
+    }
 
-		console.log('Uploading file:', file.name, 'Size:', file.size, 'Type:', file.type);
-		console.log('Upload to path:', currentPath);
-		
-		// Debug: sprawdź zawartość FormData
-		for (let [key, value] of formData.entries()) {
-		  console.log('FormData:', key, value);
-		}
+    console.log('Uploading file:', file.name, 'Size:', file.size, 'Type:', file.type);
+    console.log('Upload to path:', currentPath);
+    
+    // Debug: sprawdź zawartość FormData
+    for (let [key, value] of formData.entries()) {
+      console.log('FormData:', key, value);
+    }
 
-		const response = await api.post(`/servers/${serverId}/files/upload`, formData, {
-		  headers: {
-		    'Content-Type': 'multipart/form-data'
-		  },
-		  timeout: 60000
-		});
-		
-		showSuccess(t('files.uploadSuccess'));
-		loadFiles(currentPath);
-	  } catch (error) {
-		console.error('Error uploading file:', error);
-		const errorMsg = error.response?.data?.error || `Failed to upload file: ${error.message}`;
-		showError(errorMsg);
-	  } finally {
-		setLoading(false);
-		event.target.value = ''; // Reset input
-	  }
-	};
+    const response = await api.post(`/servers/${serverId}/files/upload`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      },
+      timeout: 60000
+    });
+    
+    showSuccess(t('files.uploadSuccess'));
+    loadFiles(currentPath);
+  } catch (error) {
+    console.error('Error uploading file:', error);
+    const errorMsg = error.response?.data?.error || `Failed to upload file: ${error.message}`;
+    showError(errorMsg);
+  } finally {
+    setLoading(false);
+    event.target.value = ''; // Reset input
+  }
+};
 
   const navigateUp = () => {
     if (currentPath === '') {

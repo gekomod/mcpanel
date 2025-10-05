@@ -1745,7 +1745,7 @@ const startInstallationPolling = () => {
       </ContentLayout>
 
       <Footer>
-        © 2024 Minecraft Server Panel | {t('app.version') || 'Wersja'} 1.0.0
+        © 2025 Minecraft Server Panel | {t('app.version') || 'Wersja'} 1.1.0
       </Footer>
     </Container>
   );

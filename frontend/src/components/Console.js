@@ -300,8 +300,8 @@ const fetchOutput = async () => {
       response = await api.get(`/servers/${serverId}/logs`);
     }
     
-    if (response.data && response.data.output) {
-      let logContent = response.data.output;
+    if (response.data && response.data.logs) {
+      let logContent = response.data.logs;
       
       // Dla serwerów Java - usuń kod ANSI z logów
       if (!isBedrock) {

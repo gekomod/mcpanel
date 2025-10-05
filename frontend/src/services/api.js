@@ -27,7 +27,7 @@ console.log('API Base URL:', API_BASE_URL);
 const api = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true, // WAŻNE dla CORS
-  timeout: 15000,
+  timeout: 300000,
 });
 
 // Add token to requests

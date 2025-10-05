@@ -37,8 +37,8 @@ export const translations = {
     'nav.account': 'Moje konto',
     'nav.plugins': 'Pluginy',
     'nav.backups': 'Backup Manager',
-    'nav.agents': 'Agenci',
     'nav.logout': 'Wyloguj',
+    'nav.agents': 'Agenci',
     
     // Kategorie menu
     'menu.main': 'GŁÓWNE',
@@ -65,6 +65,7 @@ export const translations = {
     'page.server.users': 'Użytkownicy Serwera',
     'page.plugins': 'Pluginy',
     'page.backups': 'Backup Manager',
+    'page.agents': 'Agenci (Serwery)',
     
     // Dashboard
     'dashboard.title': 'Panel Sterowania',
@@ -839,13 +840,113 @@ export const translations = {
 	'support.contact.message': 'Wiadomość',
 	'support.contact.messagePlaceholder': 'Opisz swój problem lub pytanie...',
 	'support.contact.sendButton': 'Wyślij wiadomość',
-	
-	'plugin.manager.file.exists': 'File exists',
+
+'server.settings.title': 'Ustawienia Serwera',
+'server.settings.loading': 'Ładowanie ustawień...',
+'server.settings.saving': 'Zapisywanie...',
+'server.settings.save': 'Zapisz Ustawienia',
+'server.settings.cancel': 'Anuluj',
+'server.settings.savedSuccess': 'Ustawienia zapisane pomyślnie!',
+'server.settings.errorLoadServer': 'Błąd ładowania informacji o serwerze',
+'server.settings.errorLoadProperties': 'Błąd ładowania właściwości serwera',
+'server.settings.errorSave': 'Błąd zapisywania ustawień',
+'server.settings.noPermission': 'Nie masz uprawnień do edycji ustawień serwera',
+'server.settings.noSettingsAvailable': 'Brak ustawień dostępnych dla tej kategorii',
+'server.settings.availableWorlds': 'Dostępne Światy',
+'server.settings.refresh': 'Odśwież',
+'server.settings.noWorldsFound': 'Nie znaleziono światów. Kliknij odśwież, aby przeskanować.',
+'server.settings.general': 'Ogólne',
+'server.settings.game': 'Gra',
+'server.settings.world': 'Świat',
+'server.settings.performance': 'Wydajność',
+'server.settings.security': 'Bezpieczeństwo',
+'server.settings.features': 'Funkcje',
+'server.settings.network': 'Sieć',
+'server.settings.chat': 'Czat',
+'server.settings.resourcePacks': 'Paczki Zasobów',
+'server.settings.advanced': 'Zaawansowane',
+// Ustawienia serwera - dodatkowe
+'server.settings.worlds': 'Światy',
+'server.settings.modpacks': 'Modpakiety',
+'server.settings.network': 'Sieć',
+'server.settings.chat': 'Czat',
+'server.settings.features': 'Funkcje',
+
+// Modpakiety
+'server.settings.modpack.install': 'Zainstaluj modpack',
+'server.settings.modpack.update': 'Aktualizuj modpack',
+'server.settings.modpack.remove': 'Usuń modpack',
+'server.settings.modpack.installed': 'Zainstalowany',
+'server.settings.modpack.installing': 'Instalowanie...',
+'server.settings.modpack.downloading': 'Pobieranie...',
+'server.settings.modpack.search': 'Szukaj modpacków...',
+'server.settings.modpack.filterLoader': 'Filtr loadera',
+'server.settings.modpack.filterVersion': 'Filtr wersji',
+'server.settings.modpack.allLoaders': 'Wszystkie loadery',
+'server.settings.modpack.allVersions': 'Wszystkie wersje',
+'server.settings.modpack.currentlyInstalled': 'Aktualnie zainstalowany modpack',
+'server.settings.modpack.installSuccess': 'Modpack {name} zainstalowany pomyślnie!',
+'server.settings.modpack.installError': 'Błąd instalacji modpacka {name}',
+'server.settings.modpack.updateSuccess': 'Modpack {name} zaktualizowany pomyślnie!',
+'server.settings.modpack.updateError': 'Błąd aktualizacji modpacka {name}',
+'server.settings.modpack.removeSuccess': 'Modpack {name} usunięty pomyślnie!',
+'server.settings.modpack.removeError': 'Błąd usuwania modpacka {name}',
+'server.settings.modpack.serverMustBeStopped': 'Serwer musi być zatrzymany aby instalować/aktualizować/usuwać modpakiety',
+'server.settings.modpack.backupWarning': 'Zawsze twórz kopię zapasową świata przed instalacją modpacków',
+
+// Statusy modpacków
+'server.settings.modpack.status.installed': 'Zainstalowany',
+'server.settings.modpack.status.downloading': 'Pobieranie',
+'server.settings.modpack.status.installing': 'Instalowanie',
+'server.settings.modpack.status.error': 'Błąd',
+
+// Loadery modów
+'server.settings.modpack.loader.forge': 'Forge',
+'server.settings.modpack.loader.fabric': 'Fabric',
+'server.settings.modpack.loader.quilt': 'Quilt',
+'server.settings.modpack.loader.neoforge': 'NeoForge',
+
+// Akcje modpacków
+'server.settings.modpack.actions.install': 'Zainstaluj',
+'server.settings.modpack.actions.update': 'Aktualizuj',
+'server.settings.modpack.actions.remove': 'Usuń',
+'server.settings.modpack.actions.details': 'Szczegóły',
+'server.settings.modpack.actions.refresh': 'Odśwież',
+
+// Opisy modpacków
+'server.settings.modpack.description.betterMc': 'Kompleksowy modpack ulepszający vanilla z ponad 200 modami które poprawiają rozgrywkę zachowując feel vanilla.',
+'server.settings.modpack.description.rlcraft': 'Wymagający modpack Minecraft który kompletnie zmienia grę elementami hardcore RPG i mechanikami survivalu.',
+// ... dodaj opisy dla pozostałych modpacków
+
+// Sekcje ustawień
+'server.settings.section.general': 'Ustawienia główne',
+'server.settings.section.game': 'Ustawienia gry',
+'server.settings.section.world': 'Ustawienia świata',
+'server.settings.section.performance': 'Wydajność',
+'server.settings.section.security': 'Bezpieczeństwo',
+'server.settings.section.network': 'Sieć',
+'server.settings.section.chat': 'Czat',
+'server.settings.section.features': 'Funkcje serwera',
+'server.settings.section.advanced': 'Zaawansowane',
+'server.settings.section.modpacks': 'Modpakiety',
+'server.settings.section.bedrockWorlds': 'Światy Bedrock',
+
+// Przyciski nawigacji
+'server.nav.overview': 'Przegląd',
+'server.nav.console': 'Konsola',
+'server.nav.files': 'Pliki',
+'server.nav.settings': 'Ustawienia',
+'server.nav.plugins': 'Pluginy',
+'server.nav.users': 'Użytkownicy',
+'server.nav.backups': 'Backupy',
+
+'plugin.manager.file.exists': 'File exists',
 'plugin.manager.file.missing': 'File missing', 
 'plugin.manager.checkFiles': 'Check Files',
 'plugin.manager.file.checking': 'Checking files...',
 'plugin.manager.file.checkSuccess': 'File check completed',
 'plugin.manager.file.checkError': 'Error checking files',
+
   },
   
   en: {
@@ -886,7 +987,6 @@ export const translations = {
     'nav.account': 'My Account',
     'nav.plugins': 'Plugins',
     'nav.backups': 'Backup Manager',
-    'nav.agents': 'Agents',
     'nav.logout': 'Logout',
     
     // Menu categories
@@ -1281,12 +1381,7 @@ export const translations = {
 	'server.settings.pushNotifications': 'Push notifications (browser)',
 	'server.settings.maintenanceAlerts': 'Maintenance alerts',
 	'server.settings.loginAlerts': 'Login alerts',
-	'server.settings.sessionTimeout': 'Session timeout (minutes)','plugin.manager.file.exists': 'File exists',
-'plugin.manager.file.missing': 'File missing', 
-'plugin.manager.checkFiles': 'Check Files',
-'plugin.manager.file.checking': 'Checking files...',
-'plugin.manager.file.checkSuccess': 'File check completed',
-'plugin.manager.file.checkError': 'Error checking files'
+	'server.settings.sessionTimeout': 'Session timeout (minutes)',
 	'server.settings.sessionTimeoutDesc': 'User will be automatically logged out after this time.',
 	'server.settings.autoBackup': 'Automatic backup creation',
 	'server.settings.consoleHistory': 'Console history limit (lines)',
@@ -1692,8 +1787,107 @@ export const translations = {
 	'support.contact.message': 'Message',
 	'support.contact.messagePlaceholder': 'Describe your problem or question...',
 	'support.contact.sendButton': 'Send message',
-	
-	'plugin.manager.file.exists': 'File exists',
+
+'server.settings.title': 'Server Settings',
+'server.settings.loading': 'Loading settings...',
+'server.settings.saving': 'Saving...',
+'server.settings.save': 'Save Settings',
+'server.settings.cancel': 'Cancel',
+'server.settings.savedSuccess': 'Settings saved successfully!',
+'server.settings.errorLoadServer': 'Failed to load server information',
+'server.settings.errorLoadProperties': 'Failed to load server properties',
+'server.settings.errorSave': 'Failed to save settings',
+'server.settings.noPermission': 'You do not have permission to edit server settings',
+'server.settings.noSettingsAvailable': 'No settings available for this category',
+'server.settings.availableWorlds': 'Available Worlds',
+'server.settings.refresh': 'Refresh',
+'server.settings.noWorldsFound': 'No worlds found. Click refresh to scan for worlds.',
+'server.settings.general': 'General',
+'server.settings.game': 'Game',
+'server.settings.world': 'World',
+'server.settings.performance': 'Performance',
+'server.settings.security': 'Security',
+'server.settings.features': 'Features',
+'server.settings.network': 'Network',
+'server.settings.chat': 'Chat',
+'server.settings.resourcePacks': 'Resource Packs',
+'server.settings.advanced': 'Advanced',
+// Server settings - additional
+'server.settings.worlds': 'Worlds',
+'server.settings.modpacks': 'Modpacks',
+'server.settings.network': 'Network',
+'server.settings.chat': 'Chat',
+'server.settings.features': 'Features',
+
+// Modpacks
+'server.settings.modpack.install': 'Install modpack',
+'server.settings.modpack.update': 'Update modpack',
+'server.settings.modpack.remove': 'Remove modpack',
+'server.settings.modpack.installed': 'Installed',
+'server.settings.modpack.installing': 'Installing...',
+'server.settings.modpack.downloading': 'Downloading...',
+'server.settings.modpack.search': 'Search modpacks...',
+'server.settings.modpack.filterLoader': 'Filter loader',
+'server.settings.modpack.filterVersion': 'Filter version',
+'server.settings.modpack.allLoaders': 'All loaders',
+'server.settings.modpack.allVersions': 'All versions',
+'server.settings.modpack.currentlyInstalled': 'Currently installed modpack',
+'server.settings.modpack.installSuccess': 'Modpack {name} installed successfully!',
+'server.settings.modpack.installError': 'Failed to install modpack {name}',
+'server.settings.modpack.updateSuccess': 'Modpack {name} updated successfully!',
+'server.settings.modpack.updateError': 'Failed to update modpack {name}',
+'server.settings.modpack.removeSuccess': 'Modpack {name} removed successfully!',
+'server.settings.modpack.removeError': 'Failed to remove modpack {name}',
+'server.settings.modpack.serverMustBeStopped': 'Server must be stopped to install/update/remove modpacks',
+'server.settings.modpack.backupWarning': 'Always backup your world before installing modpacks',
+
+// Modpack statuses
+'server.settings.modpack.status.installed': 'Installed',
+'server.settings.modpack.status.downloading': 'Downloading',
+'server.settings.modpack.status.installing': 'Installing',
+'server.settings.modpack.status.error': 'Error',
+
+// Mod loaders
+'server.settings.modpack.loader.forge': 'Forge',
+'server.settings.modpack.loader.fabric': 'Fabric',
+'server.settings.modpack.loader.quilt': 'Quilt',
+'server.settings.modpack.loader.neoforge': 'NeoForge',
+
+// Modpack actions
+'server.settings.modpack.actions.install': 'Install',
+'server.settings.modpack.actions.update': 'Update',
+'server.settings.modpack.actions.remove': 'Remove',
+'server.settings.modpack.actions.details': 'Details',
+'server.settings.modpack.actions.refresh': 'Refresh',
+
+// Modpack descriptions
+'server.settings.modpack.description.betterMc': 'A comprehensive vanilla enhancement modpack with over 200 mods that improve gameplay while keeping the vanilla feel.',
+'server.settings.modpack.description.rlcraft': 'A challenging Minecraft modpack that completely overhauls the game with hardcore RPG elements and survival mechanics.',
+// ... add descriptions for other modpacks
+
+// Settings sections
+'server.settings.section.general': 'General Settings',
+'server.settings.section.game': 'Game Settings',
+'server.settings.section.world': 'World Settings',
+'server.settings.section.performance': 'Performance',
+'server.settings.section.security': 'Security',
+'server.settings.section.network': 'Network',
+'server.settings.section.chat': 'Chat',
+'server.settings.section.features': 'Server Features',
+'server.settings.section.advanced': 'Advanced',
+'server.settings.section.modpacks': 'Modpacks',
+'server.settings.section.bedrockWorlds': 'Bedrock Worlds',
+
+// Navigation buttons
+'server.nav.overview': 'Overview',
+'server.nav.console': 'Console',
+'server.nav.files': 'Files',
+'server.nav.settings': 'Settings',
+'server.nav.plugins': 'Plugins',
+'server.nav.users': 'Users',
+'server.nav.backups': 'Backups',
+
+'plugin.manager.file.exists': 'File exists',
 'plugin.manager.file.missing': 'File missing', 
 'plugin.manager.checkFiles': 'Check Files',
 'plugin.manager.file.checking': 'Checking files...',

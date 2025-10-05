@@ -987,10 +987,10 @@ function Settings() {
         type: 'select', 
         options: [
           { value: 'deflate', label: 'Deflate' },
-          { value: 'gzip', label: 'Gzip' },
+          { value: 'lz4', label: 'LZ4' },
           { value: 'none', label: 'None' }
         ], 
-        description: 'Compression algorithm for region files' 
+        description: 'Compression algorithm for region files. Valid options: lz4, none, deflate'
       },
       { 
         key: 'pause-when-empty', 
