@@ -839,6 +839,13 @@ export const translations = {
 	'support.contact.message': 'Wiadomość',
 	'support.contact.messagePlaceholder': 'Opisz swój problem lub pytanie...',
 	'support.contact.sendButton': 'Wyślij wiadomość',
+	
+	'plugin.manager.file.exists': 'File exists',
+'plugin.manager.file.missing': 'File missing', 
+'plugin.manager.checkFiles': 'Check Files',
+'plugin.manager.file.checking': 'Checking files...',
+'plugin.manager.file.checkSuccess': 'File check completed',
+'plugin.manager.file.checkError': 'Error checking files',
   },
   
   en: {
@@ -1274,7 +1281,12 @@ export const translations = {
 	'server.settings.pushNotifications': 'Push notifications (browser)',
 	'server.settings.maintenanceAlerts': 'Maintenance alerts',
 	'server.settings.loginAlerts': 'Login alerts',
-	'server.settings.sessionTimeout': 'Session timeout (minutes)',
+	'server.settings.sessionTimeout': 'Session timeout (minutes)','plugin.manager.file.exists': 'File exists',
+'plugin.manager.file.missing': 'File missing', 
+'plugin.manager.checkFiles': 'Check Files',
+'plugin.manager.file.checking': 'Checking files...',
+'plugin.manager.file.checkSuccess': 'File check completed',
+'plugin.manager.file.checkError': 'Error checking files'
 	'server.settings.sessionTimeoutDesc': 'User will be automatically logged out after this time.',
 	'server.settings.autoBackup': 'Automatic backup creation',
 	'server.settings.consoleHistory': 'Console history limit (lines)',
@@ -1680,6 +1692,13 @@ export const translations = {
 	'support.contact.message': 'Message',
 	'support.contact.messagePlaceholder': 'Describe your problem or question...',
 	'support.contact.sendButton': 'Send message',
+	
+	'plugin.manager.file.exists': 'File exists',
+'plugin.manager.file.missing': 'File missing', 
+'plugin.manager.checkFiles': 'Check Files',
+'plugin.manager.file.checking': 'Checking files...',
+'plugin.manager.file.checkSuccess': 'File check completed',
+'plugin.manager.file.checkError': 'Error checking files',
   }
 };
 

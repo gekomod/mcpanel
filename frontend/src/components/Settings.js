@@ -27,7 +27,13 @@ import {
   FiMessageSquare,
   FiUsers,
   FiMap,
-  FiLayers
+  FiLayers,
+  FiPackage,
+  FiGitBranch,
+  FiSearch,
+  FiExternalLink,
+  FiArchive,
+  FiClock
 } from 'react-icons/fi';
 import { LuNetwork } from "react-icons/lu";
 import { useParams, useNavigate } from 'react-router-dom';
@@ -48,6 +54,7 @@ const NavTabs = styled.div`
   padding: 8px;
   margin-bottom: 15px;
   gap: 4px;
+  flex-wrap: wrap;
 `;
 
 const NavTab = styled.div`
@@ -61,6 +68,7 @@ const NavTab = styled.div`
   display: flex;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
   
   ${props => props.$active && `
     background: #3b82f6;
@@ -95,6 +103,7 @@ const Tabs = styled.div`
   margin-bottom: 15px;
   border-bottom: 1px solid #3a3f57;
   flex-wrap: wrap;
+  overflow-x: auto;
 `;
 
 const Tab = styled.button`
@@ -263,6 +272,28 @@ const SaveButton = styled.button`
   }
 `;
 
+const ActionButton = styled.button`
+  padding: 10px 15px;
+  background: ${props => props.background || '#3b82f6'};
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  
+  &:hover:not(:disabled) {
+    background: ${props => props.background ? '#0d9488' : '#2563eb'};
+  }
+  
+  &:disabled {
+    background: #4a5070;
+    cursor: not-allowed;
+  }
+`;
+
 const TwoColumnGrid = styled.div`
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -371,10 +402,174 @@ const SectionHeader = styled.div`
   margin-bottom: 20px;
 `;
 
+const ModpackGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 15px;
+  margin-top: 15px;
+`;
+
+const ModpackCard = styled.div`
+  background: ${props => props.$selected ? '#1e3a8a' : '#35394e'};
+  border: 2px solid ${props => props.$selected ? '#3b82f6' : '#3a3f57'};
+  border-radius: 8px;
+  padding: 15px;
+  cursor: pointer;
+  transition: all 0.2s;
+  
+  &:hover {
+    border-color: #3b82f6;
+    background: ${props => props.$selected ? '#1e40af' : '#3a3f57'};
+  }
+`;
+
+const ModpackHeader = styled.div`
+  display: flex;
+  justify-content: between;
+  align-items: flex-start;
+  margin-bottom: 10px;
+`;
+
+const ModpackName = styled.div`
+  font-weight: 600;
+  color: #fff;
+  font-size: 1.1rem;
+  flex: 1;
+`;
+
+const ModpackVersion = styled.div`
+  background: #4a5070;
+  color: #cbd5e1;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 500;
+`;
+
+const ModpackDescription = styled.div`
+  color: #a4aabc;
+  font-size: 0.9rem;
+  margin-bottom: 10px;
+  line-height: 1.4;
+`;
+
+const ModpackDetails = styled.div`
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: #6b7280;
+  margin-bottom: 10px;
+`;
+
+const ModpackTag = styled.span`
+  background: ${props => {
+    switch(props.$type) {
+      case 'forge': return '#db2777';
+      case 'fabric': return '#7c3aed';
+      case 'quilt': return '#ea580c';
+      case 'neoforge': return '#059669';
+      default: return '#4a5070';
+    }
+  }};
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 500;
+`;
+
+const ProgressBar = styled.div`
+  width: 100%;
+  height: 6px;
+  background: #3a3f57;
+  border-radius: 3px;
+  overflow: hidden;
+  margin: 10px 0;
+`;
+
+const ProgressFill = styled.div`
+  width: ${props => props.$progress}%;
+  height: 100%;
+  background: #3b82f6;
+  transition: width 0.3s ease;
+`;
+
+const ProgressText = styled.div`
+  font-size: 0.8rem;
+  color: #a4aabc;
+  text-align: center;
+`;
+
+const SearchContainer = styled.div`
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+`;
+
+const SearchInput = styled.input`
+  flex: 1;
+  padding: 10px 15px;
+  background: #35394e;
+  border: 1px solid #3a3f57;
+  border-radius: 6px;
+  font-size: 1rem;
+  color: #fff;
+  
+  &:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+  }
+`;
+
+const FilterSelect = styled.select`
+  padding: 10px 15px;
+  background: #35394e;
+  border: 1px solid #3a3f57;
+  border-radius: 6px;
+  font-size: 1rem;
+  color: #fff;
+  min-width: 150px;
+  
+  &:focus {
+    outline: none;
+    border-color: #3b82f6;
+  }
+`;
+
+const ActionButtons = styled.div`
+  display: flex;
+  gap: 10px;
+  margin-top: 15px;
+  flex-wrap: wrap;
+`;
+
+const ModpackStatus = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.8rem;
+  margin-top: 5px;
+  
+  ${props => props.$status === 'installed' && `
+    color: #10b981;
+  `}
+  
+  ${props => props.$status === 'downloading' && `
+    color: #3b82f6;
+  `}
+  
+  ${props => props.$status === 'error' && `
+    color: #ef4444;
+  `}
+`;
+
 function Settings() {
   const { serverId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { t } = useLanguage();
+  
   const [server, setServer] = useState(null);
   const [properties, setProperties] = useState({});
   const [activeTab, setActiveTab] = useState('general');
@@ -383,64 +578,73 @@ function Settings() {
   const [hasPermission, setHasPermission] = useState(false);
   const [worlds, setWorlds] = useState([]);
   const [loadingWorlds, setLoadingWorlds] = useState(false);
-  const { t } = useLanguage();
+  const [modpacks, setModpacks] = useState([]);
+  const [loadingModpacks, setLoadingModpacks] = useState(false);
+  const [selectedModpack, setSelectedModpack] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterLoader, setFilterLoader] = useState('all');
+  const [filterMinecraft, setFilterMinecraft] = useState('all');
+  const [downloadProgress, setDownloadProgress] = useState({});
+  const [installingModpack, setInstallingModpack] = useState(null);
+  const [installationProgress, setInstallationProgress] = useState(0);
+  const [installationMessage, setInstallationMessage] = useState('');
 
   // Lista wszystkich właściwości Java z pliku server(java).properties z oficjalnymi opisami
   const javaPropertiesConfig = {
     general: [
       { 
         key: 'server-name', 
-        label: 'Server Name', 
+        label: t('server.settings.serverName') || 'Server Name', 
         type: 'text', 
-        description: 'The name of your Minecraft server as shown in the server list' 
+        description: t('server.settings.serverNameDesc') || 'The name of your Minecraft server as shown in the server list' 
       },
       { 
         key: 'motd', 
-        label: 'MOTD (Message of the Day)', 
+        label: t('server.settings.motd') || 'MOTD (Message of the Day)', 
         type: 'textarea', 
-        description: 'Message shown when players connect to your server. Supports formatting codes with §' 
+        description: t('server.settings.motdDesc') || 'Message shown when players connect to your server. Supports formatting codes with §' 
       },
       { 
         key: 'max-players', 
-        label: 'Max Players', 
+        label: t('server.settings.maxPlayers') || 'Max Players', 
         type: 'number', 
         min: 1, 
         max: 1000, 
-        description: 'Maximum number of players allowed on the server simultaneously' 
+        description: t('server.settings.maxPlayersDesc') || 'Maximum number of players allowed on the server simultaneously' 
       },
       { 
         key: 'server-port', 
-        label: 'Server Port', 
+        label: t('server.settings.serverPort') || 'Server Port', 
         type: 'number', 
         min: 1, 
         max: 65535, 
-        description: 'The port the server will listen on (default: 25565)' 
+        description: t('server.settings.serverPortDesc') || 'The port the server will listen on (default: 25565)' 
       },
     ],
     game: [
       { 
         key: 'gamemode', 
-        label: 'Default Game Mode', 
+        label: t('server.settings.gameMode') || 'Default Game Mode', 
         type: 'select', 
         options: [
-          { value: 'survival', label: 'Survival' },
-          { value: 'creative', label: 'Creative' },
-          { value: 'adventure', label: 'Adventure' },
-          { value: 'spectator', label: 'Spectator' }
+          { value: 'survival', label: t('server.settings.survival') || 'Survival' },
+          { value: 'creative', label: t('server.settings.creative') || 'Creative' },
+          { value: 'adventure', label: t('server.settings.adventure') || 'Adventure' },
+          { value: 'spectator', label: t('server.settings.spectator') || 'Spectator' }
         ], 
-        description: 'Default game mode for new players' 
+        description: t('server.settings.gameModeDesc') || 'Default game mode for new players' 
       },
       { 
         key: 'difficulty', 
-        label: 'Difficulty', 
+        label: t('server.settings.difficulty') || 'Difficulty', 
         type: 'select', 
         options: [
-          { value: 'peaceful', label: 'Peaceful' },
-          { value: 'easy', label: 'Easy' },
-          { value: 'normal', label: 'Normal' },
-          { value: 'hard', label: 'Hard' }
+          { value: 'peaceful', label: t('server.settings.peaceful') || 'Peaceful' },
+          { value: 'easy', label: t('server.settings.easy') || 'Easy' },
+          { value: 'normal', label: t('server.settings.normal') || 'Normal' },
+          { value: 'hard', label: t('server.settings.hard') || 'Hard' }
         ], 
-        description: 'Difficulty level of the server. Affects monster damage and other game mechanics' 
+        description: t('server.settings.difficultyDesc') || 'Difficulty level of the server. Affects monster damage and other game mechanics' 
       },
       { 
         key: 'hardcore', 
@@ -450,9 +654,9 @@ function Settings() {
       },
       { 
         key: 'pvp', 
-        label: 'PvP', 
+        label: t('server.settings.pvp') || 'PvP', 
         type: 'checkbox', 
-        description: 'Allow player vs player combat. If false, players cannot damage each other' 
+        description: t('server.settings.pvpDesc') || 'Allow player vs player combat. If false, players cannot damage each other' 
       },
       { 
         key: 'force-gamemode', 
@@ -464,74 +668,74 @@ function Settings() {
     world: [
       { 
         key: 'level-name', 
-        label: 'World Name', 
+        label: t('server.settings.worldName') || 'World Name', 
         type: 'text', 
-        description: 'Name of the world folder. The server will look for this folder in the server directory' 
+        description: t('server.settings.worldNameDesc') || 'Name of the world folder. The server will look for this folder in the server directory' 
       },
       { 
         key: 'level-seed', 
-        label: 'World Seed', 
+        label: t('server.settings.seed') || 'World Seed', 
         type: 'text', 
-        description: 'Seed for world generation. Leave empty for random seed' 
+        description: t('server.settings.seedDesc') || 'Seed for world generation. Leave empty for random seed' 
       },
       { 
         key: 'level-type', 
-        label: 'World Type', 
+        label: t('server.settings.worldType') || 'World Type', 
         type: 'select', 
         options: [
-          { value: 'default', label: 'Default' },
-          { value: 'flat', label: 'Flat' },
-          { value: 'largeBiomes', label: 'Large Biomes' },
-          { value: 'amplified', label: 'Amplified' },
-          { value: 'single_biome_surface', label: 'Single Biome' }
+          { value: 'default', label: t('server.settings.default') || 'Default' },
+          { value: 'flat', label: t('server.settings.flat') || 'Flat' },
+          { value: 'largeBiomes', label: t('server.settings.largeBiomes') || 'Large Biomes' },
+          { value: 'amplified', label: t('server.settings.amplified') || 'Amplified' },
+          { value: 'single_biome_surface', label: t('server.settings.customized') || 'Single Biome' }
         ], 
-        description: 'Type of world generation algorithm to use' 
+        description: t('server.settings.worldTypeDesc') || 'Type of world generation algorithm to use' 
       },
       { 
         key: 'generate-structures', 
-        label: 'Generate Structures', 
+        label: t('server.settings.generateStructures') || 'Generate Structures', 
         type: 'checkbox', 
-        description: 'Generate structures like villages, strongholds, and temples' 
+        description: t('server.settings.generateStructuresDesc') || 'Generate structures like villages, strongholds, and temples' 
       },
       { 
         key: 'allow-nether', 
-        label: 'Allow Nether', 
+        label: t('server.settings.allowNether') || 'Allow Nether', 
         type: 'checkbox', 
-        description: 'Enable the Nether dimension. Players can build nether portals if true' 
+        description: t('server.settings.allowNetherDesc') || 'Enable the Nether dimension. Players can build nether portals if true' 
       },
       { 
         key: 'max-world-size', 
-        label: 'Max World Size', 
+        label: t('server.settings.maxWorldSize') || 'Max World Size', 
         type: 'number', 
         min: 1, 
         max: 29999984, 
-        description: 'Maximum possible size of the world in blocks (radius from center)' 
+        description: t('server.settings.maxWorldSizeDesc') || 'Maximum possible size of the world in blocks (radius from center)' 
       },
     ],
     performance: [
       { 
         key: 'view-distance', 
-        label: 'View Distance', 
+        label: t('server.settings.viewDistance') || 'View Distance', 
         type: 'number', 
         min: 3, 
         max: 32, 
-        description: 'The number of chunks the server sends to clients. Higher values increase RAM usage' 
+        description: t('server.settings.viewDistanceDesc') || 'The number of chunks the server sends to clients. Higher values increase RAM usage' 
       },
       { 
         key: 'simulation-distance', 
-        label: 'Simulation Distance', 
+        label: t('server.settings.simulationDistance') || 'Simulation Distance', 
         type: 'number', 
         min: 3, 
         max: 32, 
-        description: 'The number of chunks away from players the server updates entities and block ticks' 
+        description: t('server.settings.simulationDistanceDesc') || 'The number of chunks away from players the server updates entities and block ticks' 
       },
       { 
         key: 'max-tick-time', 
-        label: 'Max Tick Time', 
+        label: t('server.settings.maxTickTime') || 'Max Tick Time', 
         type: 'number', 
         min: 1000, 
         max: 180000, 
-        description: 'Maximum time a single tick can take (ms) before server watchdog stops it' 
+        description: t('server.settings.maxTickTimeDesc') || 'Maximum time a single tick can take (ms) before server watchdog stops it' 
       },
       { 
         key: 'network-compression-threshold', 
@@ -553,15 +757,15 @@ function Settings() {
     security: [
       { 
         key: 'online-mode', 
-        label: 'Online Mode', 
+        label: t('server.settings.onlineMode') || 'Online Mode', 
         type: 'checkbox', 
-        description: 'Verify players with Mojang/Microsoft servers. Prevents cracked clients from joining' 
+        description: t('server.settings.onlineModeDesc') || 'Verify players with Mojang/Microsoft servers. Prevents cracked clients from joining' 
       },
       { 
         key: 'enforce-whitelist', 
-        label: 'Enforce Whitelist', 
+        label: t('server.settings.enforceWhitelist') || 'Enforce Whitelist', 
         type: 'checkbox', 
-        description: 'Automatically whitelist players when a server operator adds them' 
+        description: t('server.settings.enforceWhitelistDesc') || 'Automatically whitelist players when a server operator adds them' 
       },
       { 
         key: 'white-list', 
@@ -571,17 +775,17 @@ function Settings() {
       },
       { 
         key: 'enable-command-block', 
-        label: 'Enable Command Blocks', 
+        label: t('server.settings.enableCommandBlock') || 'Enable Command Blocks', 
         type: 'checkbox', 
-        description: 'Allow command blocks to be used in the world' 
+        description: t('server.settings.enableCommandBlockDesc') || 'Allow command blocks to be used in the world' 
       },
       { 
         key: 'spawn-protection', 
-        label: 'Spawn Protection', 
+        label: t('server.settings.spawnProtection') || 'Spawn Protection', 
         type: 'number', 
         min: 0, 
         max: 10000, 
-        description: 'Radius of spawn protection (0 to disable). Non-ops cannot build in this area' 
+        description: t('server.settings.spawnProtectionDesc') || 'Radius of spawn protection (0 to disable). Non-ops cannot build in this area' 
       },
       { 
         key: 'op-permission-level', 
@@ -617,9 +821,9 @@ function Settings() {
     features: [
       { 
         key: 'allow-flight', 
-        label: 'Allow Flight', 
+        label: t('server.settings.allowFlight') || 'Allow Flight', 
         type: 'checkbox', 
-        description: 'Allow players to fly (may require client mods like Creative mode)' 
+        description: t('server.settings.allowFlightDesc') || 'Allow players to fly (may require client mods like Creative mode)' 
       },
       { 
         key: 'spawn-animals', 
@@ -729,9 +933,9 @@ function Settings() {
       },
       { 
         key: 'log-ips', 
-        label: 'Log IP Addresses', 
+        label: t('server.settings.logIPs') || 'Log IP Addresses', 
         type: 'checkbox', 
-        description: 'Log player IP addresses in server logs' 
+        description: t('server.settings.logIPsDesc') || 'Log player IP addresses in server logs' 
       },
     ],
     resourcepacks: [
@@ -806,24 +1010,24 @@ function Settings() {
   // Lista wszystkich właściwości Bedrock z pliku server(bedrock).properties
   const bedrockPropertiesConfig = {
     general: [
-      { key: 'server-name', label: 'Server Name', type: 'text', description: 'The name of your Minecraft server' },
-      { key: 'motd', label: 'MOTD (Message of the Day)', type: 'textarea', description: 'Message shown when players connect to your server' },
-      { key: 'max-players', label: 'Max Players', type: 'number', min: 1, max: 30, description: 'Maximum number of players that can play on the server' },
-      { key: 'server-port', label: 'Server Port (IPv4)', type: 'number', min: 1, max: 65535, description: 'Which IPv4 port the server should listen to' },
+      { key: 'server-name', label: t('server.settings.serverName') || 'Server Name', type: 'text', description: t('server.settings.serverNameDesc') || 'The name of your Minecraft server' },
+      { key: 'motd', label: t('server.settings.motd') || 'MOTD (Message of the Day)', type: 'textarea', description: t('server.settings.motdDesc') || 'Message shown when players connect to your server' },
+      { key: 'max-players', label: t('server.settings.maxPlayers') || 'Max Players', type: 'number', min: 1, max: 30, description: t('server.settings.maxPlayersDesc') || 'Maximum number of players that can play on the server' },
+      { key: 'server-port', label: t('server.settings.serverPort') || 'Server Port (IPv4)', type: 'number', min: 1, max: 65535, description: t('server.settings.serverPortDesc') || 'Which IPv4 port the server should listen to' },
       { key: 'server-portv6', label: 'Server Port (IPv6)', type: 'number', min: 1, max: 65535, description: 'Which IPv6 port the server should listen to' },
     ],
     game: [
-      { key: 'gamemode', label: 'Game Mode', type: 'select', options: [
-        { value: 'survival', label: 'Survival' },
-        { value: 'creative', label: 'Creative' },
-        { value: 'adventure', label: 'Adventure' }
-      ], description: 'Sets the game mode for new players' },
-      { key: 'difficulty', label: 'Difficulty', type: 'select', options: [
-        { value: 'peaceful', label: 'Peaceful' },
-        { value: 'easy', label: 'Easy' },
-        { value: 'normal', label: 'Normal' },
-        { value: 'hard', label: 'Hard' }
-      ], description: 'Sets the difficulty of the world' },
+      { key: 'gamemode', label: t('server.settings.gameMode') || 'Game Mode', type: 'select', options: [
+        { value: 'survival', label: t('server.settings.survival') || 'Survival' },
+        { value: 'creative', label: t('server.settings.creative') || 'Creative' },
+        { value: 'adventure', label: t('server.settings.adventure') || 'Adventure' }
+      ], description: t('server.settings.gameModeDesc') || 'Sets the game mode for new players' },
+      { key: 'difficulty', label: t('server.settings.difficulty') || 'Difficulty', type: 'select', options: [
+        { value: 'peaceful', label: t('server.settings.peaceful') || 'Peaceful' },
+        { value: 'easy', label: t('server.settings.easy') || 'Easy' },
+        { value: 'normal', label: t('server.settings.normal') || 'Normal' },
+        { value: 'hard', label: t('server.settings.hard') || 'Hard' }
+      ], description: t('server.settings.difficultyDesc') || 'Sets the difficulty of the world' },
       { key: 'allow-cheats', label: 'Allow Cheats', type: 'checkbox', description: 'If true then cheats like commands can be used' },
       { key: 'force-gamemode', label: 'Force Game Mode', type: 'checkbox', description: 'Force the server gamemode on clients' },
       { key: 'default-player-permission-level', label: 'Default Player Permission', type: 'select', options: [
@@ -833,18 +1037,18 @@ function Settings() {
       ], description: 'Permission level for new players joining for the first time' },
     ],
     world: [
-      { key: 'level-name', label: 'World Name', type: 'text', description: 'Name of the world folder' },
-      { key: 'level-seed', label: 'Seed', type: 'text', description: 'Use to randomize the world' },
-      { key: 'level-type', label: 'World Type', type: 'select', options: [
-        { value: 'DEFAULT', label: 'Default' },
-        { value: 'FLAT', label: 'Flat' },
-        { value: 'largeBiomes', label: 'Large Biomes' }
-      ], description: 'Type of world generation' },
-      { key: 'spawn-protection', label: 'Spawn Protection', type: 'number', min: 0, max: 10000, description: 'Radius of spawn protection' },
+      { key: 'level-name', label: t('server.settings.worldName') || 'World Name', type: 'text', description: t('server.settings.worldNameDesc') || 'Name of the world folder' },
+      { key: 'level-seed', label: t('server.settings.seed') || 'Seed', type: 'text', description: t('server.settings.seedDesc') || 'Use to randomize the world' },
+      { key: 'level-type', label: t('server.settings.worldType') || 'World Type', type: 'select', options: [
+        { value: 'DEFAULT', label: t('server.settings.default') || 'Default' },
+        { value: 'FLAT', label: t('server.settings.flat') || 'Flat' },
+        { value: 'largeBiomes', label: t('server.settings.largeBiomes') || 'Large Biomes' }
+      ], description: t('server.settings.worldTypeDesc') || 'Type of world generation' },
+      { key: 'spawn-protection', label: t('server.settings.spawnProtection') || 'Spawn Protection', type: 'number', min: 0, max: 10000, description: t('server.settings.spawnProtectionDesc') || 'Radius of spawn protection' },
       { key: 'texturepack-required', label: 'Texture Pack Required', type: 'checkbox', description: 'Force clients to use texture packs in the current world' },
     ],
     performance: [
-      { key: 'view-distance', label: 'View Distance', type: 'number', min: 5, max: 96, description: 'The maximum allowed view distance in number of chunks' },
+      { key: 'view-distance', label: t('server.settings.viewDistance') || 'View Distance', type: 'number', min: 5, max: 96, description: t('server.settings.viewDistanceDesc') || 'The maximum allowed view distance in number of chunks' },
       { key: 'tick-distance', label: 'Tick Distance', type: 'number', min: 4, max: 12, description: 'The world will be ticked this many chunks away from any player' },
       { key: 'max-threads', label: 'Max Threads', type: 'number', min: 1, max: 32, description: 'Maximum number of threads the server will try to use' },
       { key: 'compression-threshold', label: 'Compression Threshold', type: 'number', min: 0, max: 65535, description: 'Determines the smallest size of raw network payload to compress' },
@@ -854,10 +1058,10 @@ function Settings() {
       ], description: 'Determines the compression algorithm to use for networking' },
     ],
     security: [
-      { key: 'online-mode', label: 'Online Mode', type: 'checkbox', description: 'If true then all connected players must be authenticated to Xbox Live' },
+      { key: 'online-mode', label: t('server.settings.onlineMode') || 'Online Mode', type: 'checkbox', description: t('server.settings.onlineModeDesc') || 'If true then all connected players must be authenticated to Xbox Live' },
       { key: 'allow-list', label: 'Allow List', type: 'checkbox', description: 'If true then all connected players must be listed in the separate allowlist.json file' },
       { key: 'enable-lan-visibility', label: 'LAN Visibility', type: 'checkbox', description: 'Listen and respond to clients that are looking for servers on the LAN' },
-      { key: 'enable-command-block', label: 'Enable Command Block', type: 'checkbox', description: 'Enable command blocks on the server' },
+      { key: 'enable-command-block', label: t('server.settings.enableCommandBlock') || 'Enable Command Block', type: 'checkbox', description: t('server.settings.enableCommandBlockDesc') || 'Enable command blocks on the server' },
       { key: 'disable-custom-skins', label: 'Disable Custom Skins', type: 'checkbox', description: 'Disable players customized skins that were customized outside of the Minecraft store' },
     ],
     advanced: [
@@ -869,6 +1073,109 @@ function Settings() {
     ]
   };
 
+  // Nowa konfiguracja dla zakładki Modpacks
+  const modpackConfig = {
+    modpack: [
+      { 
+        key: 'modpack-name', 
+        label: 'Modpack Name', 
+        type: 'text', 
+        description: 'Name of the currently installed modpack' 
+      },
+      { 
+        key: 'modpack-version', 
+        label: 'Modpack Version', 
+        type: 'text', 
+        description: 'Version of the installed modpack' 
+      },
+      { 
+        key: 'modpack-loader', 
+        label: 'Mod Loader', 
+        type: 'select', 
+        options: [
+          { value: 'forge', label: t('server.settings.modpack.loader.forge') || 'Forge' },
+          { value: 'fabric', label: t('server.settings.modpack.loader.fabric') || 'Fabric' },
+          { value: 'quilt', label: t('server.settings.modpack.loader.quilt') || 'Quilt' },
+          { value: 'neoforge', label: t('server.settings.modpack.loader.neoforge') || 'NeoForge' }
+        ],
+        description: 'Mod loader used by the modpack' 
+      },
+      { 
+        key: 'minecraft-version', 
+        label: 'Minecraft Version', 
+        type: 'text', 
+        description: 'Minecraft version compatible with this modpack' 
+      },
+      { 
+        key: 'modpack-description', 
+        label: 'Description', 
+        type: 'textarea', 
+        description: 'Description of the installed modpack' 
+      },
+    ],
+    management: [
+      { 
+        key: 'auto-update-modpack', 
+        label: 'Auto Update Modpack', 
+        type: 'checkbox', 
+        description: 'Automatically check for modpack updates' 
+      },
+      { 
+        key: 'backup-before-update', 
+        label: 'Backup Before Update', 
+        type: 'checkbox', 
+        description: 'Create a backup before updating the modpack' 
+      },
+      { 
+        key: 'keep-mods-folder', 
+        label: 'Keep Custom Mods', 
+        type: 'checkbox', 
+        description: 'Preserve custom mods when updating modpack' 
+      },
+      { 
+        key: 'update-channel', 
+        label: 'Update Channel', 
+        type: 'select', 
+        options: [
+          { value: 'release', label: 'Release' },
+          { value: 'beta', label: 'Beta' },
+          { value: 'alpha', label: 'Alpha' }
+        ],
+        description: 'Update channel for modpack updates' 
+      },
+    ]
+  };
+  
+  const availableModpacks = [
+    {
+      id: 'better-mc',
+      name: 'Better MC',
+      description: t('server.settings.modpack.description.betterMc') || 'A comprehensive vanilla enhancement modpack with over 200 mods that improve gameplay while keeping the vanilla feel.',
+      versions: ['1.20.1-5.0.0', '1.19.2-4.0.0'],
+      minecraft: '1.20.1',
+      loader: 'forge',
+      author: 'Better MC Team',
+      modCount: 215,
+      fileSize: '2.1 GB',
+      downloadUrl: 'https://media.forgecdn.net/files/4785/895/Better+MC-1.20.1-5.0.0.zip',
+      installed: false
+    },
+    {
+      id: 'rlcraft',
+      name: 'RLCraft',
+      description: t('server.settings.modpack.description.rlcraft') || 'A challenging Minecraft modpack that completely overhauls the game with hardcore RPG elements and survival mechanics.',
+      versions: ['2.9.3', '2.9.2'],
+      minecraft: '1.12.2',
+      loader: 'forge',
+      author: 'Shivaxi',
+      modCount: 187,
+      fileSize: '1.8 GB',
+      downloadUrl: 'https://media.forgecdn.net/files/3938/929/RLCraft+Server+Pack+2.9.3.zip',
+      installed: false
+    },
+    // ... pozostałe modpakiety
+  ];
+
   useEffect(() => {
     checkPermissions();
     fetchServer();
@@ -879,7 +1186,19 @@ function Settings() {
     if (server?.type === 'bedrock') {
       fetchWorlds();
     }
+    if (server?.type === 'java') {
+      fetchModpacks();
+    }
   }, [server]);
+  
+  useEffect(() => {
+  return () => {
+    // Wyczyść state przy opuszczeniu komponentu
+    setInstallingModpack(null);
+    setInstallationProgress(0);
+    setInstallationMessage('');
+  };
+}, []);
 
   const showSuccess = (message) => {
     toast.success(
@@ -1013,6 +1332,59 @@ function Settings() {
     }
   };
 
+  const fetchModpacks = async () => {
+    if (!server || server.type !== 'java') return;
+    
+    setLoadingModpacks(true);
+    try {
+      // Spróbuj pobrać modpacks z API
+      try {
+        const response = await api.get(`/servers/${serverId}/modpacks`);
+        let modpacksFromApi = response.data;
+
+        // Pobierz aktualny modpack
+        const currentResponse = await api.get(`/servers/${serverId}/modpacks/current`);
+        const currentModpack = currentResponse.data.modpack;
+        
+        // Oznacz który modpack jest zainstalowany
+        const updatedModpacks = modpacksFromApi.map(modpack => ({
+          ...modpack,
+          installed: currentModpack && modpack.name === currentModpack.name
+        }));
+        
+        setModpacks(updatedModpacks);
+        
+        if (currentModpack) {
+          const installedModpack = updatedModpacks.find(mp => mp.installed);
+          if (installedModpack) {
+            setSelectedModpack(installedModpack.id);
+          }
+        }
+      } catch (apiError) {
+        console.log('API modpacks not available, using fallback:', apiError);
+        // Fallback do lokalnej listy
+        const serverModpackName = properties['modpack-name'];
+        const updatedModpacks = availableModpacks.map(modpack => ({
+          ...modpack,
+          installed: modpack.name === serverModpackName
+        }));
+        
+        setModpacks(updatedModpacks);
+        
+        const serverModpack = updatedModpacks.find(mp => mp.installed);
+        if (serverModpack) {
+          setSelectedModpack(serverModpack.id);
+        }
+      }
+    } catch (error) {
+      console.log('Error fetching modpacks:', error);
+      // Ostateczny fallback
+      setModpacks(availableModpacks);
+    } finally {
+      setLoadingModpacks(false);
+    }
+  };
+
   const handlePropertyChange = (key, value) => {
     setProperties(prev => ({
       ...prev,
@@ -1036,6 +1408,238 @@ function Settings() {
     } catch (error) {
       showError(t('server.settings.worldChangeError') || `Error changing world: ${error}`);
     }
+  };
+
+  const handleModpackChange = async (modpackId) => {
+    if (!hasPermission) {
+      showError(t('server.settings.noPermission') || 'You do not have permission to change modpacks');
+      return;
+    }
+
+    const selected = modpacks.find(mp => mp.id === modpackId);
+    if (!selected) return;
+
+    setSelectedModpack(modpackId);
+    
+    // Aktualizuj właściwości serwera
+    handlePropertyChange('modpack-name', selected.name);
+    handlePropertyChange('modpack-version', selected.versions[0]);
+    handlePropertyChange('minecraft-version', selected.minecraft);
+    
+    showInfo(`Modpack changed to ${selected.name}. ${t('server.settings.saveRequired') || 'Remember to save settings.'}`);
+  };
+
+  const downloadModpack = async (modpack) => {
+    if (!hasPermission) {
+      showError(t('server.settings.noPermission') || 'You do not have permission to install modpacks');
+      return;
+    }
+
+    if (server.status === 'running') {
+      showError(t('server.settings.modpack.serverMustBeStopped') || 'Server must be stopped to install modpack');
+      return;
+    }
+
+    setInstallingModpack(modpack.id);
+    setInstallationProgress(0);
+    setInstallationMessage(t('server.settings.modpack.installing') || 'Starting installation...');
+
+    try {
+      showInfo(t('server.settings.modpack.installing') || `Starting installation of ${modpack.name}...`);
+      
+      const installData = {
+        name: modpack.name,
+        downloadUrl: modpack.downloadUrl,
+        source: 'download'
+      };
+
+      console.log('Sending install data:', installData);
+      
+      // Start installation
+      const startResponse = await api.post(`/servers/${serverId}/modpacks/install`, installData, {
+        timeout: 30000 // 30 seconds timeout for start
+      });
+
+      const installationId = startResponse.data.installation_id;
+      console.log('Installation started with ID:', installationId);
+
+      // Track installation progress
+      let attempts = 0;
+      const maxAttempts = 600; // 10 minutes max
+      
+      const checkProgress = async () => {
+        attempts++;
+        
+        try {
+          const progressResponse = await api.get(`/servers/${serverId}/modpacks/install/progress/${installationId}`);
+          const progress = progressResponse.data;
+          
+          console.log(`Installation progress: ${progress.progress}% - ${progress.message}`);
+          
+          // Update progress state
+          setInstallationProgress(progress.progress || 0);
+          setInstallationMessage(progress.message || t('server.settings.modpack.installing') || 'Installing...');
+          
+          if (progress.status === 'running') {
+            // Continue checking
+            if (attempts < maxAttempts) {
+              setTimeout(checkProgress, 2000); // Check every 2 seconds
+            } else {
+              throw new Error('Installation timeout');
+            }
+          } 
+          else if (progress.status === 'completed') {
+            showSuccess(t('server.settings.modpack.installSuccess', { name: modpack.name }) || `Modpack ${modpack.name} installed successfully!`);
+            await fetchProperties();
+            await fetchModpacks();
+            setInstallingModpack(null);
+            setInstallationProgress(0);
+            setInstallationMessage('');
+          }
+          else if (progress.status === 'error') {
+            throw new Error(progress.message || 'Installation failed');
+          }
+          
+        } catch (error) {
+          if (attempts < maxAttempts && error.response?.status !== 404) {
+            setTimeout(checkProgress, 2000);
+          } else {
+            throw error;
+          }
+        }
+      };
+
+      // Start progress tracking
+      setTimeout(checkProgress, 2000);
+      
+    } catch (error) {
+      const errorMsg = error.response?.data?.error || error.message;
+      console.error('Installation error:', errorMsg);
+      
+      if (error.code === 'ECONNABORTED') {
+        showError(t('server.settings.modpack.installError', { name: modpack.name }) || 'Installation timeout - server is taking too long to respond');
+      } else {
+        showError(t('server.settings.modpack.installError', { name: modpack.name }) || `Failed to install modpack: ${errorMsg}`);
+      }
+      
+      setInstallingModpack(null);
+      setInstallationProgress(0);
+      setInstallationMessage('');
+    }
+  };
+  
+  const updateModpack = async (modpack) => {
+    if (!hasPermission) {
+      showError(t('server.settings.noPermission') || 'You do not have permission to update modpacks');
+      return;
+    }
+
+    // Sprawdź czy serwer jest uruchomiony
+    if (server.status === 'running') {
+      showError(t('server.settings.modpack.serverMustBeStopped') || 'Server must be stopped to update modpack');
+      return;
+    }
+
+    setInstallingModpack(modpack.id);
+
+    try {
+      showInfo(t('server.settings.modpack.updating') || `Checking for updates for ${modpack.name}...`);
+
+      // Sprawdź czy są dostępne aktualizacje
+      const currentVersion = properties['modpack-version'];
+      const latestVersion = modpack.versions[0];
+      
+      if (currentVersion === latestVersion) {
+        showInfo(`${modpack.name} ${t('server.settings.modpack.upToDate') || 'is already up to date!'}`);
+        return;
+      }
+
+      showInfo(t('server.settings.modpack.updatingVersion', { name: modpack.name, current: currentVersion, latest: latestVersion }) || `Updating ${modpack.name} from ${currentVersion} to ${latestVersion}...`);
+
+      // Użyj tego samego endpointu co instalacja - to zastąpi stary modpack
+      const response = await api.post(`/servers/${serverId}/modpacks/install`, {
+        downloadUrl: modpack.downloadUrl,
+        name: modpack.name,
+        version: latestVersion
+      });
+
+      // Aktualizuj wersję
+      handlePropertyChange('modpack-version', latestVersion);
+      
+      // Odśwież właściwości
+      await fetchProperties();
+      
+      showSuccess(t('server.settings.modpack.updateSuccess', { name: modpack.name, version: latestVersion }) || `Modpack ${modpack.name} updated successfully to ${latestVersion}!`);
+
+    } catch (error) {
+      const errorMsg = error.response?.data?.error || error.message;
+      showError(t('server.settings.modpack.updateError', { name: modpack.name }) || `Failed to update modpack: ${errorMsg}`);
+    } finally {
+      setInstallingModpack(null);
+    }
+  };
+  
+  const removeModpack = async () => {
+    if (!selectedModpack) {
+      showError(t('server.settings.modpack.noModpackSelected') || 'No modpack selected');
+      return;
+    }
+
+    const modpack = modpacks.find(mp => mp.id === selectedModpack);
+    if (!modpack) return;
+
+    if (!window.confirm(t('server.settings.modpack.removeConfirm', { name: modpack.name }) || `Are you sure you want to remove ${modpack.name}? This will delete all mod files and cannot be undone.`)) {
+      return;
+    }
+
+    // Sprawdź czy serwer jest uruchomiony
+    if (server.status === 'running') {
+      showError(t('server.settings.modpack.serverMustBeStopped') || 'Server must be stopped to remove modpack');
+      return;
+    }
+
+    setInstallingModpack(modpack.id);
+
+    try {
+      showInfo(t('server.settings.modpack.removing', { name: modpack.name }) || `Removing ${modpack.name}...`);
+      
+      // Tutaj potrzebny byłby endpoint API do usuwania modpacka
+      // Na razie symulacja - wyczyść właściwości
+      
+      // Wyczyść właściwości modpacka
+      handlePropertyChange('modpack-name', '');
+      handlePropertyChange('modpack-version', '');
+      handlePropertyChange('modpack-loader', '');
+      handlePropertyChange('modpack-description', '');
+      handlePropertyChange('minecraft-version', '');
+
+      // Zapisz właściwości
+      await handleSave();
+
+      // Oznacz jako nie zainstalowany
+      setModpacks(prev => prev.map(mp => 
+        mp.id === modpack.id ? { ...mp, installed: false } : mp
+      ));
+
+      setSelectedModpack('');
+      showSuccess(t('server.settings.modpack.removeSuccess', { name: modpack.name }) || `Modpack ${modpack.name} removed successfully!`);
+
+    } catch (error) {
+      showError(t('server.settings.modpack.removeError', { name: modpack.name }) || `Failed to remove modpack: ${error.message}`);
+    } finally {
+      setInstallingModpack(null);
+    }
+  };
+  
+  const searchModpacks = (modpacks) => {
+    return modpacks.filter(modpack => {
+      const matchesSearch = modpack.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           modpack.description.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesLoader = filterLoader === 'all' || modpack.loader === filterLoader;
+      const matchesMinecraft = filterMinecraft === 'all' || modpack.minecraft === filterMinecraft;
+      
+      return matchesSearch && matchesLoader && matchesMinecraft;
+    });
   };
 
   const updateWorldPacksFiles = async (worldName) => {
@@ -1212,7 +1816,14 @@ function Settings() {
   };
 
   const renderPropertiesSection = (sectionKey, sectionTitle, icon) => {
-    const config = server?.type === 'java' ? javaPropertiesConfig : bedrockPropertiesConfig;
+    let config;
+    
+    if (activeTab === 'modpacks') {
+      config = modpackConfig;
+    } else {
+      config = server?.type === 'java' ? javaPropertiesConfig : bedrockPropertiesConfig;
+    }
+    
     const sectionProperties = config[sectionKey] || [];
     
     if (sectionProperties.length === 0) return null;
@@ -1240,6 +1851,210 @@ function Settings() {
     );
   };
 
+  const renderModpackSelector = () => {
+    if (server?.type !== 'java') return null;
+
+    const filteredModpacks = searchModpacks(modpacks);
+    const installedModpack = modpacks.find(mp => mp.installed);
+
+    return (
+      <>
+        <Section>
+          <SectionHeader>
+            <SectionTitle>
+              <FiPackage /> {t('server.settings.section.modpacks') || 'Available Modpacks'}
+            </SectionTitle>
+            <RefreshButton onClick={fetchModpacks} disabled={loadingModpacks}>
+              <FiRefreshCw /> {t('server.settings.modpack.actions.refresh') || 'Refresh'}
+            </RefreshButton>
+          </SectionHeader>
+
+          <SearchContainer>
+            <SearchInput
+              type="text"
+              placeholder={t('server.settings.modpack.search') || 'Search modpacks...'}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            <FilterSelect
+              value={filterLoader}
+              onChange={(e) => setFilterLoader(e.target.value)}
+            >
+              <option value="all">{t('server.settings.modpack.allLoaders') || 'All Loaders'}</option>
+              <option value="forge">{t('server.settings.modpack.loader.forge') || 'Forge'}</option>
+              <option value="fabric">{t('server.settings.modpack.loader.fabric') || 'Fabric'}</option>
+              <option value="quilt">{t('server.settings.modpack.loader.quilt') || 'Quilt'}</option>
+              <option value="neoforge">{t('server.settings.modpack.loader.neoforge') || 'NeoForge'}</option>
+            </FilterSelect>
+            <FilterSelect
+              value={filterMinecraft}
+              onChange={(e) => setFilterMinecraft(e.target.value)}
+            >
+              <option value="all">{t('server.settings.modpack.allVersions') || 'All Versions'}</option>
+              <option value="1.20.1">1.20.1</option>
+              <option value="1.19.2">1.19.2</option>
+              <option value="1.18.2">1.18.2</option>
+              <option value="1.12.2">1.12.2</option>
+            </FilterSelect>
+          </SearchContainer>
+
+        {loadingModpacks ? (
+          <div style={{ textAlign: 'center', padding: '40px', color: '#a4aabc' }}>
+            <FiRefreshCw style={{ animation: 'spin 1s linear infinite' }} />
+            <div>{t('common.loading') || 'Loading modpacks...'}</div>
+          </div>
+        ) : filteredModpacks.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px', color: '#a4aabc' }}>
+            {t('server.settings.modpack.noResults') || 'No modpacks found matching your criteria.'}
+          </div>
+        ) : (
+          <ModpackGrid>
+            {filteredModpacks.map(modpack => {
+              const isDownloading = installingModpack === modpack.id;
+              const isSelected = selectedModpack === modpack.id;
+
+              return (
+                <ModpackCard
+                  key={modpack.id}
+                  $selected={isSelected}
+                  onClick={() => setSelectedModpack(modpack.id)}
+                >
+                  <ModpackHeader>
+                    <ModpackName>{modpack.name}</ModpackName>
+                    <ModpackVersion>{modpack.versions[0]}</ModpackVersion>
+                  </ModpackHeader>
+                  
+                  <ModpackDescription>
+                    {modpack.description}
+                  </ModpackDescription>
+                  
+                  <ModpackDetails>
+                    <div>
+                      <ModpackTag $type={modpack.loader}>
+                        {modpack.loader.toUpperCase()}
+                      </ModpackTag>
+                      <div style={{ marginTop: '5px' }}>MC {modpack.minecraft}</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div>{modpack.modCount} mods</div>
+                      <div>{modpack.fileSize}</div>
+                    </div>
+                  </ModpackDetails>
+
+                  {modpack.installed && (
+                    <ModpackStatus $status="installed">
+                      <FiCheckCircle /> {t('server.settings.modpack.installed') || 'Installed'}
+                    </ModpackStatus>
+                  )}
+
+                  {/* WYŚWIETLANIE POSTĘPU INSTALACJI */}
+                  {isDownloading && (
+                    <div style={{ marginTop: '15px' }}>
+                      <ProgressBar>
+                        <ProgressFill $progress={installationProgress} />
+                      </ProgressBar>
+                      <ProgressText>
+                        {installationMessage || t('server.settings.modpack.installing') || 'Installing modpack...'} ({installationProgress}%)
+                      </ProgressText>
+                    </div>
+                  )}
+
+                  <ActionButtons>
+                    {!modpack.installed ? (
+                      <ActionButton
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          downloadModpack(modpack);
+                        }}
+                        disabled={isDownloading || server.status === 'running'}
+                        background="#10b981"
+                      >
+                        <FiDownload /> {t('server.settings.modpack.actions.install') || 'Install'}
+                      </ActionButton>
+                    ) : (
+                      <>
+                        <ActionButton
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            updateModpack(modpack);
+                          }}
+                          disabled={isDownloading || server.status === 'running'}
+                          background="#3b82f6"
+                        >
+                          <FiGitBranch /> {t('server.settings.modpack.actions.update') || 'Update'}
+                        </ActionButton>
+                        <ActionButton
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeModpack();
+                          }}
+                          disabled={isDownloading || server.status === 'running'}
+                          background="#ef4444"
+                        >
+                          <FiArchive /> {t('server.settings.modpack.actions.remove') || 'Remove'}
+                        </ActionButton>
+                      </>
+                    )}
+                    <ActionButton
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        // Otwórz szczegóły modpacka
+                        window.open(`https://www.curseforge.com/minecraft/modpacks/${modpack.id}`, '_blank');
+                      }}
+                      background="#4a5070"
+                    >
+                      <FiExternalLink /> {t('server.settings.modpack.actions.details') || 'Details'}
+                    </ActionButton>
+                  </ActionButtons>
+                </ModpackCard>
+              );
+            })}
+          </ModpackGrid>
+        )}
+
+        <Description>
+          {t('server.settings.modpack.backupWarning') || 'Always backup your world before installing modpacks.'} 
+          {t('server.settings.modpack.serverMustBeStopped') || 'Server must be stopped to install/update/remove modpacks.'}
+        </Description>
+      </Section>
+
+        {installedModpack && (
+          <Section>
+            <SectionTitle>
+              <FiInfo /> {t('server.settings.modpack.currentlyInstalled') || 'Currently Installed Modpack'}
+            </SectionTitle>
+            <div style={{ 
+              background: '#1e3a8a', 
+              padding: '15px', 
+              borderRadius: '8px',
+              border: '1px solid #3b82f6'
+            }}>
+              <ModpackHeader>
+                <ModpackName>{installedModpack.name}</ModpackName>
+                <ModpackVersion>{properties['modpack-version']}</ModpackVersion>
+              </ModpackHeader>
+              <ModpackDescription>
+                {properties['modpack-description'] || installedModpack.description}
+              </ModpackDescription>
+              <ModpackDetails>
+                <div>
+                  <ModpackTag $type={properties['modpack-loader']}>
+                    {properties['modpack-loader']?.toUpperCase() || 'UNKNOWN'}
+                  </ModpackTag>
+                  <div style={{ marginTop: '5px' }}>MC {properties['minecraft-version']}</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div>Author: {installedModpack.author}</div>
+                  <div>{installedModpack.modCount} mods</div>
+                </div>
+              </ModpackDetails>
+            </div>
+          </Section>
+        )}
+      </>
+    );
+  };
+
   const renderTabContent = () => {
     if (!server) return null;
 
@@ -1248,34 +2063,44 @@ function Settings() {
 
     switch (activeTab) {
       case 'general':
-        return renderPropertiesSection('general', 'General Settings', <FiServer />);
+        return renderPropertiesSection('general', t('server.settings.section.general') || 'General Settings', <FiServer />);
       
       case 'game':
-        return renderPropertiesSection('game', 'Game Settings', <FiUsers />);
+        return renderPropertiesSection('game', t('server.settings.section.game') || 'Game Settings', <FiUsers />);
       
       case 'world':
-        return renderPropertiesSection('world', 'World Settings', <FiMap />);
+        return renderPropertiesSection('world', t('server.settings.section.world') || 'World Settings', <FiMap />);
       
       case 'performance':
-        return renderPropertiesSection('performance', 'Performance Settings', <FiCpu />);
+        return renderPropertiesSection('performance', t('server.settings.section.performance') || 'Performance Settings', <FiCpu />);
       
       case 'security':
-        return renderPropertiesSection('security', 'Security Settings', <FiShield />);
+        return renderPropertiesSection('security', t('server.settings.section.security') || 'Security Settings', <FiShield />);
       
       case 'network':
-        return renderPropertiesSection('network', 'Network Settings', <LuNetwork />);
+        return renderPropertiesSection('network', t('server.settings.section.network') || 'Network Settings', <LuNetwork />);
       
       case 'chat':
-        return renderPropertiesSection('chat', 'Chat Settings', <FiMessageSquare />);
+        return renderPropertiesSection('chat', t('server.settings.section.chat') || 'Chat Settings', <FiMessageSquare />);
       
       case 'resourcepacks':
         return renderPropertiesSection('resourcepacks', 'Resource Pack Settings', <FiDownload />);
       
       case 'features':
-        return renderPropertiesSection('features', 'Server Features', <FiLayers />);
+        return renderPropertiesSection('features', t('server.settings.section.features') || 'Server Features', <FiLayers />);
+      
+      case 'modpacks':
+        if (!isJava) return null;
+        return (
+          <>
+            {renderModpackSelector()}
+            {renderPropertiesSection('modpack', 'Modpack Information', <FiPackage />)}
+            {renderPropertiesSection('management', 'Modpack Management', <FiSettings />)}
+          </>
+        );
       
       case 'advanced':
-        return renderPropertiesSection('advanced', 'Advanced Settings', <FiCode />);
+        return renderPropertiesSection('advanced', t('server.settings.section.advanced') || 'Advanced Settings', <FiCode />);
 
       case 'bedrock-worlds':
         if (!isBedrock) return null;
@@ -1283,20 +2108,20 @@ function Settings() {
           <Section>
             <SectionHeader>
               <SectionTitle>
-                <FiGlobe /> Bedrock Worlds
+                <FiGlobe /> {t('server.settings.section.bedrockWorlds') || 'Bedrock Worlds'}
               </SectionTitle>
               <RefreshButton onClick={fetchWorlds} disabled={loadingWorlds}>
-                <FiRefreshCw /> Refresh
+                <FiRefreshCw /> {t('common.refresh') || 'Refresh'}
               </RefreshButton>
             </SectionHeader>
             
             {loadingWorlds ? (
-              <div>Loading worlds...</div>
+              <div>{t('common.loading') || 'Loading worlds...'}</div>
             ) : worlds.length === 0 ? (
               <div>
-                No Bedrock worlds found in the server directory.
+                {t('server.settings.noWorldsFound') || 'No Bedrock worlds found in the server directory.'}
                 <br />
-                Worlds will appear here once you create them in the server's main folder.
+                {t('server.settings.worldsWillAppear') || 'Worlds will appear here once you create them in the server\'s main folder.'}
               </div>
             ) : (
               <WorldList>
@@ -1310,7 +2135,7 @@ function Settings() {
                     <WorldPath>/{world.path}</WorldPath>
                     {world.name === (properties['level-name'] || 'Bedrock level') && (
                       <div style={{ fontSize: '0.8rem', color: '#10b981', marginTop: '5px' }}>
-                        ✓ Active World
+                        ✓ {t('server.settings.activeWorld') || 'Active World'}
                       </div>
                     )}
                   </WorldItem>
@@ -1319,8 +2144,7 @@ function Settings() {
             )}
             
             <Description>
-              Select a world to make it active. The server will use this world when starting. 
-              Changing worlds will automatically update the world pack files with installed addons.
+              {t('server.settings.worldsDescription') || 'Select a world to make it active. The server will use this world when starting. Changing worlds will automatically update the world pack files with installed addons.'}
             </Description>
           </Section>
         );
@@ -1332,35 +2156,34 @@ function Settings() {
 
   const getTabs = () => {
     if (server?.type === 'bedrock') {
-      // Dla Bedrock używamy prostszego zestawu zakładek
       return [
-        { id: 'general', label: 'General', icon: <FiServer /> },
-        { id: 'game', label: 'Game', icon: <FiUsers /> },
-        { id: 'world', label: 'World', icon: <FiMap /> },
-        { id: 'bedrock-worlds', label: 'Bedrock Worlds', icon: <FiGlobe /> },
-        { id: 'performance', label: 'Performance', icon: <FiCpu /> },
-        { id: 'security', label: 'Security', icon: <FiShield /> },
-        { id: 'advanced', label: 'Advanced', icon: <FiCode /> },
+        { id: 'general', label: t('server.settings.section.general') || 'General', icon: <FiServer /> },
+        { id: 'game', label: t('server.settings.section.game') || 'Game', icon: <FiUsers /> },
+        { id: 'world', label: t('server.settings.section.world') || 'World', icon: <FiMap /> },
+        { id: 'bedrock-worlds', label: t('server.settings.section.bedrockWorlds') || 'Bedrock Worlds', icon: <FiGlobe /> },
+        { id: 'performance', label: t('server.settings.section.performance') || 'Performance', icon: <FiCpu /> },
+        { id: 'security', label: t('server.settings.section.security') || 'Security', icon: <FiShield /> },
+        { id: 'advanced', label: t('server.settings.section.advanced') || 'Advanced', icon: <FiCode /> },
       ];
     }
 
-    // Dla Java używamy pełnego zestawu zakładek
     return [
-      { id: 'general', label: 'General', icon: <FiServer /> },
-      { id: 'game', label: 'Game', icon: <FiUsers /> },
-      { id: 'world', label: 'World', icon: <FiMap /> },
-      { id: 'performance', label: 'Performance', icon: <FiCpu /> },
-      { id: 'security', label: 'Security', icon: <FiShield /> },
-      { id: 'network', label: 'Network', icon: <LuNetwork /> },
-      { id: 'chat', label: 'Chat', icon: <FiMessageSquare /> },
+      { id: 'general', label: t('server.settings.section.general') || 'General', icon: <FiServer /> },
+      { id: 'game', label: t('server.settings.section.game') || 'Game', icon: <FiUsers /> },
+      { id: 'world', label: t('server.settings.section.world') || 'World', icon: <FiMap /> },
+      { id: 'modpacks', label: t('server.settings.section.modpacks') || 'Modpacks', icon: <FiPackage /> },
+      { id: 'performance', label: t('server.settings.section.performance') || 'Performance', icon: <FiCpu /> },
+      { id: 'security', label: t('server.settings.section.security') || 'Security', icon: <FiShield /> },
+      { id: 'network', label: t('server.settings.section.network') || 'Network', icon: <LuNetwork /> },
+      { id: 'chat', label: t('server.settings.section.chat') || 'Chat', icon: <FiMessageSquare /> },
       { id: 'resourcepacks', label: 'Resource Packs', icon: <FiDownload /> },
-      { id: 'features', label: 'Features', icon: <FiLayers /> },
-      { id: 'advanced', label: 'Advanced', icon: <FiCode /> },
+      { id: 'features', label: t('server.settings.section.features') || 'Features', icon: <FiLayers /> },
+      { id: 'advanced', label: t('server.settings.section.advanced') || 'Advanced', icon: <FiCode /> },
     ];
   };
 
   if (loading) {
-    return <Container>Loading settings...</Container>;
+    return <Container>{t('common.loading') || 'Loading settings...'}</Container>;
   }
 
   return (
@@ -1370,43 +2193,43 @@ function Settings() {
           $active={false} 
           onClick={() => navigate(`/servers/${serverId}`)}
         >
-          <FiActivity /> {t('page.dashboard') || 'Overview'}
+          <FiActivity /> {t('server.nav.overview') || 'Overview'}
         </NavTab>
         <NavTab 
           $active={false} 
           onClick={() => navigate(`/servers/${serverId}/console`)}
         >
-          <FiTerminal /> {t('nav.console') || 'Console'}
+          <FiTerminal /> {t('server.nav.console') || 'Console'}
         </NavTab>
         <NavTab 
           $active={false} 
           onClick={() => navigate(`/servers/${serverId}/files`)}
         >
-          <FiFolder /> {t('page.files') || 'Files'}
+          <FiFolder /> {t('server.nav.files') || 'Files'}
         </NavTab>
         <NavTab 
           $active={true}
         >
-          <FiSettings /> {t('page.server.settings') || 'Config'}
+          <FiSettings /> {t('server.nav.settings') || 'Settings'}
         </NavTab>
         <NavTab 
           $active={false} 
           onClick={() => navigate(`/servers/${serverId}/plugins`)}
         >
-          <FiBox /> {t('nav.plugins') || 'Plugins'}
+          <FiBox /> {t('server.nav.plugins') || 'Plugins'}
         </NavTab>
         <NavTab 
           $active={false} 
           onClick={() => navigate(`/servers/${serverId}/users`)}
         >
-          <FiUser /> {t('nav.users') || 'Users'}
+          <FiUser /> {t('server.nav.users') || 'Users'}
         </NavTab>
         
          <NavTab 
           $active={false} 
           onClick={() => navigate(`/servers/${serverId}/backups`)}
         >
-          <FiDownload /> {t('page.backups') || 'Backups'}
+          <FiDownload /> {t('server.nav.backups') || 'Backups'}
           </NavTab>
       </NavTabs>
 
