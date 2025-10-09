@@ -1310,13 +1310,16 @@ def create_addon():
         if not data.get(field):
             return jsonify({'error': f'Missing required field: {field}'}), 400
     
-    # Sprawdź czy wymagane URL są obecne w zależności od typu
+    # Nowa walidacja dla typu pliku
+    pack_type = data.get('pack_type', 'separate')  # 'separate', 'combined', 'single'
+    
     if data['type'] == 'addon':
-        if not data.get('behavior_pack_url') and not data.get('resource_pack_url'):
-            return jsonify({'error': 'Bedrock addon requires at least one pack URL'}), 400
-    else:
-        if not data.get('download_url'):
-            return jsonify({'error': 'Plugin/script requires download URL'}), 400
+        if pack_type == 'separate':
+            if not data.get('behavior_pack_url') and not data.get('resource_pack_url'):
+                return jsonify({'error': 'Bedrock addon requires at least one pack URL for separate packs'}), 400
+        elif pack_type in ['combined', 'single']:
+            if not data.get('download_url'):
+                return jsonify({'error': 'Combined/single addon requires download URL'}), 400
     
     # Check if addon with same name and version already exists
     existing = Addon.query.filter_by(
@@ -1338,7 +1341,8 @@ def create_addon():
         image_url=data.get('image_url'),
         description=data.get('description'),
         author=data.get('author'),
-        is_installed=False  # Zawsze false przy tworzeniu
+        is_installed=False,
+        pack_type=pack_type  # Nowe pole
     )
     
     db.session.add(addon)
@@ -1414,9 +1418,26 @@ def get_installed_addons(server_id):
         # Placeholder for local Java plugin management
         return jsonify([])
 
-    # Fallback to existing logic for Bedrock servers
-    installed_addons = Addon.query.filter(Addon.installed_on_servers.any(id=server_id)).all()
-    return jsonify([addon.to_dict() for addon in installed_addons])
+    # For Bedrock servers - użyj metody get_installed_servers
+    try:
+        all_addons = Addon.query.all()
+        installed_addons = []
+        
+        for addon in all_addons:
+            try:
+                # Użyj metody get_installed_servers z modelu
+                installed_servers = addon.get_installed_servers()
+                if server_id in installed_servers:
+                    installed_addons.append(addon)
+            except Exception as e:
+                print(f"Error checking addon {addon.id}: {e}")
+                continue
+                
+        return jsonify([addon.to_dict() for addon in installed_addons])
+        
+    except Exception as e:
+        print(f"Error in get_installed_addons: {e}")
+        return jsonify([])
 
 @main.route('/servers/<int:server_id>/addons/<int:addon_id>/install', methods=['POST'])
 @jwt_required()

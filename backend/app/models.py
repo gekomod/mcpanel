@@ -368,6 +368,7 @@ class Addon(db.Model):
     behavior_pack_version = db.Column(db.String(20), nullable=True)
     resource_pack_uuid = db.Column(db.String(36), nullable=True)
     resource_pack_version = db.Column(db.String(20), nullable=True)
+    type_specific = db.Column(db.String(20), default='separate')
     installed_on_servers = db.Column(db.Text, default='[]')
     enabled = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -391,29 +392,66 @@ class Addon(db.Model):
         try:
             if not self.installed_on_servers or self.installed_on_servers.strip() == '':
                 return []
-            return json.loads(self.installed_on_servers)
-        except (json.JSONDecodeError, TypeError):
+        
+            # Sprawdź czy to już lista
+            if isinstance(self.installed_on_servers, list):
+                return self.installed_on_servers
+        
+            # Spróbuj sparsować JSON
+            servers = json.loads(self.installed_on_servers)
+        
+            # Upewnij się że to lista
+            if isinstance(servers, list):
+                return servers
+            elif isinstance(servers, dict):
+                # Jeśli to dict, zwróć klucze lub wartości w zależności od struktury
+                return list(servers.values()) if servers else []
+            else:
+                return []
+            
+        except (json.JSONDecodeError, TypeError, AttributeError) as e:
+            print(f"Error parsing installed_servers for addon {self.id}: {e}")
             return []
     
     def set_installed_servers(self, server_ids):
         """Ustawia listę ID serwerów gdzie addon jest zainstalowany"""
-        if not isinstance(server_ids, list):
-            server_ids = []
-        self.installed_on_servers = json.dumps(server_ids)
+        try:
+            if not isinstance(server_ids, list):
+                server_ids = []
+        
+            # Upewnij się że wszystkie elementy to int
+            server_ids = [int(server_id) for server_id in server_ids if str(server_id).isdigit()]
+        
+            self.installed_on_servers = json.dumps(server_ids)
+        except Exception as e:
+            print(f"Error setting installed_servers for addon {self.id}: {e}")
+            self.installed_on_servers = '[]'
     
     def add_installed_server(self, server_id):
         """Dodaje serwer do listy zainstalowanych"""
-        servers = self.get_installed_servers()
-        if server_id not in servers:
-            servers.append(server_id)
-            self.set_installed_servers(servers)
+        try:
+            server_id = int(server_id)
+            servers = self.get_installed_servers()
+            if server_id not in servers:
+                servers.append(server_id)
+                self.set_installed_servers(servers)
+                self.is_installed = True
+        except (ValueError, TypeError) as e:
+            print(f"Error adding server {server_id} to addon {self.id}: {e}")
     
     def remove_installed_server(self, server_id):
         """Usuwa serwer z listy zainstalowanych"""
-        servers = self.get_installed_servers()
-        if server_id in servers:
-            servers.remove(server_id)
-            self.set_installed_servers(servers)
+        try:
+            server_id = int(server_id)
+            servers = self.get_installed_servers()
+            if server_id in servers:
+                servers.remove(server_id)
+                self.set_installed_servers(servers)
+                # Jeśli nie ma już żadnych serwerów, ustaw is_installed na False
+                if not servers:
+                    self.is_installed = False
+        except (ValueError, TypeError) as e:
+            print(f"Error removing server {server_id} from addon {self.id}: {e}")
     
     def to_dict(self):
         return {
@@ -435,6 +473,7 @@ class Addon(db.Model):
             'resource_pack_uuid': self.resource_pack_uuid,
             'resource_pack_version': self.resource_pack_version,
             'installed_on_servers': self.get_installed_servers(),
+            'type_specific': getattr(self, 'type_specific', 'separate'),
             'enabled': self.enabled,
             'created_at': self.created_at.isoformat(),
             'updated_at': self.updated_at.isoformat() if self.updated_at else None

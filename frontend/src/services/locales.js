@@ -501,6 +501,7 @@ export const translations = {
     'plugin.manager.addon.type.addon': 'dodatek',
     'plugin.manager.addon.type.script': 'skrypt',
     'plugin.manager.addon.type.worlds': 'świat',
+    'plugin.manager.addon.type.textures': 'textury',
     'plugin.manager.addon.author': 'Autor: {author}',
     'plugin.manager.addon.author.unknown': 'Nieznany',
     'plugin.manager.addon.version': 'w{version}',
@@ -526,6 +527,7 @@ export const translations = {
     'plugin.manager.bedrock.behaviorOnly': 'Tylko pakiet zachowań',
     'plugin.manager.bedrock.resourceOnly': 'Tylko pakiet zasobów',
     'plugin.manager.bedrock.noPacksAvailable': 'Brak pakietów',
+    'plugin.manager.bedrock.singlePack': 'Pojedynczy Pakiet (.mcpack)',
     
     'plugin.manager.compatibility.warning': '⚠️ Niekompatybilny z wersją serwera {version}',
     'plugin.manager.compatibility.title': 'Ten {type} jest dla Minecraft {addonVersion}, ale twój serwer działa na {serverVersion}',

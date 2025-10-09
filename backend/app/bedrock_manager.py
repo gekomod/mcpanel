@@ -52,7 +52,7 @@ class BedrockAddonManager:
             
         except Exception as e:
             return False, f"Error processing {pack_type} pack: {str(e)}"
-            
+    
     def _extract_and_fix_nested(self, zip_path, target_path):
         """Extract zip and fix nested directory structure with deep checking"""
         try:
@@ -107,7 +107,6 @@ class BedrockAddonManager:
             print(f"Extraction error: {e}")
             return False
 
-
     def _move_contents(self, source_dir, target_dir):
         """Move all contents from source to target directory"""
         os.makedirs(target_dir, exist_ok=True)
@@ -124,22 +123,6 @@ class BedrockAddonManager:
                     os.remove(target_item)
         
             # Przenieś nowy element
-            shutil.move(source_item, target_dir)
-            
-    def _move_contents(self, source_dir, target_dir):
-        """Move all contents from source to target directory"""
-        os.makedirs(target_dir, exist_ok=True)
-        
-        for item in os.listdir(source_dir):
-            source_item = os.path.join(source_dir, item)
-            target_item = os.path.join(target_dir, item)
-            
-            if os.path.exists(target_item):
-                if os.path.isdir(target_item):
-                    shutil.rmtree(target_item)
-                else:
-                    os.remove(target_item)
-            
             shutil.move(source_item, target_dir)
     
     def read_manifest_info(self, pack_path):
@@ -220,7 +203,7 @@ class BedrockAddonManager:
             return False, f"Error updating world packs: {str(e)}"
     
     def install_addon(self, addon, server_name, world_name=None):
-        """Instaluje addon na serwerze"""
+        """Instaluje addon na serwerze z obsługą różnych typów pakietów"""
         try:
             if addon.type == 'worlds':
                 return self.install_world(addon, server_name)
@@ -234,84 +217,134 @@ class BedrockAddonManager:
             results = {}
             pack_info = {}
             
-            # Określ URL i typ packa na podstawie typu addona
-            if addon.type == 'textures':
-                # Texture pack -> resource_packs
-                if addon.resource_pack_url or addon.download_url:
-                    url = addon.resource_pack_url or addon.download_url
-                    success, message = self.download_and_extract_pack(
-                        url, 'textures', addon.name, server_name
-                    )
-                    if success:
-                        uuid, version = self.read_manifest_info(message)
-                        if uuid and version:
-                            pack_info['resource_pack_uuid'] = uuid
-                            pack_info['resource_pack_version'] = version
-                            # Aktualizuj plik świata
-                            self.update_world_packs(server_name, world_name, 'resource', uuid, version)
-                            results['resource_pack'] = 'Installed successfully'
-                        else:
-                            results['resource_pack'] = 'Installed but failed to read manifest'
-                    else:
-                        results['resource_pack'] = f'Failed: {message}'
+            # Obsługa różnych typów pakietów
+            pack_type = getattr(addon, 'pack_type', 'separate')
             
-            elif addon.type == 'script':
-                # Script pack -> behavior_packs
-                if addon.behavior_pack_url or addon.download_url:
-                    url = addon.behavior_pack_url or addon.download_url
-                    success, message = self.download_and_extract_pack(
-                        url, 'script', addon.name, server_name
-                    )
-                    if success:
-                        uuid, version = self.read_manifest_info(message)
-                        if uuid and version:
-                            pack_info['behavior_pack_uuid'] = uuid
-                            pack_info['behavior_pack_version'] = version
-                            # Aktualizuj plik świata
-                            self.update_world_packs(server_name, world_name, 'behavior', uuid, version)
-                            results['behavior_pack'] = 'Installed successfully'
-                        else:
-                            results['behavior_pack'] = 'Installed but failed to read manifest'
-                    else:
-                        results['behavior_pack'] = f'Failed: {message}'
-            
+            if pack_type == 'combined':
+                # Obsługa połączonego pliku .mcaddon
+                return self._install_combined_addon(addon, server_name, world_name)
+            elif pack_type == 'single':
+                # Obsługa pojedynczego pakietu .mcpack
+                return self._install_single_pack(addon, server_name, world_name)
             else:
-                # Standard addon - może mieć oba paki
-                # Przetwórz behavior pack
-                if addon.behavior_pack_url:
-                    success, message = self.download_and_extract_pack(
-                        addon.behavior_pack_url, 'behavior', addon.name, server_name
-                    )
-                    if success:
-                        uuid, version = self.read_manifest_info(message)
-                        if uuid and version:
-                            pack_info['behavior_pack_uuid'] = uuid
-                            pack_info['behavior_pack_version'] = version
-                            # Aktualizuj plik świata
-                            self.update_world_packs(server_name, world_name, 'behavior', uuid, version)
-                            results['behavior_pack'] = 'Installed successfully'
-                        else:
-                            results['behavior_pack'] = 'Installed but failed to read manifest'
-                    else:
-                        results['behavior_pack'] = f'Failed: {message}'
-                
-                # Przetwórz resource pack
-                if addon.resource_pack_url:
-                    success, message = self.download_and_extract_pack(
-                        addon.resource_pack_url, 'resource', addon.name, server_name
-                    )
-                    if success:
-                        uuid, version = self.read_manifest_info(message)
-                        if uuid and version:
-                            pack_info['resource_pack_uuid'] = uuid
-                            pack_info['resource_pack_version'] = version
-                            # Aktualizuj plik świata
-                            self.update_world_packs(server_name, world_name, 'resource', uuid, version)
-                            results['resource_pack'] = 'Installed successfully'
-                        else:
-                            results['resource_pack'] = 'Installed but failed to read manifest'
-                    else:
-                        results['resource_pack'] = f'Failed: {message}'
+                # Domyślnie: oddzielne pakiety (separate)
+                return self._install_separate_packs(addon, server_name, world_name)
+            
+        except Exception as e:
+            return False, f"Installation failed: {str(e)}"
+    
+    def _install_separate_packs(self, addon, server_name, world_name):
+        """Instaluje oddzielne pakiety behavior i resource"""
+        results = {}
+        pack_info = {}
+        server_path = os.path.join(self.server_base_path, server_name)
+        
+        # Standard addon - może mieć oba paki
+        # Przetwórz behavior pack
+        if addon.behavior_pack_url:
+            success, message = self.download_and_extract_pack(
+                addon.behavior_pack_url, 'behavior', addon.name, server_name
+            )
+            if success:
+                uuid, version = self.read_manifest_info(message)
+                if uuid and version:
+                    pack_info['behavior_pack_uuid'] = uuid
+                    pack_info['behavior_pack_version'] = version
+                    # Aktualizuj plik świata
+                    self.update_world_packs(server_name, world_name, 'behavior', uuid, version)
+                    results['behavior_pack'] = 'Installed successfully'
+                else:
+                    results['behavior_pack'] = 'Installed but failed to read manifest'
+            else:
+                results['behavior_pack'] = f'Failed: {message}'
+        
+        # Przetwórz resource pack
+        if addon.resource_pack_url:
+            success, message = self.download_and_extract_pack(
+                addon.resource_pack_url, 'resource', addon.name, server_name
+            )
+            if success:
+                uuid, version = self.read_manifest_info(message)
+                if uuid and version:
+                    pack_info['resource_pack_uuid'] = uuid
+                    pack_info['resource_pack_version'] = version
+                    # Aktualizuj plik świata
+                    self.update_world_packs(server_name, world_name, 'resource', uuid, version)
+                    results['resource_pack'] = 'Installed successfully'
+                else:
+                    results['resource_pack'] = 'Installed but failed to read manifest'
+            else:
+                results['resource_pack'] = f'Failed: {message}'
+        
+        return True, {
+            'results': results,
+            'pack_info': pack_info
+        }
+    
+    def _install_combined_addon(self, addon, server_name, world_name):
+        """Instaluje połączony addon .mcaddon i rozdziela pakiety"""
+        try:
+            server_path = os.path.join(self.server_base_path, server_name)
+            
+            if not addon.download_url:
+                return False, "No download URL provided for combined addon"
+            
+            # Pobierz plik .mcaddon
+            response = requests.get(addon.download_url, stream=True)
+            if response.status_code != 200:
+                return False, "Failed to download combined addon"
+            
+            # Zapisz tymczasowo
+            temp_mcaddon = os.path.join(server_path, f"temp_{addon.name}.mcaddon")
+            with open(temp_mcaddon, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            
+            results = {}
+            pack_info = {}
+            
+            # .mcaddon to tak naprawdę .zip z określoną strukturą
+            with zipfile.ZipFile(temp_mcaddon, 'r') as zip_ref:
+                # Sprawdź strukturę i przenieś pakiety do odpowiednich katalogów
+                for file_name in zip_ref.namelist():
+                    if file_name.endswith('.mcpack'):
+                        # Wyodrębnij tymczasowo pakiet
+                        temp_pack = os.path.join(server_path, f"temp_{file_name}")
+                        with open(temp_pack, 'wb') as f:
+                            f.write(zip_ref.read(file_name))
+                        
+                        # Określ typ pakietu na podstawie nazwy i zawartości
+                        pack_type = self._detect_pack_type(temp_pack, file_name)
+                        
+                        # Zainstaluj pakiet
+                        if pack_type == 'behavior':
+                            success, message = self.download_and_extract_pack(
+                                f"file://{temp_pack}", 'behavior', addon.name, server_name
+                            )
+                            if success:
+                                uuid, version = self.read_manifest_info(message)
+                                if uuid and version:
+                                    pack_info['behavior_pack_uuid'] = uuid
+                                    pack_info['behavior_pack_version'] = version
+                                    self.update_world_packs(server_name, world_name, 'behavior', uuid, version)
+                                    results['behavior_pack'] = 'Installed successfully'
+                        elif pack_type == 'resource':
+                            success, message = self.download_and_extract_pack(
+                                f"file://{temp_pack}", 'resource', addon.name, server_name
+                            )
+                            if success:
+                                uuid, version = self.read_manifest_info(message)
+                                if uuid and version:
+                                    pack_info['resource_pack_uuid'] = uuid
+                                    pack_info['resource_pack_version'] = version
+                                    self.update_world_packs(server_name, world_name, 'resource', uuid, version)
+                                    results['resource_pack'] = 'Installed successfully'
+                        
+                        # Usuń tymczasowy plik
+                        os.remove(temp_pack)
+            
+            # Usuń tymczasowy .mcaddon
+            os.remove(temp_mcaddon)
             
             return True, {
                 'results': results,
@@ -319,12 +352,122 @@ class BedrockAddonManager:
             }
             
         except Exception as e:
-            return False, f"Installation failed: {str(e)}"
+            # Sprzątanie w przypadku błędu
+            if 'temp_mcaddon' in locals() and os.path.exists(temp_mcaddon):
+                os.remove(temp_mcaddon)
+            return False, f"Failed to install combined addon: {str(e)}"
+    
+    def _install_single_pack(self, addon, server_name, world_name):
+        """Instaluje pojedynczy pakiet .mcpack"""
+        try:
+            server_path = os.path.join(self.server_base_path, server_name)
+            
+            if not addon.download_url:
+                return False, "No download URL provided for single pack"
+            
+            # Pobierz plik .mcpack
+            response = requests.get(addon.download_url, stream=True)
+            if response.status_code != 200:
+                return False, "Failed to download single pack"
+            
+            # Zapisz tymczasowo
+            temp_mcpack = os.path.join(server_path, f"temp_{addon.name}.mcpack")
+            with open(temp_mcpack, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            
+            # Określ typ pakietu
+            pack_type = self._detect_pack_type(temp_mcpack, addon.download_url)
+            
+            results = {}
+            pack_info = {}
+            
+            # Zainstaluj pakiet
+            if pack_type == 'behavior':
+                success, message = self.download_and_extract_pack(
+                    f"file://{temp_mcpack}", 'behavior', addon.name, server_name
+                )
+                if success:
+                    uuid, version = self.read_manifest_info(message)
+                    if uuid and version:
+                        pack_info['behavior_pack_uuid'] = uuid
+                        pack_info['behavior_pack_version'] = version
+                        self.update_world_packs(server_name, world_name, 'behavior', uuid, version)
+                        results['behavior_pack'] = 'Installed successfully'
+            elif pack_type == 'resource':
+                success, message = self.download_and_extract_pack(
+                    f"file://{temp_mcpack}", 'resource', addon.name, server_name
+                )
+                if success:
+                    uuid, version = self.read_manifest_info(message)
+                    if uuid and version:
+                        pack_info['resource_pack_uuid'] = uuid
+                        pack_info['resource_pack_version'] = version
+                        self.update_world_packs(server_name, world_name, 'resource', uuid, version)
+                        results['resource_pack'] = 'Installed successfully'
+            else:
+                return False, "Could not determine pack type"
+            
+            # Usuń tymczasowy plik
+            os.remove(temp_mcpack)
+            
+            return True, {
+                'results': results,
+                'pack_info': pack_info
+            }
+            
+        except Exception as e:
+            # Sprzątanie w przypadku błędu
+            if 'temp_mcpack' in locals() and os.path.exists(temp_mcpack):
+                os.remove(temp_mcpack)
+            return False, f"Failed to install single pack: {str(e)}"
+    
+    def _detect_pack_type(self, pack_path, file_name):
+        """Wykrywa typ pakietu na podstawie nazwy pliku i zawartości"""
+        try:
+            # Sprawdź nazwę pliku
+            file_lower = file_name.lower()
+            if 'behavior' in file_lower or 'bp' in file_lower.lower():
+                return 'behavior'
+            elif 'resource' in file_lower or 'rp' in file_lower.lower() or 'texture' in file_lower:
+                return 'resource'
+            
+            # Jeśli nazwa nie pomaga, sprawdź zawartość
+            temp_extract = f"{pack_path}_temp"
+            os.makedirs(temp_extract, exist_ok=True)
+            
+            with zipfile.ZipFile(pack_path, 'r') as zip_ref:
+                zip_ref.extractall(temp_extract)
+            
+            # Sprawdź manifest
+            manifest_path = os.path.join(temp_extract, 'manifest.json')
+            if os.path.exists(manifest_path):
+                with open(manifest_path, 'r', encoding='utf-8') as f:
+                    manifest = json.load(f)
+                
+                modules = manifest.get('modules', [])
+                for module in modules:
+                    module_type = module.get('type', '').lower()
+                    if 'data' in module_type or 'script' in module_type or 'game' in module_type:
+                        shutil.rmtree(temp_extract)
+                        return 'behavior'
+                    elif 'resources' in module_type:
+                        shutil.rmtree(temp_extract)
+                        return 'resource'
+            
+            # Sprzątanie
+            shutil.rmtree(temp_extract)
+            
+            # Domyślnie behavior pack
+            return 'behavior'
+            
+        except Exception as e:
+            print(f"Error detecting pack type: {e}")
+            return 'behavior'
     
     def uninstall_addon(self, addon, server_name):
         """Odinstalowuje addon z serwera - usuwa katalogi i wpisy z plików świata"""
         try:
-        
             if addon.type == 'worlds':
                 return self.uninstall_world(addon, server_name)
         
@@ -436,12 +579,12 @@ class BedrockAddonManager:
             resource_uuid = addon.resource_pack_uuid
         
             # Jeśli UUID nie ma w bazie, spróbuj odczytać z manifestów
-            if not behavior_uuid and addon.behavior_pack_url:
+            if not behavior_uuid:
                 behavior_path = os.path.join(server_path, 'behavior_packs', addon.name)
                 if os.path.exists(behavior_path):
                     behavior_uuid, _ = self.read_manifest_info(behavior_path)
         
-            if not resource_uuid and addon.resource_pack_url:
+            if not resource_uuid:
                 resource_path = os.path.join(server_path, 'resource_packs', addon.name)
                 if os.path.exists(resource_path):
                     resource_uuid, _ = self.read_manifest_info(resource_path)

@@ -501,6 +501,7 @@ function AddonManager() {
     download_url: '',
     behavior_pack_url: '',
     resource_pack_url: '',
+    pack_type: 'separate',
     image_url: '',
     description: '',
     author: '',
@@ -950,29 +951,61 @@ function AddonManager() {
                 </FormGroup>
               )}
               
-              {formData.type === 'addon' && (
-                <>
-                  <FormGroup>
-                    <FormLabel>{t('plugin.manager.bedrock.behaviorPack')} URL</FormLabel>
-                    <FormInput
-                      type="url"
-                      value={formData.behavior_pack_url}
-                      onChange={(e) => setFormData({...formData, behavior_pack_url: e.target.value})}
-                      placeholder="https://example.com/behavior_pack.mcpack"
-                    />
-                  </FormGroup>
-                  
-                  <FormGroup>
-                    <FormLabel>{t('plugin.manager.bedrock.resourcePack')} URL</FormLabel>
-                    <FormInput
-                      type="url"
-                      value={formData.resource_pack_url}
-                      onChange={(e) => setFormData({...formData, resource_pack_url: e.target.value})}
-                      placeholder="https://example.com/resource_pack.mcpack"
-                    />
-                  </FormGroup>
-                </>
-              )}
+				{formData.type === 'addon' && (
+				  <FormGroup>
+					<FormLabel>Typ Pakietu *</FormLabel>
+					<FormSelect
+					  value={formData.pack_type}
+					  onChange={(e) => setFormData({...formData, pack_type: e.target.value})}
+					  required
+					>
+					  <option value="separate">Oddzielne Pakiety (Behavior + Resource)</option>
+					  <option value="combined">Połączony Plik (.mcaddon)</option>
+					  <option value="single">Pojedynczy Pakiet (.mcpack)</option>
+					</FormSelect>
+				  </FormGroup>
+				)}
+              
+              {formData.type === 'addon' && formData.pack_type === 'separate' && (
+				  <>
+					<FormGroup>
+					  <FormLabel>Behavior Pack URL</FormLabel>
+					  <FormInput
+						type="url"
+						value={formData.behavior_pack_url}
+						onChange={(e) => setFormData({...formData, behavior_pack_url: e.target.value})}
+						placeholder="https://example.com/behavior_pack.mcpack"
+					  />
+					</FormGroup>
+					
+					<FormGroup>
+					  <FormLabel>Resource Pack URL</FormLabel>
+					  <FormInput
+						type="url"
+						value={formData.resource_pack_url}
+						onChange={(e) => setFormData({...formData, resource_pack_url: e.target.value})}
+						placeholder="https://example.com/resource_pack.mcpack"
+					  />
+					</FormGroup>
+				  </>
+				)}
+
+				{formData.type === 'addon' && (formData.pack_type === 'combined' || formData.pack_type === 'single') && (
+				  <FormGroup>
+					<FormLabel>Download URL *</FormLabel>
+					<FormInput
+					  type="url"
+					  value={formData.download_url}
+					  onChange={(e) => setFormData({...formData, download_url: e.target.value})}
+					  placeholder={
+						formData.pack_type === 'combined' 
+						  ? "https://example.com/addon.mcaddon" 
+						  : "https://example.com/pack.mcpack"
+					  }
+					  required
+					/>
+				  </FormGroup>
+				)}
               
               <FormGroup>
                 <FormLabel>{t('plugin.manager.addon.author', { author: '' })}</FormLabel>
