@@ -9,22 +9,301 @@ class BedrockAddonManager:
     def __init__(self, server_base_path):
         self.server_base_path = server_base_path
     
-    def download_and_extract_pack(self, url, pack_type, addon_name, server_name):
-        """Pobiera i rozpakowuje pack do odpowiedniego katalogu"""
+    def install_addon(self, addon, server_name, world_name=None):
+        """Instaluje addon na serwerze z obsługą różnych typów pakietów"""
         try:
-            # Ścieżki docelowe
+            if addon.type == 'worlds':
+                return self.install_world(addon, server_name)
+            
             server_path = os.path.join(self.server_base_path, server_name)
             
-            # Określ docelowy katalog na podstawie typu addona
-            if pack_type == 'behavior' or pack_type == 'script':
-                extract_path = os.path.join(server_path, 'behavior_packs', addon_name)
-            elif pack_type == 'textures':
-                extract_path = os.path.join(server_path, 'resource_packs', addon_name)
-            else:
-                extract_path = os.path.join(server_path, pack_type + '_packs', addon_name)
+            # Sprawdź czy serwer istnieje
+            if not os.path.exists(server_path):
+                return False, "Server directory not found"
             
-            # Utwórz katalog jeśli nie istnieje
-            os.makedirs(extract_path, exist_ok=True)
+            # Pobierz typ pakietu z addona
+            pack_type = getattr(addon, 'type_specific', 'separate')
+            print(f"Installing addon {addon.name} with pack type: {pack_type}")
+            
+            if pack_type == 'combined':
+                # Obsługa połączonego pliku .mcaddon
+                return self._install_combined_addon(addon, server_name, world_name)
+            elif pack_type == 'single':
+                # Obsługa pojedynczego pakietu .mcpack
+                return self._install_single_pack(addon, server_name, world_name)
+            else:
+                # Domyślnie: oddzielne pakiety (separate)
+                return self._install_separate_packs(addon, server_name, world_name)
+            
+        except Exception as e:
+            return False, f"Installation failed: {str(e)}"
+    
+    def _install_separate_packs(self, addon, server_name, world_name):
+        """Instaluje oddzielne pakiety behavior i resource"""
+        results = {}
+        pack_info = {}
+        server_path = os.path.join(self.server_base_path, server_name)
+        
+        print(f"Installing separate packs for {addon.name}")
+        
+        # Przetwórz behavior pack
+        if addon.behavior_pack_url:
+            print(f"Downloading behavior pack from: {addon.behavior_pack_url}")
+            success, message = self._download_and_process_pack(
+                addon.behavior_pack_url, 'behavior', addon.name, server_name
+            )
+            if success:
+                print(f"Behavior pack processed: {message}")
+                uuid, version = self.read_manifest_info(message)
+                if uuid and version:
+                    pack_info['behavior_pack_uuid'] = uuid
+                    pack_info['behavior_pack_version'] = version
+                    # Aktualizuj plik świata
+                    self.update_world_packs(server_name, world_name, 'behavior', uuid, version)
+                    results['behavior_pack'] = 'Installed successfully'
+                else:
+                    results['behavior_pack'] = 'Installed but failed to read manifest'
+            else:
+                results['behavior_pack'] = f'Failed: {message}'
+        
+        # Przetwórz resource pack
+        if addon.resource_pack_url:
+            print(f"Downloading resource pack from: {addon.resource_pack_url}")
+            success, message = self._download_and_process_pack(
+                addon.resource_pack_url, 'resource', addon.name, server_name
+            )
+            if success:
+                print(f"Resource pack processed: {message}")
+                uuid, version = self.read_manifest_info(message)
+                if uuid and version:
+                    pack_info['resource_pack_uuid'] = uuid
+                    pack_info['resource_pack_version'] = version
+                    # Aktualizuj plik świata
+                    self.update_world_packs(server_name, world_name, 'resource', uuid, version)
+                    results['resource_pack'] = 'Installed successfully'
+                else:
+                    results['resource_pack'] = 'Installed but failed to read manifest'
+            else:
+                results['resource_pack'] = f'Failed: {message}'
+        
+        return True, {
+            'results': results,
+            'pack_info': pack_info
+        }
+    
+    def _install_combined_addon(self, addon, server_name, world_name):
+        """Instaluje połączony addon .mcaddon który zawiera bezpośrednio katalogi z pakietami"""
+        try:
+            server_path = os.path.join(self.server_base_path, server_name)
+        
+            if not addon.download_url:
+                return False, "No download URL provided for combined addon"
+        
+            print(f"Downloading combined addon from: {addon.download_url}")
+        
+            # Utwórz główny katalog tymczasowy w katalogu serwera
+            temp_dir = os.path.join(server_path, f"temp_{addon.name}")
+            os.makedirs(temp_dir, exist_ok=True)
+        
+            # Pobierz plik .mcaddon
+            response = requests.get(addon.download_url, stream=True)
+            if response.status_code != 200:
+                return False, "Failed to download combined addon"
+        
+            temp_mcaddon = os.path.join(temp_dir, f"{addon.name}.mcaddon")
+            with open(temp_mcaddon, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+        
+            print(f"Extracting .mcaddon file: {temp_mcaddon}")
+        
+            # Rozpakuj .mcaddon (to jest zip)
+            with zipfile.ZipFile(temp_mcaddon, 'r') as zip_ref:
+                zip_ref.extractall(temp_dir)
+        
+            print(f"Contents of extracted .mcaddon:")
+            for root, dirs, files in os.walk(temp_dir):
+                level = root.replace(temp_dir, '').count(os.sep)
+                indent = ' ' * 2 * level
+                print(f"{indent}{os.path.basename(root)}/")
+                subindent = ' ' * 2 * (level + 1)
+                for file in files:
+                    print(f"{subindent}{file}")
+        
+            results = {}
+            pack_info = {}
+        
+            # Przeszukaj rozpakowane katalogi w poszukiwaniu pakietów
+            for root, dirs, files in os.walk(temp_dir):
+                for dir_name in dirs:
+                    dir_path = os.path.join(root, dir_name)
+                
+                    # Sprawdź czy katalog zawiera manifest.json (czy to jest pakiet)
+                    manifest_path = os.path.join(dir_path, 'manifest.json')
+                    if os.path.exists(manifest_path):
+                        print(f"Found pack directory with manifest: {dir_name}")
+                    
+                        # Określ typ pakietu na podstawie manifestu
+                        pack_type = self._detect_pack_type_by_manifest(manifest_path)
+                        if not pack_type:
+                            # Jeśli nie udało się określić z manifestu, spróbuj po nazwie
+                            pack_type = self._detect_pack_type_by_name(dir_name)
+                    
+                        print(f"Detected pack type: {pack_type} for directory: {dir_name}")
+                    
+                        # Przenieś pakiet do właściwego katalogu
+                        success, final_path = self._move_pack_directory(dir_path, pack_type, dir_name, server_name)
+                    
+                        if success:
+                            uuid, version = self.read_manifest_info(final_path)
+                            if uuid and version:
+                                if pack_type == 'behavior':
+                                    pack_info['behavior_pack_uuid'] = uuid
+                                    pack_info['behavior_pack_version'] = version
+                                    self.update_world_packs(server_name, world_name, 'behavior', uuid, version)
+                                    results['behavior_pack'] = 'Installed successfully'
+                                    print(f"Behavior pack installed: {dir_name}")
+                                else:
+                                    pack_info['resource_pack_uuid'] = uuid
+                                    pack_info['resource_pack_version'] = version
+                                    self.update_world_packs(server_name, world_name, 'resource', uuid, version)
+                                    results['resource_pack'] = 'Installed successfully'
+                                    print(f"Resource pack installed: {dir_name}")
+        
+            # Jeśli nie znaleziono pakietów w podkatalogach, sprawdź główny katalog
+            if not results:
+                print("No packs found in subdirectories, checking root directory...")
+                for item in os.listdir(temp_dir):
+                    item_path = os.path.join(temp_dir, item)
+                    if os.path.isdir(item_path):
+                        manifest_path = os.path.join(item_path, 'manifest.json')
+                        if os.path.exists(manifest_path):
+                            print(f"Found pack in root directory: {item}")
+                        
+                            pack_type = self._detect_pack_type_by_manifest(manifest_path)
+                            if not pack_type:
+                                pack_type = self._detect_pack_type_by_name(item)
+                        
+                            print(f"Detected pack type: {pack_type} for directory: {item}")
+                        
+                            success, final_path = self._move_pack_directory(item_path, pack_type, item, server_name)
+                        
+                            if success:
+                                uuid, version = self.read_manifest_info(final_path)
+                                if uuid and version:
+                                    if pack_type == 'behavior':
+                                        pack_info['behavior_pack_uuid'] = uuid
+                                        pack_info['behavior_pack_version'] = version
+                                        self.update_world_packs(server_name, world_name, 'behavior', uuid, version)
+                                        results['behavior_pack'] = 'Installed successfully'
+                                    else:
+                                        pack_info['resource_pack_uuid'] = uuid
+                                        pack_info['resource_pack_version'] = version
+                                        self.update_world_packs(server_name, world_name, 'resource', uuid, version)
+                                        results['resource_pack'] = 'Installed successfully'
+        
+            # Sprzątanie
+            shutil.rmtree(temp_dir)
+        
+            if not results:
+                return False, "No valid packs found in the .mcaddon file"
+        
+            return True, {
+                'results': results,
+                'pack_info': pack_info
+            }
+        
+        except Exception as e:
+            # Sprzątanie w przypadku błędu
+            if 'temp_dir' in locals() and os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+            return False, f"Failed to install combined addon: {str(e)}"
+            
+    def _move_pack_directory(self, source_dir, pack_type, dir_name, server_name):
+        """Przenosi katalog pakietu do właściwego katalogu"""
+        try:
+            server_path = os.path.join(self.server_base_path, server_name)
+        
+            # Określ docelowy katalog
+            if pack_type == 'behavior':
+                target_base_dir = os.path.join(server_path, 'behavior_packs')
+            else:
+                target_base_dir = os.path.join(server_path, 'resource_packs')
+        
+            os.makedirs(target_base_dir, exist_ok=True)
+        
+            target_dir = os.path.join(target_base_dir, dir_name)
+        
+            # Usuń istniejący katalog jeśli istnieje
+            if os.path.exists(target_dir):
+                print(f"Removing existing directory: {target_dir}")
+                shutil.rmtree(target_dir)
+        
+            print(f"Moving pack directory from {source_dir} to {target_dir}")
+            shutil.move(source_dir, target_dir)
+        
+            print(f"Pack successfully moved to: {target_dir}")
+            return True, target_dir
+        
+        except Exception as e:
+            return False, f"Error moving pack directory: {str(e)}"
+    
+    def _install_single_pack(self, addon, server_name, world_name):
+        """Instaluje pojedynczy pakiet .mcpack"""
+        try:
+            server_path = os.path.join(self.server_base_path, server_name)
+            
+            if not addon.download_url:
+                return False, "No download URL provided for single pack"
+            
+            print(f"Downloading single pack from: {addon.download_url}")
+            
+            # Określ typ pakietu na podstawie URL
+            pack_type = self._detect_pack_type_by_name(addon.download_url)
+            print(f"Detected pack type: {pack_type}")
+            
+            results = {}
+            pack_info = {}
+            
+            # Pobierz i przetwórz pakiet
+            success, final_path = self._download_and_process_pack(
+                addon.download_url, pack_type, addon.name, server_name
+            )
+            
+            if success:
+                uuid, version = self.read_manifest_info(final_path)
+                if uuid and version:
+                    if pack_type == 'behavior':
+                        pack_info['behavior_pack_uuid'] = uuid
+                        pack_info['behavior_pack_version'] = version
+                        self.update_world_packs(server_name, world_name, 'behavior', uuid, version)
+                        results['behavior_pack'] = 'Installed successfully'
+                    else:
+                        pack_info['resource_pack_uuid'] = uuid
+                        pack_info['resource_pack_version'] = version
+                        self.update_world_packs(server_name, world_name, 'resource', uuid, version)
+                        results['resource_pack'] = 'Installed successfully'
+            else:
+                return False, f"Failed to process pack: {final_path}"
+            
+            return True, {
+                'results': results,
+                'pack_info': pack_info
+            }
+            
+        except Exception as e:
+            return False, f"Failed to install single pack: {str(e)}"
+    
+    def _download_and_process_pack(self, url, pack_type, addon_name, server_name):
+        """Pobiera i przetwarza pakiet - główna metoda"""
+        try:
+            server_path = os.path.join(self.server_base_path, server_name)
+            
+            # Utwórz katalog tymczasowy w katalogu serwera
+            temp_dir = os.path.join(server_path, f"temp_{addon_name}")
+            os.makedirs(temp_dir, exist_ok=True)
+            
+            print(f"Downloading pack from: {url}")
             
             # Pobierz plik
             response = requests.get(url, stream=True)
@@ -32,120 +311,244 @@ class BedrockAddonManager:
                 return False, f"Failed to download {pack_type} pack"
             
             # Zapisz plik tymczasowy
-            temp_zip = os.path.join(extract_path, 'temp_pack.zip')
-            with open(temp_zip, 'wb') as f:
+            temp_file = os.path.join(temp_dir, "downloaded_pack.mcpack")
+            with open(temp_file, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
             
-            # Rozpakuj
-            success = self._extract_and_fix_nested(temp_zip, extract_path)
-            if not success:
-                return False, "Failed to extract pack"
+            print(f"File downloaded to: {temp_file}")
             
-            # Usuń tymczasowy zip
-            try:
-                os.remove(temp_zip)
-            except:
-                pass
+            # Przetwórz .mcpack
+            success, final_path = self._process_mcpack_file(temp_file, pack_type, addon_name, server_name)
             
-            return True, extract_path
+            # Sprzątanie
+            shutil.rmtree(temp_dir)
+            
+            return success, final_path
             
         except Exception as e:
+            # Sprzątanie w przypadku błędu
+            if 'temp_dir' in locals() and os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
             return False, f"Error processing {pack_type} pack: {str(e)}"
     
-    def _extract_and_fix_nested(self, zip_path, target_path):
-        """Extract zip and fix nested directory structure with deep checking"""
+    def _process_mcpack_file(self, mcpack_path, pack_type, addon_name, server_name):
+        """Przetwarza plik .mcpack - rozpakowuje i przenosi do właściwego katalogu"""
         try:
-            # Create temporary extraction directory
-            temp_extract = f"{target_path}_temp"
-            os.makedirs(temp_extract, exist_ok=True)
-        
-            # Extract zip
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(temp_extract)
-        
-            # Funkcja do sprawdzania czy katalog zawiera pliki Minecraft
-            def is_minecraft_directory(path):
-                minecraft_files = ['manifest.json', 'pack_icon.png', 'behavior_pack', 'resource_pack']
-                for item in os.listdir(path):
-                    if any(mc_file in item.lower() for mc_file in minecraft_files):
-                        return True
-                    item_path = os.path.join(path, item)
-                    if os.path.isdir(item_path) and is_minecraft_directory(item_path):
-                        return True
-                return False
-        
-            # Funkcja do znajdowania najbardziej zagnieżdżonego katalogu z plikami Minecraft
-            def find_minecraft_root(path, current_depth=0, max_depth=3):
-                if current_depth >= max_depth:
-                    return path
-                
-                items = os.listdir(path)
-                if len(items) == 1:
-                    single_item = os.path.join(path, items[0])
-                    if os.path.isdir(single_item) and is_minecraft_directory(single_item):
-                        return find_minecraft_root(single_item, current_depth + 1, max_depth)
+            server_path = os.path.join(self.server_base_path, server_name)
             
-                return path
-        
-            # Znajdź właściwy katalog z plikami Minecraft
-            minecraft_root = find_minecraft_root(temp_extract)
-        
-            # Jeśli znaleźliśmy głębiej zagnieżdżony katalog, przenieś jego zawartość
-            if minecraft_root != temp_extract:
-                print(f"Found Minecraft files at: {minecraft_root}")
-                self._move_contents(minecraft_root, target_path)
+            print(f"Processing .mcpack file: {mcpack_path}")
+            
+            # Utwórz tymczasowy katalog do rozpakowania
+            extract_temp_dir = f"{mcpack_path}_extract"
+            os.makedirs(extract_temp_dir, exist_ok=True)
+            
+            # Rozpakuj .mcpack (to jest zip)
+            with zipfile.ZipFile(mcpack_path, 'r') as zip_ref:
+                zip_ref.extractall(extract_temp_dir)
+            
+            print(f"Extracted to: {extract_temp_dir}")
+            
+            # Szukaj katalogów z BP lub RP w nazwie
+            pack_folders = self._find_pack_folders(extract_temp_dir)
+            print(f"Found pack folders: {pack_folders}")
+            
+            # Określ docelowy katalog
+            if pack_type == 'behavior':
+                target_base_dir = os.path.join(server_path, 'behavior_packs')
             else:
-                # Przenieś wszystko z tymczasowego katalogu
-                self._move_contents(temp_extract, target_path)
-        
-            # Clean up
-            shutil.rmtree(temp_extract)
-            return True
-        
+                target_base_dir = os.path.join(server_path, 'resource_packs')
+            
+            os.makedirs(target_base_dir, exist_ok=True)
+            
+            final_path = None
+            
+            # Przenieś znalezione katalogi
+            for folder_name, folder_path in pack_folders.items():
+                target_dir = os.path.join(target_base_dir, folder_name)
+                
+                # Usuń istniejący katalog jeśli istnieje
+                if os.path.exists(target_dir):
+                    shutil.rmtree(target_dir)
+                
+                print(f"Moving {folder_path} to {target_dir}")
+                shutil.move(folder_path, target_dir)
+                final_path = target_dir
+            
+            # Jeśli nie znaleziono katalogów z BP/RP, przenieś cały rozpakowany katalog
+            if not pack_folders:
+                target_dir = os.path.join(target_base_dir, addon_name)
+                
+                # Usuń istniejący katalog jeśli istnieje
+                if os.path.exists(target_dir):
+                    shutil.rmtree(target_dir)
+                
+                print(f"No specific pack folders found, moving entire content to {target_dir}")
+                shutil.move(extract_temp_dir, target_dir)
+                final_path = target_dir
+            else:
+                # Usuń tymczasowy katalog rozpakowania
+                shutil.rmtree(extract_temp_dir)
+            
+            print(f"Pack successfully installed to: {final_path}")
+            return True, final_path
+            
         except Exception as e:
-            print(f"Extraction error: {e}")
-            return False
-
-    def _move_contents(self, source_dir, target_dir):
-        """Move all contents from source to target directory"""
-        os.makedirs(target_dir, exist_ok=True)
+            # Sprzątanie w przypadku błędu
+            if 'extract_temp_dir' in locals() and os.path.exists(extract_temp_dir):
+                shutil.rmtree(extract_temp_dir)
+            return False, f"Error processing .mcpack file: {str(e)}"
     
-        for item in os.listdir(source_dir):
-            source_item = os.path.join(source_dir, item)
-            target_item = os.path.join(target_dir, item)
+    def _find_pack_folders(self, directory):
+        """Znajduje katalogi z BP lub RP w nazwie"""
+        pack_folders = {}
         
-            # Usuń istniejący element jeśli istnieje
-            if os.path.exists(target_item):
-                if os.path.isdir(target_item):
-                    shutil.rmtree(target_item)
+        for item in os.listdir(directory):
+            item_path = os.path.join(directory, item)
+            
+            if os.path.isdir(item_path):
+                item_lower = item.lower()
+                
+                # Sprawdź czy katalog zawiera BP lub RP w nazwie
+                if 'bp' in item_lower or 'behavior' in item_lower:
+                    pack_folders[item] = item_path
+                    print(f"Found behavior pack folder: {item}")
+                elif 'rp' in item_lower or 'resource' in item_lower or 'texture' in item_lower:
+                    pack_folders[item] = item_path
+                    print(f"Found resource pack folder: {item}")
                 else:
-                    os.remove(target_item)
+                    # Sprawdź czy katalog zawiera manifest.json (może to być pakiet)
+                    manifest_path = os.path.join(item_path, 'manifest.json')
+                    if os.path.exists(manifest_path):
+                        print(f"Found folder with manifest: {item}")
+                        # Spróbuj określić typ z manifestu
+                        pack_type = self._detect_pack_type_by_manifest(manifest_path)
+                        if pack_type:
+                            pack_folders[item] = item_path
+                            print(f"Folder {item} detected as {pack_type} pack by manifest")
         
-            # Przenieś nowy element
-            shutil.move(source_item, target_dir)
+        return pack_folders
     
+    def _detect_pack_type_by_name(self, filename):
+        """Wykrywa typ pakietu na podstawie nazwy pliku"""
+        filename_lower = filename.lower()
+        
+        if 'behavior' in filename_lower or 'bp' in filename_lower:
+            return 'behavior'
+        elif 'resource' in filename_lower or 'rp' in filename_lower or 'texture' in filename_lower:
+            return 'resource'
+        else:
+            # Domyślnie behavior pack
+            return 'behavior'
+    
+    def _detect_pack_type_by_manifest(self, manifest_path):
+        """Wykrywa typ pakietu na podstawie manifest.json z obsługą komentarzy"""
+        try:
+            with open(manifest_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+        
+            # Usuń komentarze z pliku JSON
+            cleaned_content = self._remove_json_comments(content)
+        
+            manifest = json.loads(cleaned_content)
+        
+            modules = manifest.get('modules', [])
+            for module in modules:
+                module_type = module.get('type', '').lower()
+                print(f"Module type in manifest: {module_type}")
+            
+                if any(t in module_type for t in ['data', 'script', 'game', 'javascript', 'client_data']):
+                    return 'behavior'
+                elif any(t in module_type for t in ['resources', 'client_resources', 'ui', 'textures']):
+                    return 'resource'
+        
+            # Sprawdź też wersję manifestu
+            manifest_version = manifest.get('format_version', 0)
+            print(f"Manifest format version: {manifest_version}")
+        
+            # Domyślnie behavior pack
+            return 'behavior'
+        except Exception as e:
+            print(f"Error reading manifest for type detection: {e}")
+            return None
+
+
+    def _remove_json_comments(self, json_string):
+        """Usuwa komentarze z ciągu JSON - użyj zaawansowanej wersji"""
+        return self._remove_json_comments_advanced(json_string)
+
+    def _remove_json_comments_advanced(self, json_string):
+        """Zaawansowane usuwanie komentarzy z JSON"""
+        # Usuń komentarze wielolinijkowe
+        while '/*' in json_string and '*/' in json_string:
+            start = json_string.find('/*')
+            end = json_string.find('*/', start) + 2
+            json_string = json_string[:start] + json_string[end:]
+    
+        # Usuń komentarze jednolinijkowe
+        lines = json_string.split('\n')
+        cleaned_lines = []
+        in_multiline_comment = False
+    
+        for line in lines:
+            # Sprawdź czy jesteśmy w komentarzu wielolinijkowym
+            if in_multiline_comment:
+                if '*/' in line:
+                    in_multiline_comment = False
+                    line = line.split('*/', 1)[1]
+                else:
+                    continue
+        
+            # Sprawdź początek komentarza wielolinijkowego
+            if '/*' in line:
+                in_multiline_comment = True
+                before_comment = line.split('/*')[0]
+                if '*/' in line:
+                    # Komentarz zaczyna się i kończy w tej samej linii
+                    after_comment = line.split('*/', 1)[1]
+                    line = before_comment + after_comment
+                    in_multiline_comment = False
+                else:
+                    line = before_comment
+            else:
+                # Usuń komentarze jednolinijkowe
+                if '//' in line:
+                    line = line.split('//')[0]
+        
+            # Dodaj linię tylko jeśli nie jest pusta
+            if line.strip():
+                cleaned_lines.append(line)
+    
+        return '\n'.join(cleaned_lines)
+
     def read_manifest_info(self, pack_path):
-        """Odczytuje UUID i wersję z manifest.json"""
+        """Odczytuje UUID i wersję z manifest.json z obsługą komentarzy"""
         try:
             manifest_path = os.path.join(pack_path, 'manifest.json')
             if not os.path.exists(manifest_path):
                 return None, None
-            
+        
             with open(manifest_path, 'r', encoding='utf-8') as f:
-                manifest = json.load(f)
-            
+                content = f.read()
+        
+            # Usuń komentarze z pliku JSON
+            cleaned_content = self._remove_json_comments(content)
+        
+            manifest = json.loads(cleaned_content)
+        
             header = manifest.get('header', {})
             uuid = header.get('uuid', '')
             version = header.get('version', [0, 0, 0])
-            
+        
             # Konwertuj wersję do stringa jeśli to lista
             if isinstance(version, list):
                 version = '.'.join(map(str, version))
-            
+        
+            print(f"Read manifest - UUID: {uuid}, Version: {version}")
             return uuid, str(version)
-            
+        
         except Exception as e:
+            print(f"Error reading manifest: {e}")
             return None, None
     
     def update_world_packs(self, server_name, world_name, pack_type, pack_uuid, pack_version):
@@ -197,274 +600,13 @@ class BedrockAddonManager:
             with open(config_file, 'w', encoding='utf-8') as f:
                 json.dump(packs, f, indent=2)
             
+            print(f"Updated {pack_type} packs for world {target_world}")
             return True, f"Updated {pack_type} packs for world {target_world}"
             
         except Exception as e:
+            print(f"Error updating world packs: {str(e)}")
             return False, f"Error updating world packs: {str(e)}"
-    
-    def install_addon(self, addon, server_name, world_name=None):
-        """Instaluje addon na serwerze z obsługą różnych typów pakietów"""
-        try:
-            if addon.type == 'worlds':
-                return self.install_world(addon, server_name)
-            
-            server_path = os.path.join(self.server_base_path, server_name)
-            
-            # Sprawdź czy serwer istnieje
-            if not os.path.exists(server_path):
-                return False, "Server directory not found"
-            
-            results = {}
-            pack_info = {}
-            
-            # Obsługa różnych typów pakietów
-            pack_type = getattr(addon, 'pack_type', 'separate')
-            
-            if pack_type == 'combined':
-                # Obsługa połączonego pliku .mcaddon
-                return self._install_combined_addon(addon, server_name, world_name)
-            elif pack_type == 'single':
-                # Obsługa pojedynczego pakietu .mcpack
-                return self._install_single_pack(addon, server_name, world_name)
-            else:
-                # Domyślnie: oddzielne pakiety (separate)
-                return self._install_separate_packs(addon, server_name, world_name)
-            
-        except Exception as e:
-            return False, f"Installation failed: {str(e)}"
-    
-    def _install_separate_packs(self, addon, server_name, world_name):
-        """Instaluje oddzielne pakiety behavior i resource"""
-        results = {}
-        pack_info = {}
-        server_path = os.path.join(self.server_base_path, server_name)
-        
-        # Standard addon - może mieć oba paki
-        # Przetwórz behavior pack
-        if addon.behavior_pack_url:
-            success, message = self.download_and_extract_pack(
-                addon.behavior_pack_url, 'behavior', addon.name, server_name
-            )
-            if success:
-                uuid, version = self.read_manifest_info(message)
-                if uuid and version:
-                    pack_info['behavior_pack_uuid'] = uuid
-                    pack_info['behavior_pack_version'] = version
-                    # Aktualizuj plik świata
-                    self.update_world_packs(server_name, world_name, 'behavior', uuid, version)
-                    results['behavior_pack'] = 'Installed successfully'
-                else:
-                    results['behavior_pack'] = 'Installed but failed to read manifest'
-            else:
-                results['behavior_pack'] = f'Failed: {message}'
-        
-        # Przetwórz resource pack
-        if addon.resource_pack_url:
-            success, message = self.download_and_extract_pack(
-                addon.resource_pack_url, 'resource', addon.name, server_name
-            )
-            if success:
-                uuid, version = self.read_manifest_info(message)
-                if uuid and version:
-                    pack_info['resource_pack_uuid'] = uuid
-                    pack_info['resource_pack_version'] = version
-                    # Aktualizuj plik świata
-                    self.update_world_packs(server_name, world_name, 'resource', uuid, version)
-                    results['resource_pack'] = 'Installed successfully'
-                else:
-                    results['resource_pack'] = 'Installed but failed to read manifest'
-            else:
-                results['resource_pack'] = f'Failed: {message}'
-        
-        return True, {
-            'results': results,
-            'pack_info': pack_info
-        }
-    
-    def _install_combined_addon(self, addon, server_name, world_name):
-        """Instaluje połączony addon .mcaddon i rozdziela pakiety"""
-        try:
-            server_path = os.path.join(self.server_base_path, server_name)
-            
-            if not addon.download_url:
-                return False, "No download URL provided for combined addon"
-            
-            # Pobierz plik .mcaddon
-            response = requests.get(addon.download_url, stream=True)
-            if response.status_code != 200:
-                return False, "Failed to download combined addon"
-            
-            # Zapisz tymczasowo
-            temp_mcaddon = os.path.join(server_path, f"temp_{addon.name}.mcaddon")
-            with open(temp_mcaddon, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            
-            results = {}
-            pack_info = {}
-            
-            # .mcaddon to tak naprawdę .zip z określoną strukturą
-            with zipfile.ZipFile(temp_mcaddon, 'r') as zip_ref:
-                # Sprawdź strukturę i przenieś pakiety do odpowiednich katalogów
-                for file_name in zip_ref.namelist():
-                    if file_name.endswith('.mcpack'):
-                        # Wyodrębnij tymczasowo pakiet
-                        temp_pack = os.path.join(server_path, f"temp_{file_name}")
-                        with open(temp_pack, 'wb') as f:
-                            f.write(zip_ref.read(file_name))
-                        
-                        # Określ typ pakietu na podstawie nazwy i zawartości
-                        pack_type = self._detect_pack_type(temp_pack, file_name)
-                        
-                        # Zainstaluj pakiet
-                        if pack_type == 'behavior':
-                            success, message = self.download_and_extract_pack(
-                                f"file://{temp_pack}", 'behavior', addon.name, server_name
-                            )
-                            if success:
-                                uuid, version = self.read_manifest_info(message)
-                                if uuid and version:
-                                    pack_info['behavior_pack_uuid'] = uuid
-                                    pack_info['behavior_pack_version'] = version
-                                    self.update_world_packs(server_name, world_name, 'behavior', uuid, version)
-                                    results['behavior_pack'] = 'Installed successfully'
-                        elif pack_type == 'resource':
-                            success, message = self.download_and_extract_pack(
-                                f"file://{temp_pack}", 'resource', addon.name, server_name
-                            )
-                            if success:
-                                uuid, version = self.read_manifest_info(message)
-                                if uuid and version:
-                                    pack_info['resource_pack_uuid'] = uuid
-                                    pack_info['resource_pack_version'] = version
-                                    self.update_world_packs(server_name, world_name, 'resource', uuid, version)
-                                    results['resource_pack'] = 'Installed successfully'
-                        
-                        # Usuń tymczasowy plik
-                        os.remove(temp_pack)
-            
-            # Usuń tymczasowy .mcaddon
-            os.remove(temp_mcaddon)
-            
-            return True, {
-                'results': results,
-                'pack_info': pack_info
-            }
-            
-        except Exception as e:
-            # Sprzątanie w przypadku błędu
-            if 'temp_mcaddon' in locals() and os.path.exists(temp_mcaddon):
-                os.remove(temp_mcaddon)
-            return False, f"Failed to install combined addon: {str(e)}"
-    
-    def _install_single_pack(self, addon, server_name, world_name):
-        """Instaluje pojedynczy pakiet .mcpack"""
-        try:
-            server_path = os.path.join(self.server_base_path, server_name)
-            
-            if not addon.download_url:
-                return False, "No download URL provided for single pack"
-            
-            # Pobierz plik .mcpack
-            response = requests.get(addon.download_url, stream=True)
-            if response.status_code != 200:
-                return False, "Failed to download single pack"
-            
-            # Zapisz tymczasowo
-            temp_mcpack = os.path.join(server_path, f"temp_{addon.name}.mcpack")
-            with open(temp_mcpack, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            
-            # Określ typ pakietu
-            pack_type = self._detect_pack_type(temp_mcpack, addon.download_url)
-            
-            results = {}
-            pack_info = {}
-            
-            # Zainstaluj pakiet
-            if pack_type == 'behavior':
-                success, message = self.download_and_extract_pack(
-                    f"file://{temp_mcpack}", 'behavior', addon.name, server_name
-                )
-                if success:
-                    uuid, version = self.read_manifest_info(message)
-                    if uuid and version:
-                        pack_info['behavior_pack_uuid'] = uuid
-                        pack_info['behavior_pack_version'] = version
-                        self.update_world_packs(server_name, world_name, 'behavior', uuid, version)
-                        results['behavior_pack'] = 'Installed successfully'
-            elif pack_type == 'resource':
-                success, message = self.download_and_extract_pack(
-                    f"file://{temp_mcpack}", 'resource', addon.name, server_name
-                )
-                if success:
-                    uuid, version = self.read_manifest_info(message)
-                    if uuid and version:
-                        pack_info['resource_pack_uuid'] = uuid
-                        pack_info['resource_pack_version'] = version
-                        self.update_world_packs(server_name, world_name, 'resource', uuid, version)
-                        results['resource_pack'] = 'Installed successfully'
-            else:
-                return False, "Could not determine pack type"
-            
-            # Usuń tymczasowy plik
-            os.remove(temp_mcpack)
-            
-            return True, {
-                'results': results,
-                'pack_info': pack_info
-            }
-            
-        except Exception as e:
-            # Sprzątanie w przypadku błędu
-            if 'temp_mcpack' in locals() and os.path.exists(temp_mcpack):
-                os.remove(temp_mcpack)
-            return False, f"Failed to install single pack: {str(e)}"
-    
-    def _detect_pack_type(self, pack_path, file_name):
-        """Wykrywa typ pakietu na podstawie nazwy pliku i zawartości"""
-        try:
-            # Sprawdź nazwę pliku
-            file_lower = file_name.lower()
-            if 'behavior' in file_lower or 'bp' in file_lower.lower():
-                return 'behavior'
-            elif 'resource' in file_lower or 'rp' in file_lower.lower() or 'texture' in file_lower:
-                return 'resource'
-            
-            # Jeśli nazwa nie pomaga, sprawdź zawartość
-            temp_extract = f"{pack_path}_temp"
-            os.makedirs(temp_extract, exist_ok=True)
-            
-            with zipfile.ZipFile(pack_path, 'r') as zip_ref:
-                zip_ref.extractall(temp_extract)
-            
-            # Sprawdź manifest
-            manifest_path = os.path.join(temp_extract, 'manifest.json')
-            if os.path.exists(manifest_path):
-                with open(manifest_path, 'r', encoding='utf-8') as f:
-                    manifest = json.load(f)
-                
-                modules = manifest.get('modules', [])
-                for module in modules:
-                    module_type = module.get('type', '').lower()
-                    if 'data' in module_type or 'script' in module_type or 'game' in module_type:
-                        shutil.rmtree(temp_extract)
-                        return 'behavior'
-                    elif 'resources' in module_type:
-                        shutil.rmtree(temp_extract)
-                        return 'resource'
-            
-            # Sprzątanie
-            shutil.rmtree(temp_extract)
-            
-            # Domyślnie behavior pack
-            return 'behavior'
-            
-        except Exception as e:
-            print(f"Error detecting pack type: {e}")
-            return 'behavior'
-    
+
     def uninstall_addon(self, addon, server_name):
         """Odinstalowuje addon z serwera - usuwa katalogi i wpisy z plików świata"""
         try:

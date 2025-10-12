@@ -1310,16 +1310,19 @@ def create_addon():
         if not data.get(field):
             return jsonify({'error': f'Missing required field: {field}'}), 400
     
-    # Nowa walidacja dla typu pliku
-    pack_type = data.get('pack_type', 'separate')  # 'separate', 'combined', 'single'
+    # Pobierz typ pakietu (domyślnie 'separate')
+    pack_type = data.get('pack_type', data.get('type_specific', 'separate'))
     
+    # Walidacja dla addonów Bedrock
     if data['type'] == 'addon':
         if pack_type == 'separate':
+            # Wymagaj przynajmniej jednego packa dla oddzielnych pakietów
             if not data.get('behavior_pack_url') and not data.get('resource_pack_url'):
                 return jsonify({'error': 'Bedrock addon requires at least one pack URL for separate packs'}), 400
         elif pack_type in ['combined', 'single']:
+            # Wymagaj download_url dla połączonych/pojedynczych pakietów
             if not data.get('download_url'):
-                return jsonify({'error': 'Combined/single addon requires download URL'}), 400
+                return jsonify({'error': f'{pack_type.capitalize()} addon requires download URL'}), 400
     
     # Check if addon with same name and version already exists
     existing = Addon.query.filter_by(
@@ -1342,7 +1345,7 @@ def create_addon():
         description=data.get('description'),
         author=data.get('author'),
         is_installed=False,
-        pack_type=pack_type  # Nowe pole
+        type_specific=pack_type  # Ustaw typ pakietu
     )
     
     db.session.add(addon)
@@ -1376,7 +1379,7 @@ def update_addon(addon_id):
     # Aktualizuj pola
     update_fields = ['name', 'type', 'version', 'minecraft_version', 'download_url',
                     'behavior_pack_url', 'resource_pack_url', 'image_url', 
-                    'description', 'author', 'is_active', 'is_installed']
+                    'description', 'author', 'is_active', 'is_installed', 'type_specific']
     
     for field in update_fields:
         if field in data:
@@ -3943,6 +3946,471 @@ def get_current_modpack(server_id):
     except Exception as e:
         print(f"Error getting current modpack: {e}")
         return jsonify({'modpack': None})
+
+@main.route('/database/stats', methods=['GET'])
+@jwt_required()
+def get_database_stats():
+    """Pobiera statystyki bazy danych"""
+    current_user_id = get_jwt_identity()
+    
+    # Sprawdź uprawnienia administratora
+    current_user = User.query.get(current_user_id)
+    if not current_user or current_user.role != 'admin':
+        return jsonify({'error': 'Access denied - admin role required'}), 403
+    
+    try:
+        # Połączenie z bazą danych SQLite
+        db_path = current_app.config.get('SQLALCHEMY_DATABASE_URI', 'instance/mcpanel.db').replace('sqlite:///', '')
+        
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # Pobierz statystyki
+        cursor.execute("""
+            SELECT 
+                (SELECT COUNT(*) FROM sqlite_master WHERE type='table') as table_count,
+                (SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()) as db_size,
+                (SELECT freelist_count * page_size FROM pragma_freelist_count(), pragma_page_size()) as free_size
+        """)
+        stats = cursor.fetchone()
+        
+        # Pobierz informacje o tabelach
+        cursor.execute("""
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name NOT LIKE 'sqlite_%'
+        """)
+        tables = cursor.fetchall()
+        
+        # Pobierz ostatnią kopię zapasową
+        backup_info = _get_last_backup_info()
+        
+        conn.close()
+        
+        return jsonify({
+            'size': f"{(stats[1] / 1024 / 1024):.1f} MB",
+            'freeSpace': f"{(stats[2] / 1024 / 1024):.1f} MB",
+            'tables': stats[0],
+            'activeTables': len(tables),
+            'inactiveTables': 0,
+            'lastBackup': backup_info.get('last_backup', 'Nigdy'),
+            'nextBackup': backup_info.get('next_backup', 'Nie zaplanowano')
+        })
+        
+    except Exception as e:
+        logging.error(f"Error getting database stats: {e}")
+        return jsonify({'error': 'Failed to get database statistics'}), 500
+
+
+@main.route('/database/tables', methods=['GET'])
+@jwt_required()
+def get_database_tables():
+    """Pobiera listę wszystkich tabel w bazie danych"""
+    current_user_id = get_jwt_identity()
+    
+    # Sprawdź uprawnienia administratora
+    current_user = User.query.get(current_user_id)
+    if not current_user or current_user.role != 'admin':
+        return jsonify({'error': 'Access denied - admin role required'}), 403
+    
+    try:
+        db_path = current_app.config.get('SQLALCHEMY_DATABASE_URI', 'instance/mcpanel.db').replace('sqlite:///', '')
+        
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # Pobierz listę tabel z metadanymi
+        cursor.execute("""
+            SELECT name, sql 
+            FROM sqlite_master 
+            WHERE type='table' AND name NOT LIKE 'sqlite_%'
+            ORDER BY name
+        """)
+        tables = cursor.fetchall()
+        
+        tables_with_info = []
+        for table_name, table_sql in tables:
+            # Pobierz liczbę wierszy
+            cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
+            row_count = cursor.fetchone()[0]
+            
+            # Pobierz rozmiar tabeli (przybliżony)
+            cursor.execute(f"PRAGMA table_info({table_name})")
+            columns = cursor.fetchall()
+            
+            tables_with_info.append({
+                'name': table_name,
+                'rows': row_count,
+                'size': _estimate_table_size(row_count, len(columns)),
+                'created_at': _get_table_creation_time(table_name),
+                'columns': len(columns)
+            })
+        
+        conn.close()
+        
+        return jsonify(tables_with_info)
+        
+    except Exception as e:
+        logging.error(f"Error getting database tables: {e}")
+        return jsonify({'error': 'Failed to get database tables'}), 500
+
+
+@main.route('/database/query', methods=['POST'])
+@jwt_required()
+def execute_database_query():
+    """Wykonuje zapytanie SQL na bazie danych"""
+    current_user_id = get_jwt_identity()
+    
+    # Sprawdź uprawnienia administratora
+    current_user = User.query.get(current_user_id)
+    if not current_user or current_user.role != 'admin':
+        return jsonify({'error': 'Access denied - admin role required'}), 403
+    
+    try:
+        data = request.get_json()
+        query = data.get('query', '').strip()
+        
+        if not query:
+            return jsonify({'error': 'Query is required'}), 400
+        
+        # Bezpieczeństwo - ograniczenia dla niebezpiecznych operacji
+        dangerous_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'CREATE', 'TRUNCATE']
+        query_upper = query.upper()
+        
+        # Dla użytkowników nie-admin, zezwól tylko na SELECT
+        if current_user.role != 'admin' and not query_upper.startswith('SELECT'):
+            return jsonify({'error': 'Only SELECT queries are allowed for non-admin users'}), 403
+        
+        # Dodatkowe zabezpieczenia przed niebezpiecznymi operacjami
+        if any(keyword in query_upper for keyword in dangerous_keywords) and current_user.role != 'admin':
+            return jsonify({'error': 'Dangerous operations require admin privileges'}), 403
+        
+        db_path = current_app.config.get('SQLALCHEMY_DATABASE_URI', 'instance/mcpanel.db').replace('sqlite:///', '')
+        
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row  # Zwraca wyniki jako dict
+        cursor = conn.cursor()
+        
+        # Wykonaj zapytanie
+        cursor.execute(query)
+        
+        if query_upper.startswith('SELECT'):
+            results = cursor.fetchall()
+            # Konwertuj wyniki do listy słowników
+            results_list = [dict(row) for row in results]
+        else:
+            conn.commit()
+            results_list = [{'affected_rows': cursor.rowcount, 'message': 'Query executed successfully'}]
+        
+        conn.close()
+        
+        return jsonify(results_list)
+        
+    except sqlite3.Error as e:
+        logging.error(f"SQL error executing query: {e}")
+        return jsonify({'error': f'SQL error: {str(e)}'}), 500
+    except Exception as e:
+        logging.error(f"Error executing database query: {e}")
+        return jsonify({'error': 'Failed to execute query'}), 500
+
+
+@main.route('/database/row', methods=['POST'])
+@jwt_required()
+def add_database_row():
+    """Dodaje nowy wiersz do tabeli"""
+    current_user_id = get_jwt_identity()
+    
+    current_user = User.query.get(current_user_id)
+    if not current_user or current_user.role != 'admin':
+        return jsonify({'error': 'Access denied - admin role required'}), 403
+    
+    try:
+        data = request.get_json()
+        table = data.get('table')
+        row_data = data.get('data', {})
+        
+        if not table or not row_data:
+            return jsonify({'error': 'Table name and data are required'}), 400
+        
+        db_path = current_app.config.get('SQLALCHEMY_DATABASE_URI', 'instance/mcpanel.db').replace('sqlite:///', '')
+        
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        columns = ', '.join(row_data.keys())
+        placeholders = ', '.join(['?' for _ in row_data])
+        values = list(row_data.values())
+        
+        query = f"INSERT INTO {table} ({columns}) VALUES ({placeholders})"
+        cursor.execute(query, values)
+        
+        new_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'id': new_id, **row_data})
+        
+    except Exception as e:
+        logging.error(f"Error adding database row: {e}")
+        return jsonify({'error': 'Failed to add row'}), 500
+
+
+@main.route('/database/row', methods=['PUT'])
+@jwt_required()
+def update_database_row():
+    """Aktualizuje istniejący wiersz w tabeli"""
+    current_user_id = get_jwt_identity()
+    
+    current_user = User.query.get(current_user_id)
+    if not current_user or current_user.role != 'admin':
+        return jsonify({'error': 'Access denied - admin role required'}), 403
+    
+    try:
+        data = request.get_json()
+        table = data.get('table')
+        row_id = data.get('id')
+        row_data = data.get('data', {})
+        
+        if not table or not row_id or not row_data:
+            return jsonify({'error': 'Table name, row ID and data are required'}), 400
+        
+        db_path = current_app.config.get('SQLALCHEMY_DATABASE_URI', 'instance/mcpanel.db').replace('sqlite:///', '')
+        
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        set_clause = ', '.join([f"{key} = ?" for key in row_data.keys()])
+        values = list(row_data.values()) + [row_id]
+        
+        query = f"UPDATE {table} SET {set_clause} WHERE id = ?"
+        cursor.execute(query, values)
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'id': row_id, **row_data})
+        
+    except Exception as e:
+        logging.error(f"Error updating database row: {e}")
+        return jsonify({'error': 'Failed to update row'}), 500
+
+
+@main.route('/database/row', methods=['DELETE'])
+@jwt_required()
+def delete_database_row():
+    """Usuwa wiersz z tabeli"""
+    current_user_id = get_jwt_identity()
+    
+    current_user = User.query.get(current_user_id)
+    if not current_user or current_user.role != 'admin':
+        return jsonify({'error': 'Access denied - admin role required'}), 403
+    
+    try:
+        data = request.get_json()
+        table = data.get('table')
+        row_id = data.get('id')
+        
+        if not table or not row_id:
+            return jsonify({'error': 'Table name and row ID are required'}), 400
+        
+        db_path = current_app.config.get('SQLALCHEMY_DATABASE_URI', 'instance/mcpanel.db').replace('sqlite:///', '')
+        
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        query = f"DELETE FROM {table} WHERE id = ?"
+        cursor.execute(query, [row_id])
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True, 'message': 'Row deleted successfully'})
+        
+    except Exception as e:
+        logging.error(f"Error deleting database row: {e}")
+        return jsonify({'error': 'Failed to delete row'}), 500
+
+
+@main.route('/database/tables', methods=['POST'])
+@jwt_required()
+def create_database_table():
+    """Tworzy nową tabelę w bazie danych"""
+    current_user_id = get_jwt_identity()
+    
+    current_user = User.query.get(current_user_id)
+    if not current_user or current_user.role != 'admin':
+        return jsonify({'error': 'Access denied - admin role required'}), 403
+    
+    try:
+        data = request.get_json()
+        table_name = data.get('name')
+        columns = data.get('columns', [])
+        
+        if not table_name or not columns:
+            return jsonify({'error': 'Table name and columns are required'}), 400
+        
+        # Walidacja nazwy tabeli
+        if not table_name.replace('_', '').isalnum():
+            return jsonify({'error': 'Invalid table name'}), 400
+        
+        db_path = current_app.config.get('SQLALCHEMY_DATABASE_URI', 'instance/mcpanel.db').replace('sqlite:///', '')
+        
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # Buduj definicję kolumn
+        column_definitions = []
+        for col in columns:
+            col_def = f"{col['name']} {col['type']}"
+            if col.get('primaryKey'):
+                col_def += " PRIMARY KEY"
+            if col.get('autoIncrement'):
+                col_def += " AUTOINCREMENT"
+            column_definitions.append(col_def)
+        
+        create_query = f"CREATE TABLE {table_name} ({', '.join(column_definitions)})"
+        cursor.execute(create_query)
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True, 'table': table_name})
+        
+    except Exception as e:
+        logging.error(f"Error creating database table: {e}")
+        return jsonify({'error': 'Failed to create table'}), 500
+
+
+@main.route('/database/backup', methods=['POST'])
+@jwt_required()
+def create_database_backup():
+    """Tworzy kopię zapasową bazy danych"""
+    current_user_id = get_jwt_identity()
+    
+    current_user = User.query.get(current_user_id)
+    if not current_user or current_user.role != 'admin':
+        return jsonify({'error': 'Access denied - admin role required'}), 403
+    
+    try:
+        db_path = current_app.config.get('SQLALCHEMY_DATABASE_URI', 'instance/mcpanel.db').replace('sqlite:///', '')
+        backup_dir = current_app.config.get('BACKUP_DIR', 'backups')
+        
+        # Utwórz katalog backup jeśli nie istnieje
+        os.makedirs(backup_dir, exist_ok=True)
+        
+        # Nazwa pliku backup z timestampem
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_path = os.path.join(backup_dir, f'database_backup_{timestamp}.db')
+        
+        # Skopiuj bazę danych
+        shutil.copy2(db_path, backup_path)
+        
+        # Zapisz informację o backupie
+        _save_backup_info(backup_path)
+        
+        return jsonify({
+            'success': True, 
+            'message': 'Backup created successfully',
+            'backup_path': backup_path
+        })
+        
+    except Exception as e:
+        logging.error(f"Error creating database backup: {e}")
+        return jsonify({'error': 'Failed to create backup'}), 500
+
+
+@main.route('/database/export', methods=['GET'])
+@jwt_required()
+def export_database():
+    """Eksportuje bazę danych jako plik SQL"""
+    current_user_id = get_jwt_identity()
+    
+    current_user = User.query.get(current_user_id)
+    if not current_user or current_user.role != 'admin':
+        return jsonify({'error': 'Access denied - admin role required'}), 403
+    
+    try:
+        db_path = current_app.config.get('SQLALCHEMY_DATABASE_URI', 'instance/mcpanel.db').replace('sqlite:///', '')
+        
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        
+        # Tymczasowy plik SQL
+        temp_sql_path = f'/tmp/database_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.sql'
+        
+        with open(temp_sql_path, 'w') as f:
+            for line in conn.iterdump():
+                f.write(f'{line}\n')
+        
+        conn.close()
+        
+        return send_file(temp_sql_path, as_attachment=True, download_name='database_export.sql')
+        
+    except Exception as e:
+        logging.error(f"Error exporting database: {e}")
+        return jsonify({'error': 'Failed to export database'}), 500
+
+
+# Funkcje pomocnicze
+def _get_last_backup_info():
+    """Pobiera informacje o ostatniej kopii zapasowej"""
+    backup_dir = current_app.config.get('BACKUP_DIR', 'backups')
+    try:
+        if os.path.exists(backup_dir):
+            backups = [f for f in os.listdir(backup_dir) if f.startswith('database_backup_')]
+            if backups:
+                latest_backup = max(backups)
+                backup_time = datetime.fromtimestamp(os.path.getctime(os.path.join(backup_dir, latest_backup)))
+                return {
+                    'last_backup': backup_time.strftime('%Y-%m-%d %H:%M:%S'),
+                    'next_backup': (backup_time + timedelta(hours=24)).strftime('%Y-%m-%d %H:%M:%S')
+                }
+    except Exception as e:
+        logging.error(f"Error getting backup info: {e}")
+    
+    return {'last_backup': 'Nigdy', 'next_backup': 'Nie zaplanowano'}
+
+
+def _save_backup_info(backup_path):
+    """Zapisuje informacje o backupie"""
+    try:
+        backup_info = {
+            'path': backup_path,
+            'created_at': datetime.now().isoformat(),
+            'size': os.path.getsize(backup_path)
+        }
+        # Możesz zapisać to w osobnej tabeli w bazie danych
+    except Exception as e:
+        logging.error(f"Error saving backup info: {e}")
+
+
+def _estimate_table_size(row_count, column_count):
+    """Szacuje rozmiar tabeli"""
+    estimated_size = row_count * column_count * 100  # ~100 bajtów na kolumnę
+    if estimated_size < 1024:
+        return f"{estimated_size} B"
+    elif estimated_size < 1024 * 1024:
+        return f"{estimated_size / 1024:.1f} KB"
+    else:
+        return f"{estimated_size / (1024 * 1024):.1f} MB"
+
+
+def _get_table_creation_time(table_name):
+    """Pobiera przybliżony czas utworzenia tabeli"""
+    try:
+        db_path = current_app.config.get('SQLALCHEMY_DATABASE_URI', 'instance/mcpanel.db').replace('sqlite:///', '')
+        table_path = f"{db_path}-{table_name}"
+        if os.path.exists(table_path):
+            return datetime.fromtimestamp(os.path.getctime(table_path)).strftime('%Y-%m-%d')
+    except:
+        pass
+    return 'Nieznana'
 
 def _check_permission(user_id, server_id, permission):
     user = User.query.get(user_id)

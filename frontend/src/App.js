@@ -19,6 +19,7 @@ import BackupServer from './components/BackupServer';
 import UserSettings from './components/UserSettings';
 import Agents from './components/AgentsAdmin';
 import AgentManagement from './components/AgentManagement';
+import DatabaseAdminManager from './components/DatabaseAdminManager';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LanguageProvider } from './context/LanguageContext';
 import { ToastContainer } from 'react-toastify';
@@ -73,6 +74,7 @@ function App() {
                     <Route path="/admin/users" element={<UserAdminManager />} />
                     <Route path="/admin/settings" element={<SettingsAdmin />} />
                     <Route path="/agents/:agentId" element={<AgentManagement />} />
+                    <Route path="/admin/database" element={<DatabaseAdminManager />} />
                     {/* Fallback route */}
                     <Route path="*" element={<Navigate to="/dashboard" />} />
                   </Routes>

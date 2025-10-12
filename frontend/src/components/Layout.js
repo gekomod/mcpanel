@@ -19,6 +19,7 @@ import {
   FiUser,
   FiGlobe
 } from 'react-icons/fi';
+import { FcDatabase } from "react-icons/fc";
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -247,6 +248,7 @@ function Layout({ children }) {
     { path: '/instances', icon: FiPackage, label: t('nav.instances') },
     { path: '/resources', icon: FiActivity, label: t('nav.resources') },
     { path: '/tasks', icon: FiSettings, label: t('nav.tasks') },
+    { path: '/admin/database', icon: FcDatabase, label: t('nav.database') },
   ];
   
   const adminItems = [
