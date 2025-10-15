@@ -20,6 +20,7 @@ import {
   FiGlobe
 } from 'react-icons/fi';
 import { FcDatabase } from "react-icons/fc";
+import { GiArmorUpgrade } from "react-icons/gi";
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -252,6 +253,7 @@ function Layout({ children }) {
   ];
   
   const adminItems = [
+    { path: '/admin/update', icon: GiArmorUpgrade, label: t('nav.upgrade') },
     { path: '/admin/users', icon: FiUsers, label: t('nav.users') },
     { path: '/admin/agents', icon: FiServer, label: t('nav.agents') },
     { path: '/admin/bedrock-versions', icon: FiBox, label: t('nav.bedrock') },
