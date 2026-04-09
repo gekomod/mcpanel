@@ -7,6 +7,9 @@ import {
   FiHardDrive,
   FiRefreshCw,
   FiSettings,
+  FiEdit,
+  FiTrash2,
+  FiSave,
   FiX
 } from 'react-icons/fi';
 import { FaMemory } from "react-icons/fa6";
@@ -99,15 +102,6 @@ const StatusIndicator = styled.div`
   height: 8px;
   border-radius: 50%;
   background-color: ${props => props.$online ? '#10b981' : '#f87171'};
-  ${props => props.$starting && `
-    animation: pulse 2s infinite;
-  `}
-  
-  @keyframes pulse {
-    0% { opacity: 1; }
-    50% { opacity: 0.5; }
-    100% { opacity: 1; }
-  }
 `;
 
 const AgentCardDetails = styled.div`
@@ -371,11 +365,12 @@ const Footer = styled.footer`
   font-size: 14px;
 `;
 
-function Agents() {
+function AgentsAdmin() {
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddAgent, setShowAddAgent] = useState(false);
   const navigate = useNavigate();
+  const [editingAgent, setEditingAgent] = useState(null);
 
   useEffect(() => {
     fetchAgents();
@@ -387,7 +382,19 @@ function Agents() {
   const fetchAgents = async () => {
     try {
       const response = await api.get('/agents');
-      setAgents(response.data);
+      const mappedAgents = response.data.map(agent => {
+        const lastUpdate = new Date(agent.last_update).getTime();
+        const isOnline = agent.status === 'online' && (Date.now() - lastUpdate) < 120000; // 2 minutes
+        
+        return {
+          ...agent,
+          isOnline,
+          cpuUsage: Math.round(agent.cpu_usage || 0),
+          memoryUsage: Math.round(agent.memory_usage || 0),
+          diskUsage: Math.round(agent.disk_usage || 0),
+        };
+      });
+      setAgents(mappedAgents);
     } catch (error) {
       console.error('Error fetching agents:', error);
     } finally {
@@ -402,7 +409,7 @@ function Agents() {
     const agentData = {
       name: formData.get('name'),
       url: formData.get('url'),
-      token: formData.get('token'),
+      auth_token: formData.get('token'),
       capacity: parseInt(formData.get('capacity'))
     };
     
@@ -426,6 +433,49 @@ function Agents() {
         console.error('Error restarting agent:', error);
         alert('Błąd podczas restartowania agenta');
       }
+    }
+  };
+  
+	const handleDeleteAgent = async (agentId) => {
+	  if (window.confirm('Czy na pewno chcesz usunąć tego agenta? Ta operacja jest nieodwracalna.')) {
+		try {
+		  await api.delete(`/agents/${agentId}`);
+		  fetchAgents();
+		} catch (error) {
+		  console.error('Error deleting agent:', error);
+		  alert('Błąd podczas usuwania agenta');
+		}
+	  }
+	};
+	
+	const handleEditAgent = (agent) => {
+	  setEditingAgent(agent);
+	};
+
+  const handleUpdateAgent = async (e) => {
+    e.preventDefault();
+    
+    const formData = new FormData(e.target);
+    const agentData = {
+      name: formData.get('name'),
+      url: formData.get('url'),
+      location: formData.get('location'),
+      capacity: parseInt(formData.get('capacity')),
+      is_active: formData.get('is_active') === 'true'
+    };
+    
+    const token = formData.get('token');
+    if (token) {
+      agentData.token = token;
+    }
+    
+    try {
+      await api.put(`/agents/${editingAgent.id}`, agentData);
+      setEditingAgent(null);
+      fetchAgents();
+    } catch (error) {
+      console.error('Error updating agent:', error);
+      alert('Błąd podczas aktualizacji agenta: ' + (error.response?.data?.error || error.message));
     }
   };
 
@@ -452,37 +502,40 @@ function Agents() {
           <AgentCard key={agent.id}>
             <AgentCardHeader>
               <AgentCardTitle>{agent.name}</AgentCardTitle>
-              <AgentStatus $online={agent.status === 'online'}>
-                <StatusIndicator 
-                  $online={agent.status === 'online'} 
-                  $starting={agent.status === 'starting'}
-                />
-                <span>
-                  {agent.status === 'online' ? 'Online' : 
-                   agent.status === 'starting' ? 'Uruchamianie...' : 'Offline'}
-                </span>
+              <AgentStatus $online={agent.isOnline}>
+                <StatusIndicator $online={agent.isOnline} />
+                <span>{agent.isOnline ? 'Online' : 'Offline'}</span>
               </AgentStatus>
             </AgentCardHeader>
             
             <AgentCardDetails>
               <AgentDetail>
-                <AgentDetailLabel>Lokalizacja</AgentDetailLabel>
-                <AgentDetailValue>{agent.location || 'Nieznana'}</AgentDetailValue>
-              </AgentDetail>
-              <AgentDetail>
                 <AgentDetailLabel>URL</AgentDetailLabel>
                 <AgentDetailValue>{agent.url}</AgentDetailValue>
+              </AgentDetail>
+              <AgentDetail> </AgentDetail>
+              <AgentDetail>
+                <AgentDetailLabel>Ostatnia aktualizacja</AgentDetailLabel>
+                <AgentDetailValue>
+                  {agent.last_update 
+                    ? new Date(agent.last_update).toLocaleString('pl-PL')
+                    : 'Nigdy'}
+                </AgentDetailValue>
+              </AgentDetail>
+              <AgentDetail>
+                <AgentDetailLabel>Lokalizacja</AgentDetailLabel>
+                <AgentDetailValue>{agent.location || 'Nieznana'}</AgentDetailValue>
               </AgentDetail>
               <AgentDetail>
                 <AgentDetailLabel>
                   <FiCpu style={{ marginRight: '4px' }} />
                   CPU
                 </AgentDetailLabel>
-                <AgentDetailValue>{agent.cpuUsage || 0}%</AgentDetailValue>
+                <AgentDetailValue>{agent.cpuUsage}%</AgentDetailValue>
                 <ProgressBar>
                   <ProgressFill 
                     $type="cpu" 
-                    style={{ width: `${agent.cpuUsage || 0}%` }} 
+                    style={{ width: `${agent.cpuUsage}%` }} 
                   />
                 </ProgressBar>
               </AgentDetail>
@@ -491,11 +544,11 @@ function Agents() {
                   <FaMemory style={{ marginRight: '4px' }} />
                   Pamięć
                 </AgentDetailLabel>
-                <AgentDetailValue>{agent.memoryUsage || 0}%</AgentDetailValue>
+                <AgentDetailValue>{agent.memoryUsage}%</AgentDetailValue>
                 <ProgressBar>
                   <ProgressFill 
                     $type="memory" 
-                    style={{ width: `${agent.memoryUsage || 0}%` }} 
+                    style={{ width: `${agent.memoryUsage}%` }} 
                   />
                 </ProgressBar>
               </AgentDetail>
@@ -504,18 +557,18 @@ function Agents() {
                   <FiHardDrive style={{ marginRight: '4px' }} />
                   Dysk
                 </AgentDetailLabel>
-                <AgentDetailValue>{agent.diskUsage || 0}%</AgentDetailValue>
+                <AgentDetailValue>{agent.diskUsage}%</AgentDetailValue>
                 <ProgressBar>
                   <ProgressFill 
                     $type="disk" 
-                    style={{ width: `${agent.diskUsage || 0}%` }} 
+                    style={{ width: `${agent.diskUsage}%` }} 
                   />
                 </ProgressBar>
               </AgentDetail>
               <AgentDetail>
                 <AgentDetailLabel>Serwery</AgentDetailLabel>
                 <AgentDetailValue>
-                  {agent.runningServers || 0}/{agent.maxServers || 5}
+                  {agent.running_servers}/{agent.max_servers}
                 </AgentDetailValue>
               </AgentDetail>
             </AgentCardDetails>
@@ -523,22 +576,28 @@ function Agents() {
             <AgentCardFooter>
               <AgentServers>
                 <FiServer />
-                <span>{agent.runningServers || 0} aktywnych serwerów</span>
+                <span>{agent.running_servers} aktywnych serwerów</span>
               </AgentServers>
-              <AgentActions>
-                <AgentButton onClick={() => handleRestartAgent(agent.id)}>
-                  <FiRefreshCw />
-                  Restart
-                </AgentButton>
-                <AgentButton 
-                  $primary 
-                  onClick={() => handleManageAgent(agent.id)}
-                >
-                  <FiSettings />
-                  Zarządzaj
-                </AgentButton>
-              </AgentActions>
             </AgentCardFooter>
+            
+            <AgentActions>
+              <AgentButton onClick={() => handleEditAgent(agent)}>
+                <FiEdit />
+                Edytuj
+              </AgentButton>
+              <AgentButton onClick={() => handleDeleteAgent(agent.id)}>
+                <FiTrash2 />
+                Usuń
+              </AgentButton>
+              <AgentButton onClick={() => handleRestartAgent(agent.id)}>
+                <FiRefreshCw />
+                Restart
+              </AgentButton>
+              <AgentButton $primary onClick={() => handleManageAgent(agent.id)}>
+                <FiSettings />
+                Zarządzaj
+              </AgentButton>
+            </AgentActions>
           </AgentCard>
         ))}
         
@@ -553,7 +612,6 @@ function Agents() {
         </AddAgentCard>
       </AgentsGrid>
 
-      {/* Modal dodawania agenta */}
       <Modal $isOpen={showAddAgent}>
         <ModalContent>
           <ModalHeader>
@@ -621,14 +679,138 @@ function Agents() {
           </form>
         </ModalContent>
       </Modal>
+      
+      <Modal $isOpen={!!editingAgent}>
+        <ModalContent>
+          <ModalHeader>
+            <ModalTitle>Edytuj agenta</ModalTitle>
+            <CloseModal onClick={() => setEditingAgent(null)}>
+              <FiX />
+            </CloseModal>
+          </ModalHeader>
+          
+          <form onSubmit={handleUpdateAgent}>
+            <FormGroup>
+              <FormLabel htmlFor="editAgentName">Nazwa agenta</FormLabel>
+              <FormInput 
+                type="text" 
+                id="editAgentName" 
+                name="name"
+                placeholder="Nazwa agenta" 
+                defaultValue={editingAgent?.name || ''}
+                required 
+              />
+            </FormGroup>
+            
+            <FormGroup>
+              <FormLabel htmlFor="editAgentUrl">URL agenta</FormLabel>
+              <FormInput 
+                type="url" 
+                id="editAgentUrl" 
+                name="url"
+                placeholder="http://ip-agent:8080" 
+                defaultValue={editingAgent?.url || ''}
+                required 
+              />
+            </FormGroup>
+            
+            <FormGroup>
+              <FormLabel htmlFor="editAgentToken">Token autoryzacji</FormLabel>
+              <FormInput 
+                type="password" 
+                id="editAgentToken" 
+                name="token"
+                placeholder="Wpisz nowy token lub pozostaw puste, aby zachować obecny" 
+                defaultValue=""
+              />
+              <small style={{color: '#a4aabc', fontSize: '12px', marginTop: '5px'}}>
+                Pozostaw puste, jeśli nie chcesz zmieniać tokenu
+              </small>
+            </FormGroup>
+            
+            <FormGroup>
+              <FormLabel htmlFor="editAgentLocation">Lokalizacja</FormLabel>
+              <FormInput 
+                type="text" 
+                id="editAgentLocation" 
+                name="location"
+                placeholder="np. Warszawa, DC1" 
+                defaultValue={editingAgent?.location || ''}
+              />
+            </FormGroup>
+            
+            <FormGroup>
+              <FormLabel htmlFor="editAgentCapacity">Maksymalna liczba serwerów</FormLabel>
+              <FormInput 
+                type="number" 
+                id="editAgentCapacity" 
+                name="capacity"
+                defaultValue={editingAgent?.max_servers || 5} 
+                min="1" 
+                max="50" 
+                required 
+              />
+            </FormGroup>
+            
+            <FormGroup>
+              <FormLabel htmlFor="editAgentStatus">Status</FormLabel>
+              <FormInput 
+                as="select"
+                id="editAgentStatus" 
+                name="is_active"
+                defaultValue={editingAgent?.is_active ? 'true' : 'false'}
+              >
+                <option value="true">Aktywny</option>
+                <option value="false">Nieaktywny</option>
+              </FormInput>
+            </FormGroup>
+            
+            {editingAgent && (
+              <div style={{
+                background: '#35394e',
+                padding: '15px',
+                borderRadius: '6px',
+                marginBottom: '20px',
+                border: '1px solid #3a3f57'
+              }}>
+                <h4 style={{color: '#fff', margin: '0 0 10px 0', fontSize: '14px'}}>Informacje o agencie</h4>
+                <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '12px'}}>
+                  <div>
+                    <span style={{color: '#a4aabc'}}>ID:</span> {editingAgent.id}
+                  </div>
+                  <div>
+                    <span style={{color: '#a4aabc'}}>Status:</span> {editingAgent.isOnline ? 'Online' : 'Offline'}
+                  </div>
+                  <div>
+                    <span style={{color: '#a4aabc'}}>Serwery:</span> {editingAgent.running_servers}/{editingAgent.max_servers}
+                  </div>
+                  <div>
+                    <span style={{color: '#a4aabc'}}>Ostatnia aktualizacja:</span> {editingAgent.last_update ? new Date(editingAgent.last_update).toLocaleString('pl-PL') : 'Nigdy'}
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            <FormActions>
+              <SecondaryButton type="button" onClick={() => setEditingAgent(null)}>
+                Anuluj
+              </SecondaryButton>
+              <PrimaryButton type="submit">
+                <FiSave style={{marginRight: '5px'}} />
+                Zapisz zmiany
+              </PrimaryButton>
+            </FormActions>
+          </form>
+        </ModalContent>
+      </Modal>
 
       <Footer>
         <p>© 2025 MCPanel | Wersja 1.0.1 | {agents.length} agentów | {
-          agents.filter(a => a.status === 'online').length
+          agents.filter(a => a.isOnline).length
         } online</p>
       </Footer>
     </AgentsContainer>
   );
 }
 
-export default Agents;
+export default AgentsAdmin;
