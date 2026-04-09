@@ -501,7 +501,7 @@ function AddonManager() {
     download_url: '',
     behavior_pack_url: '',
     resource_pack_url: '',
-    pack_type: 'separate',
+    type_specific: 'separate',
     image_url: '',
     description: '',
     author: '',
@@ -609,61 +609,77 @@ function AddonManager() {
     setFilteredAddons(filtered);
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    try {
-      const submitData = { ...formData };
-      
-      if (formData.type === 'addon') {
-        delete submitData.download_url;
-        if (!formData.behavior_pack_url && !formData.resource_pack_url) {
-          toast.error(t('plugin.manager.bedrock.noPacksAvailable'));
-          return;
-        }
-      } else {
-        delete submitData.behavior_pack_url;
-        delete submitData.resource_pack_url;
-        if (!formData.download_url) {
-          toast.error(t('plugin.manager.download.noLinks'));
-          return;
-        }
-      }
-      
-      if (editingAddon) {
-        await api.put(`/addons/${editingAddon.id}`, submitData);
-        toast.success(t('plugin.manager.toggle.success'));
-      } else {
-        await api.post('/addons', submitData);
-        toast.success(t('plugin.manager.installation.success', { 
-          name: formData.name, 
-          type: t(`plugin.manager.addon.type.${formData.type}`) 
-        }));
-      }
-      
-      setShowModal(false);
-      setEditingAddon(null);
-      setFormData({
-        name: '',
-        type: 'plugin',
-        version: '',
-        minecraft_version: '',
-        download_url: '',
-        behavior_pack_url: '',
-        resource_pack_url: '',
-        image_url: '',
-        description: '',
-        author: '',
-        is_active: true,
-        is_installed: false
-      });
-      
-      fetchAddons();
-    } catch (error) {
-      console.error('Error saving addon:', error);
-      toast.error(error.response?.data?.error || t('plugin.manager.installation.error', { name: formData.name }));
-    }
-  };
+	const handleSubmit = async (e) => {
+	  e.preventDefault();
+	  
+	  try {
+		const submitData = { 
+		  ...formData,
+		  // Upewnij się że type_specific jest wysłane
+		  type_specific: formData.type_specific || 'separate'
+		};
+		
+		// Walidacja dla addonów
+		if (formData.type === 'addon') {
+		  if (formData.type_specific === 'separate') {
+		    // Dla oddzielnych pakietów - usuń download_url
+		    delete submitData.download_url;
+		    if (!formData.behavior_pack_url && !formData.resource_pack_url) {
+		      toast.error('Bedrock addon requires at least one pack URL for separate packs');
+		      return;
+		    }
+		  } else {
+		    // Dla combined/single - usuń behavior i resource URLs
+		    delete submitData.behavior_pack_url;
+		    delete submitData.resource_pack_url;
+		    if (!formData.download_url) {
+		      toast.error(`${formData.type_specific === 'combined' ? 'Combined' : 'Single'} addon requires download URL`);
+		      return;
+		    }
+		  }
+		} else {
+		  // Dla pluginów i skryptów - usuń pakiety Bedrock
+		  delete submitData.behavior_pack_url;
+		  delete submitData.resource_pack_url;
+		  delete submitData.type_specific;
+		  if (!formData.download_url) {
+		    toast.error('Plugin/script requires download URL');
+		    return;
+		  }
+		}
+		
+		if (editingAddon) {
+		  await api.put(`/addons/${editingAddon.id}`, submitData);
+		  toast.success('Addon updated successfully');
+		} else {
+		  await api.post('/addons', submitData);
+		  toast.success('Addon created successfully');
+		}
+		
+		setShowModal(false);
+		setEditingAddon(null);
+		setFormData({
+		  name: '',
+		  type: 'plugin',
+		  version: '',
+		  minecraft_version: '',
+		  download_url: '',
+		  behavior_pack_url: '',
+		  resource_pack_url: '',
+		  type_specific: 'separate',
+		  image_url: '',
+		  description: '',
+		  author: '',
+		  is_active: true,
+		  is_installed: false
+		});
+		
+		fetchAddons();
+	  } catch (error) {
+		console.error('Error saving addon:', error);
+		toast.error(error.response?.data?.error || 'Failed to save addon');
+	  }
+	};
 
   const handleEdit = (addon) => {
     setEditingAddon(addon);
@@ -951,61 +967,62 @@ function AddonManager() {
                 </FormGroup>
               )}
               
-				{formData.type === 'addon' && (
-				  <FormGroup>
-					<FormLabel>Typ Pakietu *</FormLabel>
-					<FormSelect
-					  value={formData.pack_type}
-					  onChange={(e) => setFormData({...formData, pack_type: e.target.value})}
-					  required
-					>
-					  <option value="separate">Oddzielne Pakiety (Behavior + Resource)</option>
-					  <option value="combined">Połączony Plik (.mcaddon)</option>
-					  <option value="single">Pojedynczy Pakiet (.mcpack)</option>
-					</FormSelect>
-				  </FormGroup>
-				)}
-              
-              {formData.type === 'addon' && formData.pack_type === 'separate' && (
-				  <>
-					<FormGroup>
-					  <FormLabel>Behavior Pack URL</FormLabel>
-					  <FormInput
-						type="url"
-						value={formData.behavior_pack_url}
-						onChange={(e) => setFormData({...formData, behavior_pack_url: e.target.value})}
-						placeholder="https://example.com/behavior_pack.mcpack"
-					  />
-					</FormGroup>
-					
-					<FormGroup>
-					  <FormLabel>Resource Pack URL</FormLabel>
-					  <FormInput
-						type="url"
-						value={formData.resource_pack_url}
-						onChange={(e) => setFormData({...formData, resource_pack_url: e.target.value})}
-						placeholder="https://example.com/resource_pack.mcpack"
-					  />
-					</FormGroup>
-				  </>
-				)}
+			{formData.type === 'addon' && (
+			  <FormGroup>
+				<FormLabel>Typ Pakietu *</FormLabel>
+				<FormSelect
+				  value={formData.type_specific}
+				  onChange={(e) => setFormData({...formData, type_specific: e.target.value})}
+				  required
+				>
+				  <option value="separate">Oddzielne Pakiety (Behavior + Resource)</option>
+				  <option value="combined">Połączony Plik (.mcaddon)</option>
+				  <option value="single">Pojedynczy Pakiet (.mcpack)</option>
+				</FormSelect>
+			  </FormGroup>
+			)}
 
-				{formData.type === 'addon' && (formData.pack_type === 'combined' || formData.pack_type === 'single') && (
-				  <FormGroup>
-					<FormLabel>Download URL *</FormLabel>
-					<FormInput
-					  type="url"
-					  value={formData.download_url}
-					  onChange={(e) => setFormData({...formData, download_url: e.target.value})}
-					  placeholder={
-						formData.pack_type === 'combined' 
-						  ? "https://example.com/addon.mcaddon" 
-						  : "https://example.com/pack.mcpack"
-					  }
-					  required
-					/>
-				  </FormGroup>
-				)}
+			// Warunkowe renderowanie pól URL:
+			{formData.type === 'addon' && formData.type_specific === 'separate' && (
+			  <>
+				<FormGroup>
+				  <FormLabel>Behavior Pack URL</FormLabel>
+				  <FormInput
+					type="url"
+					value={formData.behavior_pack_url}
+					onChange={(e) => setFormData({...formData, behavior_pack_url: e.target.value})}
+					placeholder="https://example.com/behavior_pack.mcpack"
+				  />
+				</FormGroup>
+				
+				<FormGroup>
+				  <FormLabel>Resource Pack URL</FormLabel>
+				  <FormInput
+					type="url"
+					value={formData.resource_pack_url}
+					onChange={(e) => setFormData({...formData, resource_pack_url: e.target.value})}
+					placeholder="https://example.com/resource_pack.mcpack"
+				  />
+				</FormGroup>
+			  </>
+			)}
+
+			{formData.type === 'addon' && (formData.type_specific === 'combined' || formData.type_specific === 'single') && (
+			  <FormGroup>
+				<FormLabel>Download URL *</FormLabel>
+				<FormInput
+				  type="url"
+				  value={formData.download_url}
+				  onChange={(e) => setFormData({...formData, download_url: e.target.value})}
+				  placeholder={
+					formData.type_specific === 'combined' 
+					  ? "https://example.com/addon.mcaddon" 
+					  : "https://example.com/pack.mcpack"
+				  }
+				  required
+				/>
+			  </FormGroup>
+			)}
               
               <FormGroup>
                 <FormLabel>{t('plugin.manager.addon.author', { author: '' })}</FormLabel>

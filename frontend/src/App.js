@@ -19,6 +19,8 @@ import BackupServer from './components/BackupServer';
 import UserSettings from './components/UserSettings';
 import Agents from './components/AgentsAdmin';
 import AgentManagement from './components/AgentManagement';
+import DatabaseAdminManager from './components/DatabaseAdminManager';
+import UpdateAdminManager from './components/UpdateAdminManager';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LanguageProvider } from './context/LanguageContext';
 import { ToastContainer } from 'react-toastify';
@@ -67,12 +69,14 @@ function App() {
 					<Route path="/support" element={<Support />} />
 					<Route path="/user-settings" element={<UserSettings />} />
                     {/* Admin routes */}
+                    <Route path="/admin/update" element={<UpdateAdminManager />} />
                     <Route path="/admin/bedrock-versions" element={<BedrockManager />} />
                     <Route path="/admin/agents" element={<Agents />} />
                     <Route path="/admin/addons" element={<AddonManager />} />
                     <Route path="/admin/users" element={<UserAdminManager />} />
                     <Route path="/admin/settings" element={<SettingsAdmin />} />
                     <Route path="/agents/:agentId" element={<AgentManagement />} />
+                    <Route path="/admin/database" element={<DatabaseAdminManager />} />
                     {/* Fallback route */}
                     <Route path="*" element={<Navigate to="/dashboard" />} />
                   </Routes>
