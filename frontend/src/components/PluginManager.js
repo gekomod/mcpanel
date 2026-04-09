@@ -620,43 +620,32 @@ function PluginManager() {
     }
   };
   
-	const getDownloadLinks = (addon) => {
-	  if (addon.type === 'addon') {
-		if (addon.pack_type === 'separate') {
-		  const links = [];
-		  if (addon.behavior_pack_url) {
-		    links.push({ 
-		      url: addon.behavior_pack_url, 
-		      label: t('plugin.manager.bedrock.behaviorPack'),
-		      type: 'behavior' 
-		    });
-		  }
-		  if (addon.resource_pack_url) {
-		    links.push({ 
-		      url: addon.resource_pack_url, 
-		      label: t('plugin.manager.bedrock.resourcePack'),
-		      type: 'resource' 
-		    });
-		  }
-		  return links;
-		} else {
-		  // Dla combined/single użyj download_url
-		  return [{ 
-		    url: addon.download_url, 
-		    label: addon.pack_type === 'combined' 
-		      ? t('plugin.manager.bedrock.combinedPack') 
-		      : t('plugin.manager.bedrock.singlePack'),
-		    type: 'download' 
-		  }];
-		}
-	  }
-	  // Dla pluginów i skryptów użyj download_url
-	  return [{ 
-		url: addon.download_url, 
-		label: t('plugin.manager.action.download'),
-		type: 'download' 
-	  }];
-	};
+  const getDownloadLinks = (addon) => {
+    if (addon.type === 'addon') {
+      const links = [];
+      if (addon.behavior_pack_url) {
+        links.push({ 
+          url: addon.behavior_pack_url, 
+          label: t('plugin.manager.bedrock.behaviorPack'),
+          type: 'behavior' 
+        });
+      }
+      if (addon.resource_pack_url) {
+        links.push({ 
+          url: addon.resource_pack_url, 
+          label: t('plugin.manager.bedrock.resourcePack'),
+          type: 'resource' 
+        });
+      }
+      return links;
+    }
+    // Dla pluginów i skryptów użyj download_url
+    return [{ 
+      url: addon.download_url, 
+      label: t('plugin.manager.action.download'),
+      type: 'download' 
+    }];
+  };
 
   const handleDownloadAddon = (addon, linkType = null) => {
     let downloadUrl;
@@ -943,15 +932,6 @@ function PluginManager() {
                     </ExpandButton>
                   </PluginActions>
                   
-                  {addon.type === 'addon' && (
-  <div style={{ fontSize: '0.7rem', color: '#a4aabc', marginBottom: '5px' }}>
-    {addon.pack_type === 'separate' && '📦 Oddzielne pakiety'}
-    {addon.pack_type === 'combined' && '🗂️ Plik .mcaddon'}
-    {addon.pack_type === 'single' && '📁 Pojedynczy pakiet'}
-  </div>
-)}
-
-                  
                   <ExpandableSection $expanded={expandedAddons[addon.id]}>
                     {addon.type === 'addon' && (
                       <DownloadLinks>
@@ -1084,14 +1064,6 @@ function PluginManager() {
                       {t('plugin.manager.action.details')}
                     </ExpandButton>
                   </PluginActions>
-                  
-                    {addon.type === 'addon' && (
-					  <div style={{ fontSize: '0.7rem', color: '#a4aabc', marginBottom: '5px' }}>
-						{addon.pack_type === 'separate' && '📦 Oddzielne pakiety'}
-						{addon.pack_type === 'combined' && '🗂️ Plik .mcaddon'}
-						{addon.pack_type === 'single' && '📁 Pojedynczy pakiet'}
-					  </div>
-					)}
                   
                   <ExpandableSection $expanded={expandedAddons[addon.id]}>
                     {addon.type === 'addon' && (

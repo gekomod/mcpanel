@@ -1,185 +1,16 @@
-from flask import Blueprint, request, jsonify, current_app, send_file
+from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from .models import db, User, Server, Permission, BedrockVersion, Addon, UserSession, Agent
 from .managers import server_manager, file_manager
 from .bedrock_manager import BedrockAddonManager
-from zoneinfo import ZoneInfo
-from datetime import datetime, timedelta
-from functools import wraps
+from datetime import datetime
 import os
-import requests
-import shutil
-import logging
-from threading import Thread
-import threading
-import time
-import uuid
-import zipfile
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger('MCPanelRoutes')
 
 main = Blueprint('main', __name__)
-
-installation_progress = {}
 
 def get_bedrock_manager():
     from flask import current_app
     return BedrockAddonManager(current_app.config['SERVER_BASE_PATH'])
-
-def _get_agent_client(server_id=None, agent_id=None):
-    """Pobiera klienta agenta dla serwera lub agenta"""
-    if server_id:
-        server = Server.query.get(server_id)
-        if server and server.agent_id:
-            agent = Agent.query.get(server.agent_id)
-            if agent and agent.is_active:
-                return AgentClient(agent)
-    elif agent_id:
-        agent = Agent.query.get(agent_id)
-        if agent and agent.is_active:
-            return AgentClient(agent)
-    return None
-
-class AgentClient:
-    """Klient do komunikacji z agentem"""
-    
-    def __init__(self, agent):
-        self.agent = agent
-        self.base_url = agent.url.rstrip('/')
-        self.headers = {
-            'Authorization': f'Bearer {agent.auth_token}',
-            'Content-Type': 'application/json'
-        }
-    
-    def _make_request(self, method, endpoint, **kwargs):
-        """Wykonuje zapytanie do agenta"""
-        try:
-            url = f"{self.base_url}{endpoint}"
-            response = requests.request(method, url, headers=self.headers, timeout=30, **kwargs)
-            
-            if response.status_code == 200:
-                return True, response.json()
-            else:
-                error_msg = f"Agent error {response.status_code}: {response.text}"
-                return False, error_msg
-                
-        except requests.exceptions.RequestException as e:
-            return False, f"Connection error: {str(e)}"
-    
-    def get_status(self):
-        """Pobiera status agenta"""
-        return self._make_request('GET', '/status')
-    
-    def start_server(self, server_name, server_data):
-        """Uruchamia serwer na agencie"""
-        return self._make_request('POST', f'/server/{server_name}/start', json=server_data)
-    
-    def stop_server(self, server_name):
-        """Zatrzymuje serwer na agencie"""
-        return self._make_request('POST', f'/server/{server_name}/stop')
-    
-    def restart_server(self, server_name, server_data):
-        """Restartuje serwer na agencie"""
-        return self._make_request('POST', f'/server/{server_name}/restart', json=server_data)
-    
-    def send_command(self, server_name, command):
-        """Wysyła komendę do serwera"""
-        return self._make_request('POST', f'/server/{server_name}/command', json={'command': command})
-    
-    def get_console(self, server_name, lines=100):
-        """Pobiera konsolę serwera"""
-        return self._make_request('GET', f'/server/{server_name}/console?lines={lines}')
-    
-    def get_server_status(self, server_name):
-        """Pobiera status serwera"""
-        return self._make_request('GET', f'/server/{server_name}/status')
-    
-    def install_server(self, server_data):
-        """Instaluje serwer na agencie"""
-        return self._make_request('POST', '/server/install', json=server_data)
-    
-    def get_server_logs(self, server_name, lines=100):
-        """Pobiera logi serwera"""
-        return self._make_request('GET', f'/logs/server/{server_name}?lines={lines}')
-        
-    def check_server_files(self, server_name):
-        """Sprawdza czy serwer ma pliki na agencie"""
-        return self._make_request('GET', f'/server/{server_name}/files/check')
-        
-    def delete_server_files(self, server_name):
-        """Usuwa pliki serwera na agencie"""
-        return self._make_request('POST', f'/server/{server_name}/delete')
-
-    def list_files(self, server_name, path=''):
-        """Listuje pliki na agencie"""
-        return self._make_request('GET', f'/server/{server_name}/files?path={path}')
-
-    def read_file(self, server_name, file_path):
-        """Czyta plik na agencie"""
-        return self._make_request('GET', f'/server/{server_name}/files/read?path={file_path}')
-
-    def write_file(self, server_name, file_path, content):
-        """Zapisuje plik na agencie"""
-        return self._make_request('POST', f'/server/{server_name}/files/write', json={'path': file_path, 'content': content})
-
-    def create_directory(self, server_name, dir_path):
-        """Tworzy katalog na agencie"""
-        return self._make_request('POST', f'/server/{server_name}/files/mkdir', json={'path': dir_path})
-
-    def delete_item(self, server_name, item_path, is_directory):
-        """Usuwa plik/katalog na agencie"""
-        return self._make_request('POST', f'/server/{server_name}/files/delete', json={'path': item_path, 'is_directory': is_directory})
-
-    def rename_item(self, server_name, old_path, new_path):
-        """Zmienia nazwę pliku/katalogu na agencie"""
-        return self._make_request('POST', f'/server/{server_name}/files/rename', json={'old_path': old_path, 'new_path': new_path})
-
-    def upload_file(self, server_name, path, file):
-        """Wysyła plik na agenta"""
-        files = {'file': (file.filename, file.stream, file.mimetype)}
-        data = {'path': path}
-        # _make_request nie jest przystosowane do multipart/form-data, więc robimy to ręcznie
-        try:
-            url = f"{self.base_url}/server/{server_name}/files/upload"
-            response = requests.post(url, headers={'Authorization': self.headers['Authorization']}, files=files, data=data, timeout=120)
-
-            if response.status_code == 200:
-                return True, response.json()
-            else:
-                error_msg = f"Agent error {response.status_code}: {response.text}"
-                return False, error_msg
-        except requests.exceptions.RequestException as e:
-            return False, f"Connection error: {str(e)}"
-
-    def list_plugins(self, server_name):
-        """Listuje pluginy na agencie."""
-        return self._make_request('GET', f'/server/{server_name}/plugins')
-
-    def install_plugin(self, server_name, plugin_url):
-        """Instaluje plugin na agencie."""
-        return self._make_request('POST', f'/server/{server_name}/plugins/install', json={'url': plugin_url})
-
-    def delete_plugin(self, server_name, filename):
-        """Usuwa plugin na agencie."""
-        return self._make_request('POST', f'/server/{server_name}/plugins/delete', json={'filename': filename})
-
-    def upload_plugin(self, server_name, file):
-        """Wysyła plik pluginu na agenta."""
-        files = {'file': (file.filename, file.stream, file.mimetype)}
-        try:
-            url = f"{self.base_url}/server/{server_name}/plugins/upload"
-            response = requests.post(url, headers={'Authorization': self.headers['Authorization']}, files=files, timeout=120)
-            if response.status_code == 200:
-                return True, response.json()
-            else:
-                return False, f"Agent error {response.status_code}: {response.text}"
-        except requests.exceptions.RequestException as e:
-            return False, f"Connection error: {str(e)}"
 
 @main.route('/servers', methods=['GET'])
 @jwt_required()
@@ -190,12 +21,13 @@ def get_servers():
     if user.role == 'admin':
         servers = Server.query.all()
     else:
+        # Get servers that the user has permissions for
         servers = Server.query.join(Permission).filter(
             Permission.user_id == current_user_id
         ).all()
     
     return jsonify([server.to_dict() for server in servers])
-
+    
 @main.route('/servers', methods=['POST'])
 @jwt_required()
 def create_server():
@@ -210,8 +42,6 @@ def create_server():
     server_type = data.get('type')
     version = data.get('version')
     port = data.get('port')
-    implementation = data.get('implementation', 'vanilla')
-    agent_id = data.get('agent_id')  # Nowe pole dla agenta
     
     if not name or not server_type or not version:
         return jsonify({'error': 'Missing required fields'}), 400
@@ -229,8 +59,7 @@ def create_server():
     
     if Server.query.filter_by(port=port).first():
         return jsonify({'error': 'Port is already in use by another server'}), 400
-
-    # Sprawdź dostępność portu
+    
     import socket
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -241,37 +70,36 @@ def create_server():
     except Exception as e:
         return jsonify({'error': f'Error checking port: {str(e)}'}), 500
 
-    # Sprawdź agenta jeśli podany
-    agent = None
-    if agent_id:
-        agent = Agent.query.get(agent_id)
-        if not agent:
-            return jsonify({'error': 'Agent not found'}), 400
-        if not agent.is_active:
-            return jsonify({'error': 'Agent is not active'}), 400
-
-    # Dla serwerów lokalnych tworzymy katalog
-    server_path = None
-    if not agent_id:
-        server_path = os.path.join(current_app.config['SERVER_BASE_PATH'], name)
-        try:
-            os.makedirs(server_path, exist_ok=True)
-        except Exception as e:
-            return jsonify({'error': f'Failed to create server directory: {str(e)}'}), 500
+    server_path = os.path.join(current_app.config['SERVER_BASE_PATH'], name)
+    try:
+        os.makedirs(server_path, exist_ok=True)
+    except Exception as e:
+        return jsonify({'error': f'Failed to create server directory: {str(e)}'}), 500
 
     server = Server(
         name=name,
         type=server_type,
-        implementation=implementation,
         version=version,
         port=port,
         path=server_path,
-        status='stopped',
-        agent_id=agent_id
+        status='stopped'
     )
     
     db.session.add(server)
     db.session.commit()
+
+    if server_type == 'java':
+        try:
+            properties_file = os.path.join(server_path, 'server.properties')
+            with open(properties_file, 'w') as f:
+                f.write(f"#Minecraft server properties\n")
+                f.write(f"server-port={port}\n")
+                f.write(f"motd={name}\n")
+                f.write(f"max-players=20\n")
+                f.write(f"online-mode=true\n")
+                f.write(f"enable-rcon=false\n")
+        except Exception as e:
+            print(f"Warning: Could not create server.properties: {e}")
     
     return jsonify(server.to_dict()), 201
     
@@ -286,51 +114,24 @@ def delete_server(server_id):
     
     server = Server.query.get_or_404(server_id)
     
+    # Stop server if it's running
+    if server.status == 'running':
+        server_manager.stop_server(server_id)
+    
+    # Delete server directory
     try:
-        # Stop server if it's running
-        if server.status == 'running':
-            if server.agent_id:
-                # Zatrzymaj przez agenta
-                agent_client = _get_agent_client(server_id=server_id)
-                if agent_client:
-                    agent_client.stop_server(server.name)
-            else:
-                # Zatrzymaj lokalnie
-                server_manager.stop_server(server_id)
-        
-        # Usuń pliki serwera - zarówno lokalnie jak i u agenta
-        if server.agent_id:
-            # Usuń pliki u agenta
-            agent_client = _get_agent_client(server_id=server_id)
-            if agent_client:
-                success, result = agent_client.delete_server_files(server.name)
-                if not success:
-                    logger.warning(f"Failed to delete server files on agent: {result}")
-        else:
-            # Usuń pliki lokalnie
-            try:
-                server_path = server_manager.get_server_path(server.name)
-                if os.path.exists(server_path):
-                    logger.info(f"Deleting local server directory: {server_path}")
-                    shutil.rmtree(server_path)
-            except Exception as e:
-                logger.error(f"Could not delete local server directory: {e}")
-        
-        # Usuń uprawnienia użytkowników
-        Permission.query.filter_by(server_id=server_id).delete()
-        
-        # Usuń serwer z bazy danych
-        db.session.delete(server)
-        db.session.commit()
-        
-        logger.info(f"Server {server.name} (ID: {server_id}) deleted successfully")
-        
-        return jsonify({'message': 'Server deleted successfully'})
-        
+        import shutil
+        server_path = server_manager.get_server_path(server.name)
+        if os.path.exists(server_path):
+            shutil.rmtree(server_path)
     except Exception as e:
-        db.session.rollback()
-        logger.error(f"Error deleting server {server_id}: {e}")
-        return jsonify({'error': f'Failed to delete server: {str(e)}'}), 500
+        print(f"Warning: Could not delete server directory: {e}")
+    
+    # Delete server from database
+    db.session.delete(server)
+    db.session.commit()
+    
+    return jsonify({'message': 'Server deleted successfully'})
 
 @main.route('/servers/<int:server_id>', methods=['GET'])
 @jwt_required()
@@ -350,65 +151,38 @@ def start_server(server_id):
     current_user_id = get_jwt_identity()
     server = Server.query.get_or_404(server_id)
     
+    # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_start'):
         return jsonify({'error': 'Access denied'}), 403
     
     print(f"Starting server {server_id} ({server.name})")
     
-    # Sprawdź czy serwer ma przypisanego agenta
-    if server.agent_id:
-        agent_client = _get_agent_client(server_id=server_id)
-        if not agent_client:
-            return jsonify({'error': 'Agent not available'}), 500
-        
-        # Przygotuj dane serwera dla agenta
-        server_data = {
-            'name': server.name,
-            'type': server.type,
-            'version': server.version,
-            'implementation': server.implementation,
-            'port': server.port,
-            'memory': '2G'  # Domyślna pamięć
-        }
-        
-        # Dodaj URL dla Bedrock
-        if server.type == 'bedrock':
-            bedrock_version = BedrockVersion.query.filter_by(
-                version=server.version, 
-                is_active=True
-            ).first()
-            if bedrock_version:
-                server_data['bedrock_url'] = bedrock_version.download_url
-        
-        # Wyślij żądanie do agenta
-        success, result = agent_client.start_server(server.name, server_data)
-        
-        if success:
-            server.status = 'starting'
-            db.session.commit()
-            return jsonify({
-                'message': 'Server start initiated on agent',
-                'agent_response': result
-            })
+    # Get bedrock URL if needed
+    bedrock_url = None
+    if server.type == 'bedrock':
+        from .models import BedrockVersion
+        bedrock_version = BedrockVersion.query.filter_by(
+            version=server.version, 
+            is_active=True
+        ).first()
+        if bedrock_version:
+            bedrock_url = bedrock_version.download_url
         else:
-            return jsonify({'error': f'Agent error: {result}'}), 500
+            return jsonify({'error': f'Bedrock version {server.version} not found'}), 400
+    
+    # Przekaż serwer jako obiekt (nie tylko ID)
+    success, message = server_manager.start_server(server, bedrock_url)
+    
+    if success:
+        print(f"Server {server_id} start initiated: {message}")
+        
+        return jsonify({
+            'message': message,
+            'pid': None  # PID będzie dostępne później przez endpoint status
+        })
     else:
-        # Lokalne uruchamianie (stara metoda)
-        bedrock_url = None
-        if server.type == 'bedrock':
-            bedrock_version = BedrockVersion.query.filter_by(
-                version=server.version, 
-                is_active=True
-            ).first()
-            if bedrock_version:
-                bedrock_url = bedrock_version.download_url
-        
-        success, message = server_manager.start_server(server, bedrock_url)
-        
-        if success:
-            return jsonify({'message': message})
-        else:
-            return jsonify({'error': message}), 500
+        print(f"Server {server_id} start failed: {message}")
+        return jsonify({'error': message}), 500
 
 @main.route('/servers/<int:server_id>/stop', methods=['POST'])
 @jwt_required()
@@ -416,33 +190,17 @@ def stop_server(server_id):
     current_user_id = get_jwt_identity()
     server = Server.query.get_or_404(server_id)
     
+    # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_stop'):
         return jsonify({'error': 'Access denied'}), 403
     
-    if server.agent_id:
-        agent_client = _get_agent_client(server_id=server_id)
-        if not agent_client:
-            return jsonify({'error': 'Agent not available'}), 500
-        
-        success, result = agent_client.stop_server(server.name)
-        
-        if success:
-            server.status = 'stopping'
-            db.session.commit()
-            return jsonify({
-                'message': 'Server stop initiated on agent',
-                'agent_response': result
-            })
-        else:
-            return jsonify({'error': f'Agent error: {result}'}), 500
+    success, message = server_manager.stop_server(server_id)
+    if success:
+        server.status = 'stopped'
+        db.session.commit()
+        return jsonify({'message': message})
     else:
-        success, message = server_manager.stop_server(server_id)
-        if success:
-            server.status = 'stopped'
-            db.session.commit()
-            return jsonify({'message': message})
-        else:
-            return jsonify({'error': message}), 500
+        return jsonify({'error': message}), 500
 
 @main.route('/servers/<int:server_id>/restart', methods=['POST'])
 @jwt_required()
@@ -450,47 +208,25 @@ def restart_server(server_id):
     current_user_id = get_jwt_identity()
     server = Server.query.get_or_404(server_id)
     
+    # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_restart'):
         return jsonify({'error': 'Access denied'}), 403
     
-    if server.agent_id:
-        agent_client = _get_agent_client(server_id=server_id)
-        if not agent_client:
-            return jsonify({'error': 'Agent not available'}), 500
-        
-        server_data = {
-            'name': server.name,
-            'type': server.type,
-            'memory': '2G'
-        }
-        
-        success, result = agent_client.restart_server(server.name, server_data)
-        
-        if success:
-            server.status = 'restarting'
-            db.session.commit()
-            return jsonify({
-                'message': 'Server restart initiated on agent',
-                'agent_response': result
-            })
-        else:
-            return jsonify({'error': f'Agent error: {result}'}), 500
+    # Stop the server
+    stop_success, stop_message = server_manager.stop_server(server_id)
+    if not stop_success:
+        return jsonify({'error': f"Failed to stop server: {stop_message}"}), 500
+    
+    # Start the server
+    start_success, start_message = server_manager.start_server(server)
+    if start_success:
+        server.status = 'running'
+        db.session.commit()
+        return jsonify({'message': 'Server restarted successfully'})
     else:
-        # Lokalny restart
-        stop_success, stop_message = server_manager.stop_server(server_id)
-        if not stop_success:
-            return jsonify({'error': f"Failed to stop server: {stop_message}"}), 500
-        
-        start_success, start_message = server_manager.start_server(server)
-        if start_success:
-            server.status = 'running'
-            db.session.commit()
-            return jsonify({'message': 'Server restarted successfully'})
-        else:
-            server.status = 'stopped'
-            db.session.commit()
-            return jsonify({'error': f"Failed to start server: {start_message}"}), 500
-
+        server.status = 'stopped'
+        db.session.commit()
+        return jsonify({'error': f"Failed to start server: {start_message}"}), 500
 
 @main.route('/servers/<int:server_id>/files', methods=['GET'])
 @jwt_required()
@@ -498,25 +234,16 @@ def list_files(server_id):
     current_user_id = get_jwt_identity()
     server = Server.query.get_or_404(server_id)
     path = request.args.get('path', '')
-
+    
+    # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_edit_files'):
         return jsonify({'error': 'Access denied'}), 403
-
-    if server.agent_id:
-        agent_client = _get_agent_client(server_id=server_id)
-        if not agent_client:
-            return jsonify({'error': 'Agent not available'}), 500
-
-        success, result = agent_client.list_files(server.name, path)
-        if success:
-            return jsonify(result)
-        else:
-            return jsonify({'error': f'Agent error: {result}'}), 500
-    else:
-        files, error = file_manager.list_files(server.name, path)
-        if error:
-            return jsonify({'error': error}), 500
-        return jsonify(files)
+    
+    files, error = file_manager.list_files(server.name, path)
+    if error:
+        return jsonify({'error': error}), 500
+    
+    return jsonify(files)
 
 @main.route('/servers/<int:server_id>/files/read', methods=['GET'])
 @jwt_required()
@@ -524,25 +251,16 @@ def read_file(server_id):
     current_user_id = get_jwt_identity()
     server = Server.query.get_or_404(server_id)
     file_path = request.args.get('path', '')
-
+    
+    # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_edit_files'):
         return jsonify({'error': 'Access denied'}), 403
-
-    if server.agent_id:
-        agent_client = _get_agent_client(server_id=server_id)
-        if not agent_client:
-            return jsonify({'error': 'Agent not available'}), 500
-
-        success, result = agent_client.read_file(server.name, file_path)
-        if success:
-            return jsonify(result)
-        else:
-            return jsonify({'error': f'Agent error: {result}'}), 500
-    else:
-        content, error = file_manager.read_file(server.name, file_path)
-        if error:
-            return jsonify({'error': error}), 500
-        return jsonify({'content': content})
+    
+    content, error = file_manager.read_file(server.name, file_path)
+    if error:
+        return jsonify({'error': error}), 500
+    
+    return jsonify({'content': content})
 
 @main.route('/servers/<int:server_id>/files/write', methods=['POST'])
 @jwt_required()
@@ -552,281 +270,16 @@ def write_file(server_id):
     data = request.get_json()
     file_path = data.get('path', '')
     content = data.get('content', '')
-
-    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
-        return jsonify({'error': 'Access denied'}), 403
-
-    if server.agent_id:
-        agent_client = _get_agent_client(server_id=server_id)
-        if not agent_client:
-            return jsonify({'error': 'Agent not available'}), 500
-
-        success, result = agent_client.write_file(server.name, file_path, content)
-        if success:
-            return jsonify(result)
-        else:
-            return jsonify({'error': f'Agent error: {result}'}), 500
-    else:
-        success, error = file_manager.write_file(server.name, file_path, content)
-        if error:
-            return jsonify({'error': error}), 500
-        return jsonify({'message': 'File saved successfully'})
-
-@main.route('/servers/<int:server_id>/files/upload', methods=['POST'])
-@jwt_required()
-def upload_file(server_id):
-    current_user_id = get_jwt_identity()
-    server = Server.query.get_or_404(server_id)
-    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
-        return jsonify({'error': 'Access denied'}), 403
-
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file provided'}), 400
-    
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No file selected'}), 400
-    
-    path = request.form.get('path', '')
-
-    if server.agent_id:
-        agent_client = _get_agent_client(server_id=server_id)
-        if not agent_client:
-            return jsonify({'error': 'Agent not available'}), 500
-        
-        success, result = agent_client.upload_file(server.name, path, file)
-        if success:
-            return jsonify(result)
-        else:
-            return jsonify({'error': f'Agent error: {result}'}), 500
-    else:
-        try:
-            success, error = file_manager.upload_file(server.name, path, file)
-            if error:
-                return jsonify({'error': error}), 500
-            return jsonify({'message': f'File {file.filename} uploaded successfully'})
-        except Exception as e:
-            return jsonify({'error': f'Upload failed: {str(e)}'}), 500
-
-@main.route('/servers/<int:server_id>/files/mkdir', methods=['POST'])
-@jwt_required()
-def create_directory(server_id):
-    current_user_id = get_jwt_identity()
-    server = Server.query.get_or_404(server_id)
-    data = request.get_json()
-    dir_path = data.get('path', '')
-
-    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
-        return jsonify({'error': 'Access denied'}), 403
-    
-    if not dir_path:
-        return jsonify({'error': 'Path is required'}), 400
-
-    if server.agent_id:
-        agent_client = _get_agent_client(server_id=server_id)
-        if not agent_client:
-            return jsonify({'error': 'Agent not available'}), 500
-        
-        success, result = agent_client.create_directory(server.name, dir_path)
-        if success:
-            return jsonify(result)
-        else:
-            return jsonify({'error': f'Agent error: {result}'}), 500
-    else:
-        try:
-            success, error = file_manager.create_directory(server.name, dir_path)
-            if error:
-                return jsonify({'error': error}), 500
-            return jsonify({'message': f'Directory {dir_path} created successfully'})
-        except Exception as e:
-            return jsonify({'error': f'Failed to create directory: {str(e)}'}), 500
-
-@main.route('/servers/<int:server_id>/files/download', methods=['GET'])
-@jwt_required()
-def download_file(server_id):
-    current_user_id = get_jwt_identity()
-    server = Server.query.get_or_404(server_id)
-    file_path = request.args.get('path', '')
-    
-    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
-        return jsonify({'error': 'Access denied'}), 403
-    
-    if not file_path:
-        return jsonify({'error': 'Path is required'}), 400
-    
-    # No agent implementation for download for now
-    try:
-        full_path, error = file_manager.get_full_path(server.name, file_path)
-        if error:
-            return jsonify({'error': error}), 500
-        
-        if not os.path.exists(full_path) or not os.path.isfile(full_path):
-            return jsonify({'error': 'File not found'}), 404
-        
-        filename = os.path.basename(file_path)
-        
-        return send_file(
-            full_path,
-            as_attachment=True,
-            download_name=filename,
-            mimetype='application/octet-stream'
-        )
-    
-    except Exception as e:
-        return jsonify({'error': f'Download failed: {str(e)}'}), 500
-
-@main.route('/servers/<int:server_id>/files/delete', methods=['POST'])
-@jwt_required()
-def delete_file(server_id):
-    current_user_id = get_jwt_identity()
-    server = Server.query.get_or_404(server_id)
-    data = request.get_json()
-    item_path = data.get('path', '')
-    is_directory = data.get('is_directory', False)
-
-    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
-        return jsonify({'error': 'Access denied'}), 403
-    
-    if not item_path:
-        return jsonify({'error': 'Path is required'}), 400
-
-    if server.agent_id:
-        agent_client = _get_agent_client(server_id=server_id)
-        if not agent_client:
-            return jsonify({'error': 'Agent not available'}), 500
-        
-        success, result = agent_client.delete_item(server.name, item_path, is_directory)
-        if success:
-            return jsonify(result)
-        else:
-            return jsonify({'error': f'Agent error: {result}'}), 500
-    else:
-        try:
-            success, error = file_manager.delete_item(server.name, item_path, is_directory)
-            if error:
-                return jsonify({'error': error}), 500
-
-            item_type = 'Directory' if is_directory else 'File'
-            return jsonify({'message': f'{item_type} {item_path} deleted successfully'})
-        except Exception as e:
-            return jsonify({'error': f'Delete failed: {str(e)}'}), 500
-
-@main.route('/servers/<int:server_id>/files/rename', methods=['POST'])
-@jwt_required()
-def rename_file(server_id):
-    current_user_id = get_jwt_identity()
-    server = Server.query.get_or_404(server_id)
-    data = request.get_json()
-    old_path = data.get('old_path', '')
-    new_path = data.get('new_path', '')
-
-    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
-        return jsonify({'error': 'Access denied'}), 403
-    
-    if not old_path or not new_path:
-        return jsonify({'error': 'Both old_path and new_path are required'}), 400
-
-    if server.agent_id:
-        agent_client = _get_agent_client(server_id=server_id)
-        if not agent_client:
-            return jsonify({'error': 'Agent not available'}), 500
-        
-        success, result = agent_client.rename_item(server.name, old_path, new_path)
-        if success:
-            return jsonify(result)
-        else:
-            return jsonify({'error': f'Agent error: {result}'}), 500
-    else:
-        try:
-            success, error = file_manager.rename_item(server.name, old_path, new_path)
-            if error:
-                return jsonify({'error': error}), 500
-
-            return jsonify({'message': f'Item renamed from {old_path} to {new_path}'})
-        except Exception as e:
-            return jsonify({'error': f'Rename failed: {str(e)}'}), 500
-
-@main.route('/servers/<int:server_id>/files/copy', methods=['POST'])
-@jwt_required()
-def copy_file(server_id):
-    """Kopiuje plik lub katalog"""
-    current_user_id = get_jwt_identity()
-    server = Server.query.get_or_404(server_id)
-    data = request.get_json()
-    source_path = data.get('source_path', '')
-    destination_path = data.get('destination_path', '')
     
     # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_edit_files'):
         return jsonify({'error': 'Access denied'}), 403
     
-    if not source_path or not destination_path:
-        return jsonify({'error': 'Both source_path and destination_path are required'}), 400
+    success, error = file_manager.write_file(server.name, file_path, content)
+    if error:
+        return jsonify({'error': error}), 500
     
-    try:
-        # Użyj file_manager do kopiowania
-        success, error = file_manager.copy_item(server.name, source_path, destination_path)
-        if error:
-            return jsonify({'error': error}), 500
-        
-        return jsonify({'message': f'Item copied from {source_path} to {destination_path}'})
-    
-    except Exception as e:
-        return jsonify({'error': f'Copy failed: {str(e)}'}), 500
-
-@main.route('/servers/<int:server_id>/files/move', methods=['POST'])
-@jwt_required()
-def move_file(server_id):
-    """Przenosi plik lub katalog"""
-    current_user_id = get_jwt_identity()
-    server = Server.query.get_or_404(server_id)
-    data = request.get_json()
-    source_path = data.get('source_path', '')
-    destination_path = data.get('destination_path', '')
-    
-    # Check permissions
-    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
-        return jsonify({'error': 'Access denied'}), 403
-    
-    if not source_path or not destination_path:
-        return jsonify({'error': 'Both source_path and destination_path are required'}), 400
-    
-    try:
-        # Użyj file_manager do przenoszenia
-        success, error = file_manager.move_item(server.name, source_path, destination_path)
-        if error:
-            return jsonify({'error': error}), 500
-        
-        return jsonify({'message': f'Item moved from {source_path} to {destination_path}'})
-    
-    except Exception as e:
-        return jsonify({'error': f'Move failed: {str(e)}'}), 500
-
-@main.route('/servers/<int:server_id>/files/info', methods=['GET'])
-@jwt_required()
-def get_file_info(server_id):
-    """Pobiera informacje o pliku lub katalogu"""
-    current_user_id = get_jwt_identity()
-    server = Server.query.get_or_404(server_id)
-    file_path = request.args.get('path', '')
-    
-    # Check permissions
-    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
-        return jsonify({'error': 'Access denied'}), 403
-    
-    if not file_path:
-        return jsonify({'error': 'Path is required'}), 400
-    
-    try:
-        # Użyj file_manager do pobrania informacji
-        info, error = file_manager.get_file_info(server.name, file_path)
-        if error:
-            return jsonify({'error': error}), 500
-        
-        return jsonify(info)
-    
-    except Exception as e:
-        return jsonify({'error': f'Failed to get file info: {str(e)}'}), 500
+    return jsonify({'message': 'File saved successfully'})
 
 @main.route('/servers/<int:server_id>/properties', methods=['GET'])
 @jwt_required()
@@ -1145,60 +598,31 @@ def get_real_server_status(server_id):
     current_user_id = get_jwt_identity()
     server = Server.query.get_or_404(server_id)
     
+    # Check permissions
     if not _check_permission(current_user_id, server_id, 'view'):
         return jsonify({'error': 'Access denied'}), 403
     
-    if server.agent_id:
-        agent_client = _get_agent_client(server_id=server_id)
-        if not agent_client:
-            return jsonify({'error': 'Agent not available'}), 500
-        
-        success, result = agent_client.get_server_status(server.name)
-        
-        if success:
-            agent_status = result.get('status', {})
-            is_running = agent_status.get('running', False)
-            
-            # Zaktualizuj status w bazie danych
-            if is_running and server.status != 'running':
-                server.status = 'running'
-                server.pid = agent_status.get('pid')
-                db.session.commit()
-            elif not is_running and server.status != 'stopped':
-                server.status = 'stopped'
-                server.pid = None
-                db.session.commit()
-            
-            return jsonify({
-                'database_status': server.status,
-                'real_status': agent_status,
-                'is_running': is_running,
-                'pid': server.pid,
-                'source': 'agent'
-            })
-        else:
-            return jsonify({'error': f'Agent error: {result}'}), 500
-    else:
-        # Lokalny status
-        real_status = server_manager.get_server_status(server_id)
-        
-        if real_status['running'] and server.status != 'running':
-            server.status = 'running'
-            if real_status.get('pid'):
-                server.pid = real_status['pid']
-            db.session.commit()
-        elif not real_status['running'] and server.status != 'stopped':
-            server.status = 'stopped'
-            server.pid = None
-            db.session.commit()
-        
-        return jsonify({
-            'database_status': server.status,
-            'real_status': real_status,
-            'is_running': real_status['running'],
-            'pid': server.pid,
-            'source': 'local'
-        })
+    # Get real status from server manager
+    real_status = server_manager.get_server_status(server_id)
+    
+    # Update database if status is different
+    if real_status['running'] and server.status != 'running':
+        server.status = 'running'
+        # ZACHOWAJ PID JEŚLI JEST W real_status
+        if real_status.get('pid'):
+            server.pid = real_status['pid']
+        db.session.commit()
+    elif not real_status['running'] and server.status != 'stopped':
+        server.status = 'stopped'
+        server.pid = None  # WYCZYŚĆ PID
+        db.session.commit()
+    
+    return jsonify({
+        'database_status': server.status,
+        'real_status': real_status,
+        'is_running': real_status['running'],
+        'pid': server.pid  # DODAJ PID DO ODPOWIEDZI
+    })
     
 @main.route('/servers/<int:server_id>/logs', methods=['GET'])
 @jwt_required()
@@ -1206,28 +630,16 @@ def get_server_logs(server_id):
     current_user_id = get_jwt_identity()
     server = Server.query.get_or_404(server_id)
     
+    # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_edit_files'):
         return jsonify({'error': 'Access denied'}), 403
     
-    lines = request.args.get('lines', 100, type=int)
+    # Get logs from server manager
+    logs, error = server_manager.get_server_logs(server.name)
+    if error:
+        return jsonify({'error': error}), 500
     
-    if server.agent_id:
-        agent_client = _get_agent_client(server_id=server_id)
-        if not agent_client:
-            return jsonify({'error': 'Agent not available'}), 500
-        
-        success, result = agent_client.get_server_logs(server.name, lines)
-        
-        if success:
-            logs = result.get('logs', [])
-            return jsonify({'output': ''.join(logs)})
-        else:
-            return jsonify({'error': f'Agent error: {result}'}), 500
-    else:
-        logs, error = server_manager.get_server_logs(server.name)
-        if error:
-            return jsonify({'error': error}), 500
-        return jsonify({'output': logs})
+    return jsonify({'logs': logs})
     
 @main.route('/servers/<int:server_id>/command', methods=['POST'])
 @jwt_required()
@@ -1236,31 +648,21 @@ def send_command(server_id):
     data = request.get_json()
     command = data.get('command', '')
     
+    # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_edit_files'):
         return jsonify({'error': 'Access denied'}), 403
     
+    # Check if server is running
     server = Server.query.get_or_404(server_id)
+    if server.status != 'running':
+        return jsonify({'error': 'Server is not running'}), 400
     
-    if server.agent_id:
-        agent_client = _get_agent_client(server_id=server_id)
-        if not agent_client:
-            return jsonify({'error': 'Agent not available'}), 500
-        
-        success, result = agent_client.send_command(server.name, command)
-        
-        if success:
-            return jsonify({'message': 'Command sent to agent'})
-        else:
-            return jsonify({'error': f'Agent error: {result}'}), 500
+    # Wyślij komendę do serwera
+    success, message = server_manager.send_command(server_id, command)
+    if success:
+        return jsonify({'message': message})
     else:
-        if server.status != 'running':
-            return jsonify({'error': 'Server is not running'}), 400
-        
-        success, message = server_manager.send_command(server_id, command)
-        if success:
-            return jsonify({'message': message})
-        else:
-            return jsonify({'error': message}), 500
+        return jsonify({'error': message}), 500
 
 @main.route('/servers/<int:server_id>/realtime-output', methods=['GET'])
 @jwt_required()
@@ -1273,11 +675,9 @@ def get_realtime_output(server_id):
         return jsonify({'error': 'Access denied'}), 403
     
     # Get real-time output from server manager
-    try:
-        output = server_manager.get_realtime_output(server_id)
-        return jsonify({'output': output})
-    except Exception as e:
-        return jsonify({'error': f'Error getting output: {str(e)}'}), 500
+    output = server_manager.get_realtime_output(server_id)
+    
+    return jsonify({'output': output})
     
 # Endpointy do zarządzania addonami
 @main.route('/addons', methods=['GET'])
@@ -1310,19 +710,13 @@ def create_addon():
         if not data.get(field):
             return jsonify({'error': f'Missing required field: {field}'}), 400
     
-    # Pobierz typ pakietu (domyślnie 'separate')
-    pack_type = data.get('pack_type', data.get('type_specific', 'separate'))
-    
-    # Walidacja dla addonów Bedrock
+    # Sprawdź czy wymagane URL są obecne w zależności od typu
     if data['type'] == 'addon':
-        if pack_type == 'separate':
-            # Wymagaj przynajmniej jednego packa dla oddzielnych pakietów
-            if not data.get('behavior_pack_url') and not data.get('resource_pack_url'):
-                return jsonify({'error': 'Bedrock addon requires at least one pack URL for separate packs'}), 400
-        elif pack_type in ['combined', 'single']:
-            # Wymagaj download_url dla połączonych/pojedynczych pakietów
-            if not data.get('download_url'):
-                return jsonify({'error': f'{pack_type.capitalize()} addon requires download URL'}), 400
+        if not data.get('behavior_pack_url') and not data.get('resource_pack_url'):
+            return jsonify({'error': 'Bedrock addon requires at least one pack URL'}), 400
+    else:
+        if not data.get('download_url'):
+            return jsonify({'error': 'Plugin/script requires download URL'}), 400
     
     # Check if addon with same name and version already exists
     existing = Addon.query.filter_by(
@@ -1344,8 +738,7 @@ def create_addon():
         image_url=data.get('image_url'),
         description=data.get('description'),
         author=data.get('author'),
-        is_installed=False,
-        type_specific=pack_type  # Ustaw typ pakietu
+        is_installed=False  # Zawsze false przy tworzeniu
     )
     
     db.session.add(addon)
@@ -1379,7 +772,7 @@ def update_addon(addon_id):
     # Aktualizuj pola
     update_fields = ['name', 'type', 'version', 'minecraft_version', 'download_url',
                     'behavior_pack_url', 'resource_pack_url', 'image_url', 
-                    'description', 'author', 'is_active', 'is_installed', 'type_specific']
+                    'description', 'author', 'is_active', 'is_installed']
     
     for field in update_fields:
         if field in data:
@@ -1393,119 +786,76 @@ def update_addon(addon_id):
 @jwt_required()
 def get_installed_addons(server_id):
     current_user_id = get_jwt_identity()
-    server = Server.query.get_or_404(server_id)
-
+    
+    # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
         return jsonify({'error': 'Access denied'}), 403
+    
+    # Pobierz zainstalowane addony dla tego serwera
+    installed_addons = Addon.query.filter_by(is_installed=True).all()
+    return jsonify([addon.to_dict() for addon in installed_addons])
 
-    # Handle agent-managed Java servers
-    if server.agent_id and server.type == 'java':
-        agent_client = _get_agent_client(server_id=server_id)
-        if not agent_client:
-            return jsonify({'error': 'Agent not available'}), 500
-
-        success, plugins_list = agent_client.list_plugins(server.name)
-        if not success:
-            return jsonify({'error': f'Agent error: {plugins_list}'}), 500
-
-        installed_plugin_files = [p['name'] for p in plugins_list]
-        all_plugins = Addon.query.filter_by(type='plugin').all()
-        installed_addons = []
-        for plugin in all_plugins:
-            if plugin.download_url and plugin.download_url.split('/')[-1] in installed_plugin_files:
-                installed_addons.append(plugin)
-        return jsonify([addon.to_dict() for addon in installed_addons])
-
-    # Handle local Java servers
-    if not server.agent_id and server.type == 'java':
-        # Placeholder for local Java plugin management
-        return jsonify([])
-
-    # For Bedrock servers - użyj metody get_installed_servers
-    try:
-        all_addons = Addon.query.all()
-        installed_addons = []
-        
-        for addon in all_addons:
-            try:
-                # Użyj metody get_installed_servers z modelu
-                installed_servers = addon.get_installed_servers()
-                if server_id in installed_servers:
-                    installed_addons.append(addon)
-            except Exception as e:
-                print(f"Error checking addon {addon.id}: {e}")
-                continue
-                
-        return jsonify([addon.to_dict() for addon in installed_addons])
-        
-    except Exception as e:
-        print(f"Error in get_installed_addons: {e}")
-        return jsonify([])
-
+# Dodaj endpoint do instalacji/odinstalowania addona
 @main.route('/servers/<int:server_id>/addons/<int:addon_id>/install', methods=['POST'])
 @jwt_required()
 def install_addon(server_id, addon_id):
     current_user_id = get_jwt_identity()
+    
+    # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
         return jsonify({'error': 'Access denied'}), 403
-
+    
     addon = Addon.query.get_or_404(addon_id)
     server = Server.query.get_or_404(server_id)
-
-    # Handle agent-managed Java servers for plugins
-    if server.agent_id and server.type == 'java' and addon.type == 'plugin':
-        agent_client = _get_agent_client(server_id=server_id)
-        if not agent_client:
-            return jsonify({'error': 'Agent not available'}), 500
+    
+    # Tylko dla serwerów Bedrock
+    if server.type != 'bedrock':
+        return jsonify({'error': 'Addons can only be installed on Bedrock servers'}), 400
+    
+    # Sprawdź kompatybilność wersji
+    if addon.minecraft_version != server.version:
+        return jsonify({'error': f'Addon is for Minecraft {addon.minecraft_version}, server is running {server.version}'}), 400
+    
+    # Utwórz manager
+    bedrock_manager = get_bedrock_manager()
+    
+    # Instaluj addon
+    success, result = bedrock_manager.install_addon(addon, server.name)
+    
+    if success:
+        print(f"Install result: {result}")
         
-        if not addon.download_url:
-            return jsonify({'error': 'Plugin has no download URL'}), 400
-
-        success, result = agent_client.install_plugin(server.name, addon.download_url)
+        # Dla addonów (nie światów) - zapisz informacje o packach
+        if addon.type != 'worlds' and 'pack_info' in result:
+            pack_info = result['pack_info']
+            if 'behavior_pack_uuid' in pack_info:
+                addon.behavior_pack_uuid = pack_info['behavior_pack_uuid']
+            if 'behavior_pack_version' in pack_info:
+                addon.behavior_pack_version = pack_info['behavior_pack_version']
+            if 'resource_pack_uuid' in pack_info:
+                addon.resource_pack_uuid = pack_info['resource_pack_uuid']
+            if 'resource_pack_version' in pack_info:
+                addon.resource_pack_version = pack_info['resource_pack_version']
         
-        if success:
-            return jsonify({'message': f'Plugin {addon.name} installation initiated on agent.'})
-        else:
-            return jsonify({'error': f'Agent error: {result}'}), 500
-
-    # Handle local Bedrock servers for addons/worlds
-    elif server.type == 'bedrock':
-        if addon.minecraft_version != server.version:
-            return jsonify({'error': f'Addon is for Minecraft {addon.minecraft_version}, server is running {server.version}'}), 400
-
-        bedrock_manager = get_bedrock_manager()
-        success, result = bedrock_manager.install_addon(addon, server.name)
-
-        if success:
-            if addon.type != 'worlds' and 'pack_info' in result:
-                pack_info = result['pack_info']
-                if 'behavior_pack_uuid' in pack_info:
-                    addon.behavior_pack_uuid = pack_info['behavior_pack_uuid']
-                if 'behavior_pack_version' in pack_info:
-                    addon.behavior_pack_version = pack_info['behavior_pack_version']
-                if 'resource_pack_uuid' in pack_info:
-                    addon.resource_pack_uuid = pack_info['resource_pack_uuid']
-                if 'resource_pack_version' in pack_info:
-                    addon.resource_pack_version = pack_info['resource_pack_version']
-
-            addon.add_installed_server(server.id)
-            addon.is_installed = True
-
-            if addon.type != 'worlds':
-                addon.enabled = True
-
-            db.session.commit()
-
-            return jsonify({
-                'message': f"{addon.type.capitalize()} installed successfully",
-                'details': result.get('results', {}),
-                'server_added': server.id in addon.get_installed_servers()
-            })
-        else:
-            error_message = result.get('error', result) if isinstance(result, dict) else result
-            return jsonify({'error': error_message}), 500
-
-    return jsonify({'error': 'This operation is not supported for the given server and addon type.'}), 400
+        # UŻYJ NOWYCH METOD do zarządzania installed_on_servers
+        addon.add_installed_server(server.id)
+        addon.is_installed = True
+        
+        # Dla światów nie ustawiamy enabled (światy nie mają stanu enabled/disabled)
+        if addon.type != 'worlds':
+            addon.enabled = True
+        
+        db.session.commit()
+        
+        return jsonify({
+            'message': f"{addon.type.capitalize()} installed successfully",
+            'details': result.get('results', {}),
+            'server_added': server.id in addon.get_installed_servers()
+        })
+    else:
+        # Obsłuż błąd - result może być stringiem lub dict z polem 'error'
+        error_message = result.get('error', result) if isinstance(result, dict) else result
+        return jsonify({'error': error_message}), 500
         
 @main.route('/admin/fix-installed-addons', methods=['POST'])
 @jwt_required()
@@ -1581,54 +931,45 @@ def fix_installed_addons():
 @jwt_required()
 def uninstall_addon(server_id, addon_id):
     current_user_id = get_jwt_identity()
+    
+    # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
         return jsonify({'error': 'Access denied'}), 403
-
+    
     addon = Addon.query.get_or_404(addon_id)
     server = Server.query.get_or_404(server_id)
-
-    # Handle agent-managed Java servers for plugins
-    if server.agent_id and server.type == 'java' and addon.type == 'plugin':
-        agent_client = _get_agent_client(server_id=server_id)
-        if not agent_client:
-            return jsonify({'error': 'Agent not available'}), 500
-
-        if not addon.download_url:
-            return jsonify({'error': 'Cannot determine plugin filename without download URL'}), 400
-
-        filename = addon.download_url.split('/')[-1]
-        success, result = agent_client.delete_plugin(server.name, filename)
+    
+    # Utwórz manager
+    bedrock_manager = get_bedrock_manager()
+    
+    # Odinstaluj addon
+    success, result = bedrock_manager.uninstall_addon(addon, server.name)
+    
+    if success:
+        # UŻYJ NOWYCH METOD do zarządzania installed_on_servers
+        addon.remove_installed_server(server.id)
         
-        if success:
-            return jsonify({'message': f'Plugin {addon.name} uninstalled from agent.'})
-        else:
-            return jsonify({'error': f'Agent error: {result}'}), 500
-
-    # Handle local Bedrock servers for addons/worlds
-    elif server.type == 'bedrock':
-        bedrock_manager = get_bedrock_manager()
-        success, result = bedrock_manager.uninstall_addon(addon, server.name)
+        # Jeśli nie zainstalowany na żadnym serwerze, zresetuj status
+        if not addon.get_installed_servers():
+            addon.is_installed = False
+            # Dla addonów (nie światów) - zresetuj informacje o packach
+            if addon.type != 'worlds':
+                addon.behavior_pack_uuid = None
+                addon.behavior_pack_version = None
+                addon.resource_pack_uuid = None
+                addon.resource_pack_version = None
         
-        if success:
-            addon.remove_installed_server(server.id)
-            if not addon.get_installed_servers():
-                addon.is_installed = False
-                if addon.type != 'worlds':
-                    addon.behavior_pack_uuid = None
-                    addon.behavior_pack_version = None
-                    addon.resource_pack_uuid = None
-                    addon.resource_pack_version = None
-            db.session.commit()
-
-            if isinstance(result, dict) and 'message' in result:
-                return jsonify({'message': result['message']})
-            else:
-                return jsonify({'message': result})
+        db.session.commit()
+        
+        # Zwróć odpowiedź w zależności od typu wyniku
+        if isinstance(result, dict) and 'message' in result:
+            return jsonify({'message': result['message']})
         else:
-            error_message = result.get('error', result) if isinstance(result, dict) else result
-            return jsonify({'error': error_message}), 500
-
-    return jsonify({'error': 'This operation is not supported for the given server and addon type.'}), 400
+            return jsonify({'message': result})
+    else:
+        # Obsłuż błąd - result może być stringiem lub dict z polem 'error'
+        error_message = result.get('error', result) if isinstance(result, dict) else result
+        return jsonify({'error': error_message}), 500
         
 @main.route('/servers/<int:server_id>/addons/<int:addon_id>/enable', methods=['POST'])
 @jwt_required()
@@ -2055,28 +1396,23 @@ def get_console_output(server_id):
     current_user_id = get_jwt_identity()
     server = Server.query.get_or_404(server_id)
     
+    # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_edit_files'):
         return jsonify({'error': 'Access denied'}), 403
     
-    lines = request.args.get('lines', 100, type=int)
-    
-    if server.agent_id:
-        agent_client = _get_agent_client(server_id=server_id)
-        if not agent_client:
-            return jsonify({'error': 'Agent not available'}), 500
+    # Pobierz ostatnie linie z konsoli (z logów lub outputu)
+    try:
+        log_file = os.path.join(server.path, 'logs', 'latest.log')
+        lines = []
         
-        success, result = agent_client.get_console(server.name, lines)
+        if os.path.exists(log_file):
+            with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+                lines = f.readlines()[-50:]  # Ostatnie 50 linii
         
-        if success:
-            return jsonify({'output': result.get('output', '')})
-        else:
-            return jsonify({'error': f'Agent error: {result}'}), 500
-    else:
-        try:
-            output = server_manager.get_realtime_output(server_id)
-            return jsonify({'output': output})
-        except Exception as e:
-            return jsonify({'error': f'Error getting console: {str(e)}'}), 500
+        return jsonify({'lines': lines})
+        
+    except Exception as e:
+        return jsonify({'error': f'Error reading console: {str(e)}'}), 500
 
 @main.route('/servers/<int:server_id>/console', methods=['POST'])
 @jwt_required()
@@ -2180,7 +1516,7 @@ def check_port():
 @jwt_required()
 def check_server_files(server_id):
     """
-    Sprawdza czy serwer ma zainstalowane pliki (lokalnie lub na agencie)
+    Sprawdza czy serwer ma zainstalowane pliki
     """
     current_user_id = get_jwt_identity()
     server = Server.query.get_or_404(server_id)
@@ -2190,42 +1526,11 @@ def check_server_files(server_id):
         return jsonify({'error': 'Access denied'}), 403
     
     try:
-        # Jeśli serwer ma przypisanego agenta, sprawdź przez agenta
-        if server.agent_id:
-            agent_client = _get_agent_client(server_id=server_id)
-            if not agent_client:
-                return jsonify({'error': 'Agent not available'}), 500
-            
-            # Wyślij żądanie do agenta o sprawdzenie plików
-            success, result = agent_client.check_server_files(server.name)
-            
-            if success:
-                return jsonify({
-                    'hasFiles': result.get('hasFiles', False),
-                    'message': result.get('message', ''),
-                    'fileCount': result.get('fileCount', 0),
-                    'serverType': server.type,
-                    'checkedVia': 'agent'
-                })
-            else:
-                # W przypadku błędu agenta, zwróć podstawową informację
-                return jsonify({
-                    'hasFiles': False,
-                    'message': f'Agent error: {result}',
-                    'serverType': server.type,
-                    'checkedVia': 'agent_error'
-                })
-        
-        # Lokalne sprawdzanie (oryginalna logika)
         server_path = server_manager.get_server_path(server.name)
         
-        # Sprawdź czy katalog serwera istnieje
+        # Sprawdź czy katalog serwera istnieje i nie jest pusty
         if not os.path.exists(server_path):
-            return jsonify({
-                'hasFiles': False, 
-                'message': 'Server directory does not exist',
-                'checkedVia': 'local'
-            })
+            return jsonify({'hasFiles': False, 'message': 'Server directory does not exist'})
         
         # Sprawdź czy są jakieś pliki (ignorując ukryte pliki systemowe)
         files = [f for f in os.listdir(server_path) 
@@ -2237,44 +1542,20 @@ def check_server_files(server_id):
         if server.type == 'bedrock':
             bedrock_binary = os.path.join(server_path, 'bedrock_server')
             bedrock_binary_exe = os.path.join(server_path, 'bedrock_server.exe')
-            # Sprawdź różne możliwe nazwy plików wykonywalnych Bedrock
-            possible_binaries = ['bedrock_server', 'bedrock_server.exe', 'bedrock_server_1.21.100.7']
-            has_bedrock_binary = any(os.path.exists(os.path.join(server_path, binary)) for binary in possible_binaries)
-            
-            # Jeśli nie znaleziono standardowych nazw, sprawdź czy jest jakikolwiek plik wykonywalny
-            if not has_bedrock_binary:
-                for file in files:
-                    file_path = os.path.join(server_path, file)
-                    if os.path.isfile(file_path) and (os.access(file_path, os.X_OK) or file.endswith('.exe')):
-                        has_bedrock_binary = True
-                        break
-            
-            has_files = has_bedrock_binary  # Dla Bedrock najważniejszy jest plik wykonywalny
+            has_bedrock_binary = os.path.exists(bedrock_binary) or os.path.exists(bedrock_binary_exe)
+            has_files = has_files and has_bedrock_binary
         
         # Dla serwerów Java sprawdź obecność pliku JAR
         elif server.type == 'java':
             jar_files = [f for f in files if f.endswith('.jar') and 'server' in f.lower()]
             has_jar = len(jar_files) > 0
-            
-            # Sprawdź również inne kryteria - może serwer ma już uruchomione pliki
-            if not has_jar:
-                # Sprawdź czy są inne ważne pliki serwera Minecraft
-                important_files = ['eula.txt', 'server.properties', 'world', 'logs']
-                has_important_files = any(os.path.exists(os.path.join(server_path, f)) for f in important_files)
-                
-                # Jeśli są ważne pliki, zakładamy że serwer jest zainstalowany
-                if has_important_files and has_files:
-                    has_jar = True
-            
-            has_files = has_jar  # Dla Java najważniejszy jest plik JAR lub ważne pliki konfiguracyjne
+            has_files = has_files and has_jar
         
         return jsonify({
             'hasFiles': has_files,
             'fileCount': len(files),
             'serverType': server.type,
-            'serverPath': server_path,
-            'message': 'Server files found' if has_files else 'Server files missing',
-            'checkedVia': 'local'
+            'serverPath': server_path
         })
         
     except Exception as e:
@@ -2283,72 +1564,47 @@ def check_server_files(server_id):
 @main.route('/servers/<int:server_id>/install', methods=['POST'])
 @jwt_required()
 def install_server(server_id):
+    """
+    Rozpoczyna proces instalacji serwera
+    """
     current_user_id = get_jwt_identity()
     server = Server.query.get_or_404(server_id)
     
+    # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_start'):
         return jsonify({'error': 'Access denied'}), 403
     
+    # Sprawdź czy serwer jest zatrzymany
     if server.status == 'running':
         return jsonify({'error': 'Server must be stopped to install'}), 400
     
-    if server.agent_id:
-        agent_client = _get_agent_client(server_id=server_id)
-        if not agent_client:
-            return jsonify({'error': 'Agent not available'}), 500
+    # Sprawdź czy serwer już ma pliki
+    try:
+        server_path = server_manager.get_server_path(server.name)
+        if os.path.exists(server_path) and len([f for f in os.listdir(server_path) if not f.startswith('.')]) > 0:
+            return jsonify({'error': 'Server already has files installed'}), 400
+    except Exception as e:
+        print(f"Warning: Could not check server files: {e}")
+    
+    try:
+        # Utwórz katalog serwera jeśli nie istnieje
+        server_path = server_manager.get_server_path(server.name)
+        os.makedirs(server_path, exist_ok=True)
         
-        server_data = {
-            'name': server.name,
-            'type': server.type,
-            'implementation': server.implementation,
-            'version': server.version,
-            'port': server.port
-        }
-        
-        # Dodaj URL dla Bedrock
+        # Rozpocznij instalację w zależności od typu serwera
         if server.type == 'bedrock':
-            bedrock_version = BedrockVersion.query.filter_by(
-                version=server.version, 
-                is_active=True
-            ).first()
-            if bedrock_version:
-                server_data['bedrock_url'] = bedrock_version.download_url
-        
-        success, result = agent_client.install_server(server_data)
-        
-        if success:
-            return jsonify({
-                'message': 'Server installation started on agent',
-                'agent_response': result
-            })
+            return _install_bedrock_server(server)
+        elif server.type == 'java':
+            return _install_java_server(server)
         else:
-            return jsonify({'error': f'Agent installation error: {result}'}), 500
-    else:
-        # Lokalna instalacja
-        try:
-            server_path = server_manager.get_server_path(server.name)
-            if os.path.exists(server_path) and len([f for f in os.listdir(server_path) if not f.startswith('.')]) > 0:
-                return jsonify({'error': 'Server already has files installed'}), 400
-        except Exception as e:
-            print(f"Warning: Could not check server files: {e}")
-        
-        try:
-            os.makedirs(server_path, exist_ok=True)
+            return jsonify({'error': f'Unsupported server type: {server.type}'}), 400
             
-            if server.type == 'bedrock':
-                return _install_bedrock_server(server)
-            elif server.type == 'java':
-                return _install_java_server(server)
-            else:
-                return jsonify({'error': f'Unsupported server type: {server.type}'}), 400
-                
-        except Exception as e:
-            return jsonify({'error': f'Installation failed: {str(e)}'}), 500
-
+    except Exception as e:
+        return jsonify({'error': f'Installation failed: {str(e)}'}), 500
 
 def _install_bedrock_server(server):
     """
-    Instalacja serwera Bedrock - używa istniejącej metody start_server
+    Instalacja serwera Bedrock
     """
     try:
         # Znajdź wersję Bedrock
@@ -2363,8 +1619,8 @@ def _install_bedrock_server(server):
         # Pobierz URL do pobrania
         download_url = bedrock_version.download_url
         
-        # Użyj istniejącej metody start_server, która automatycznie pobiera pliki
-        success, message = server_manager.start_server(server, download_url)
+        # Użyj server_manager do pobrania i instalacji
+        success, message = server_manager.install_bedrock_server(server, download_url)
         
         if success:
             return jsonify({
@@ -2380,11 +1636,11 @@ def _install_bedrock_server(server):
 
 def _install_java_server(server):
     """
-    Instalacja serwera Java - używa istniejącej metody start_server
+    Instalacja serwera Java
     """
     try:
-        # Dla serwera Java użyj standardowego start_server
-        success, message = server_manager.start_server(server)
+        # Dla serwera Java użyj standardowego pobierania
+        success, message = server_manager.install_java_server(server)
         
         if success:
             return jsonify({
@@ -2401,7 +1657,7 @@ def _install_java_server(server):
 @jwt_required()
 def get_installation_progress(server_id):
     """
-    Pobiera postęp instalacji serwera - używa get_download_progress
+    Pobiera postęp instalacji serwera
     """
     current_user_id = get_jwt_identity()
     
@@ -2410,23 +1666,8 @@ def get_installation_progress(server_id):
         return jsonify({'error': 'Access denied'}), 403
     
     try:
-        server = Server.query.get_or_404(server_id)
-        
-        # Dla agenta, sprawdź również status plików
-        if server.agent_id:
-            agent_client = _get_agent_client(server_id=server_id)
-            if agent_client:
-                # Sprawdź czy pliki już istnieją u agenta
-                files_success, files_result = agent_client.check_server_files(server.name)
-                if files_success and files_result.get('hasFiles', False):
-                    return jsonify({
-                        'status': 'complete',
-                        'message': 'Server installed on agent',
-                        'agent_files_check': files_result
-                    })
-        
-        # Użyj istniejącej metody get_download_progress
-        progress = server_manager.get_download_progress(server_id)
+        # Sprawdź postęp przez server_manager
+        progress = server_manager.get_installation_progress(server_id)
         
         return jsonify(progress)
         
@@ -2462,7 +1703,7 @@ def clean_install_server(server_id):
         # Utwórz pusty katalog
         os.makedirs(server_path, exist_ok=True)
         
-        # Rozpocznij nową instalację używając standardowego start_server
+        # Rozpocznij nową instalację
         if server.type == 'bedrock':
             return _install_bedrock_server(server)
         elif server.type == 'java':
@@ -2477,7 +1718,7 @@ def clean_install_server(server_id):
 @jwt_required()
 def get_download_status(server_id):
     """
-    Pobiera status pobierania plików serwera - używa get_download_progress
+    Pobiera status pobierania plików serwera
     """
     current_user_id = get_jwt_identity()
     
@@ -2486,8 +1727,8 @@ def get_download_status(server_id):
         return jsonify({'error': 'Access denied'}), 403
     
     try:
-        # Użyj istniejącej metody get_download_progress
-        status = server_manager.get_download_progress(server_id)
+        # Sprawdź status przez server_manager
+        status = server_manager.get_download_status(server_id)
         
         return jsonify(status)
         
@@ -2692,63 +1933,26 @@ def generate_2fa_secret():
         'secret': secret,
         'qr_code_url': f'otpauth://totp/Shockbyte:{user.username}?secret={secret}&issuer=Shockbyte'
     })
-
-def agent_token_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        # Pobierz token z nagłówka Authorization
-        auth_header = request.headers.get('Authorization', '')
-        if not auth_header.startswith('Bearer '):
-            return jsonify({'error': 'Missing or invalid Authorization header'}), 401
-        
-        agent_token = auth_header.replace('Bearer ', '').strip()
-        if not agent_token:
-            return jsonify({'error': 'Missing agent token'}), 401
-        
-        # Znajdź agenta po tokenie
-        agent = Agent.query.filter_by(auth_token=agent_token).first()
-        if not agent:
-            return jsonify({'error': 'Invalid agent token'}), 401
-        
-        # Dodaj agenta do kontekstu requesta
-        request.agent = agent
-        return f(*args, **kwargs)
-    return decorated_function
     
 # Endpointy do zarządzania agentami
 @main.route('/agents', methods=['GET'])
 @jwt_required()
 def get_agents():
+    """Pobiera listę wszystkich agentów"""
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    # Tylko admini mogą zarządzać agentami
+    if user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    
     agents = Agent.query.all()
-    
-    current_time = datetime.utcnow()
-    
-    agents_data = []
-    for agent in agents:
-        is_online = agent.updated_at and (current_time - agent.updated_at) < timedelta(minutes=5)
-        
-        agents_data.append({
-            'id': agent.id,
-            'name': agent.name,
-            'url': agent.url,
-            'status': 'online' if is_online else 'offline',
-            'location': agent.location,
-            'cpu_usage': agent.cpu_usage,
-            'memory_usage': agent.memory_usage,
-            'disk_usage': agent.disk_usage,
-            'max_servers': agent.max_servers,
-            'running_servers': agent.running_servers,
-            'last_update': agent.updated_at.isoformat() if agent.updated_at else None,
-            'is_active': agent.is_active,
-            'version': agent.version,
-            'created_at': agent.created_at.isoformat() if agent.created_at else None,
-        })
-    
-    return jsonify(agents_data)
+    return jsonify([agent.to_dict() for agent in agents])
 
 @main.route('/agents', methods=['POST'])
 @jwt_required()
 def create_agent():
+    """Tworzy nowego agenta"""
     current_user_id = get_jwt_identity()
     user = User.query.get(current_user_id)
     
@@ -2762,9 +1966,11 @@ def create_agent():
         if not data.get(field):
             return jsonify({'error': f'Missing required field: {field}'}), 400
     
+    # Sprawdź czy agent o tej nazwie już istnieje
     if Agent.query.filter_by(name=data['name']).first():
         return jsonify({'error': 'Agent with this name already exists'}), 400
     
+    # Sprawdź czy URL jest unikalny
     if Agent.query.filter_by(url=data['url']).first():
         return jsonify({'error': 'Agent with this URL already exists'}), 400
     
@@ -2808,33 +2014,29 @@ def update_agent(agent_id):
     agent = Agent.query.get_or_404(agent_id)
     data = request.get_json()
     
-    # Walidacja unikalności nazwy
     if 'name' in data and data['name'] != agent.name:
+        # Sprawdź unikalność nazwy
         existing = Agent.query.filter_by(name=data['name']).first()
         if existing and existing.id != agent_id:
             return jsonify({'error': 'Agent with this name already exists'}), 400
         agent.name = data['name']
     
-    # Walidacja unikalności URL
     if 'url' in data and data['url'] != agent.url:
+        # Sprawdź unikalność URL
         existing = Agent.query.filter_by(url=data['url']).first()
         if existing and existing.id != agent_id:
             return jsonify({'error': 'Agent with this URL already exists'}), 400
         agent.url = data['url']
     
-    # Aktualizacja tokenu (tylko jeśli podany)
-    if 'token' in data and data['token']:
-        agent.auth_token = data['token']
+    if 'token' in data:
+        agent.token = data['token']
     
-    # Pozostałe pola
     if 'location' in data:
         agent.location = data['location']
     
     if 'capacity' in data:
+        agent.capacity = data['capacity']
         agent.max_servers = data['capacity']
-    
-    if 'is_active' in data:
-        agent.is_active = data['is_active']
     
     db.session.commit()
     
@@ -2914,6 +2116,7 @@ def get_agent_servers(agent_id):
 @main.route('/servers/<int:server_id>/assign-to-agent', methods=['POST'])
 @jwt_required()
 def assign_server_to_agent(server_id):
+    """Przypisuje serwer do agenta"""
     current_user_id = get_jwt_identity()
     user = User.query.get(current_user_id)
     
@@ -2929,8 +2132,9 @@ def assign_server_to_agent(server_id):
     server = Server.query.get_or_404(server_id)
     agent = Agent.query.get_or_404(agent_id)
     
+    # Sprawdź czy agent ma wystarczającą pojemność
     current_servers = Server.query.filter_by(agent_id=agent_id).count()
-    if current_servers >= agent.max_servers:
+    if current_servers >= agent.capacity:
         return jsonify({'error': 'Agent has reached maximum capacity'}), 400
     
     server.agent_id = agent_id
@@ -2938,163 +2142,104 @@ def assign_server_to_agent(server_id):
     
     return jsonify({'message': f'Server assigned to agent {agent.name}'})
 
+# Endpointy dla komunikacji agent-panel
 @main.route('/api/agent/status', methods=['POST'])
-@agent_token_required
 def report_agent_status():
     """Endpoint dla agentów do raportowania statusu"""
-    try:
-        data = request.get_json()
-        agent = request.agent
-        
-        if not data:
-            return jsonify({'error': 'No data provided'}), 400
-        
-        print(f"Received status from agent {agent.name}: {data}")
-
-        berlin_tz = ZoneInfo('Europe/Berlin')
-        
-        # Aktualizuj status agenta
-        agent.status = 'online'
-        agent.last_seen = datetime.now(berlin_tz)
-        agent.updated_at = datetime.now(berlin_tz)
-        print(f"Update Date {agent.updated_at}")
-
-        # DEBUG: Sprawdź jakie dane przychodzą
-        print(f"DEBUG - Data received: {data}")
-        
-        # Aktualizuj metryki (upewnij się, że klucze się zgadzają)
-        if 'cpu_usage' in data:
-            agent.cpu_usage = float(data['cpu_usage'])
-            print(f"DEBUG - Updated CPU: {agent.cpu_usage}%")
-        
-        if 'memory_usage' in data:
-            agent.memory_usage = float(data['memory_usage'])
-            print(f"DEBUG - Updated Memory: {agent.memory_usage}%")
-        
-        if 'disk_usage' in data:
-            agent.disk_usage = float(data['disk_usage'])
-            print(f"DEBUG - Updated Disk: {agent.disk_usage}%")
-        
-        if 'running_servers' in data:
-            agent.running_servers = int(data['running_servers'])
-            print(f"DEBUG - Updated running servers: {agent.running_servers}")
-        
-        db.session.commit()
-        
-        # Sprawdź czy dane zostały zapisane
-        db.session.refresh(agent)
-        print(f"DEBUG - After commit - CPU: {agent.cpu_usage}%, Memory: {agent.memory_usage}%, Disk: {agent.disk_usage}%")
-        
-        print(f"Agent {agent.name} status updated successfully")
-        return jsonify({
-            'message': 'Status received', 
-            'agent_id': agent.id,
-            'agent_name': agent.name,
-            'updated_metrics': {
-                'cpu': agent.cpu_usage,
-                'memory': agent.memory_usage,
-                'disk': agent.disk_usage
-            }
-        })
-        
-    except Exception as e:
-        print(f"Error in report_agent_status: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+    data = request.get_json()
+    
+    # Weryfikacja tokena agenta
+    agent_token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    if not agent_token:
+        return jsonify({'error': 'Missing authorization token'}), 401
+    
+    agent = Agent.query.filter_by(token=agent_token).first()
+    if not agent:
+        return jsonify({'error': 'Invalid agent token'}), 401
+    
+    # Aktualizuj status agenta
+    agent.status = 'online'
+    agent.last_seen = datetime.utcnow()
+    
+    if 'cpu_usage' in data:
+        agent.cpu_usage = data['cpu_usage']
+    
+    if 'memory_usage' in data:
+        agent.memory_usage = data['memory_usage']
+    
+    if 'disk_usage' in data:
+        agent.disk_usage = data['disk_usage']
+    
+    if 'running_servers' in data:
+        agent.running_servers = data['running_servers']
+    
+    db.session.commit()
+    
+    return jsonify({'message': 'Status received', 'agent_id': agent.id})
 
 @main.route('/api/agent/servers', methods=['GET'])
-@agent_token_required
 def get_agent_servers_api():
-    try:
-        agent = request.agent
-        print(f"Getting servers for agent: {agent.name}")
-        
-        servers = Server.query.filter_by(agent_id=agent.id).all()
-        
-        server_list = []
-        for server in servers:
-            server_list.append({
-                'id': server.id,
-                'name': server.name,
-                'type': server.type,
-                'version': server.version,
-                'status': server.status,
-                'path': server.path,
-                'port': server.port
-            })
-        
-        print(f"Returning {len(server_list)} servers for agent {agent.name}")
-        return jsonify(server_list)
-        
-    except Exception as e:
-        print(f"Error in get_agent_servers_api: {e}")
-        return jsonify({'error': str(e)}), 500
+    """Pobiera listę serwerów dla agenta"""
+    # Weryfikacja tokena agenta
+    agent_token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    if not agent_token:
+        return jsonify({'error': 'Missing authorization token'}), 401
+    
+    agent = Agent.query.filter_by(token=agent_token).first()
+    if not agent:
+        return jsonify({'error': 'Invalid agent token'}), 401
+    
+    # Pobierz serwery przypisane do tego agenta
+    servers = Server.query.filter_by(agent_id=agent.id).all()
+    
+    return jsonify([{
+        'id': server.id,
+        'name': server.name,
+        'type': server.type,
+        'version': server.version,
+        'status': server.status,
+        'path': server.path,
+        'port': server.port
+    } for server in servers])
 
 @main.route('/api/agent/servers/<int:server_id>/status', methods=['POST'])
-@agent_token_required
 def update_server_status(server_id):
-    try:
-        agent = request.agent
-        data = request.get_json()
-        
-        if not data:
-            return jsonify({'error': 'No data provided'}), 400
-        
-        status = data.get('status')
-        pid = data.get('pid')
-        
-        if status not in ['running', 'stopped', 'starting', 'stopping']:
-            return jsonify({'error': 'Invalid status'}), 400
-        
-        server = Server.query.get(server_id)
-        if not server:
-            return jsonify({'error': 'Server not found'}), 404
-        
-        if server.agent_id != agent.id:
-            return jsonify({'error': 'Server not assigned to this agent'}), 403
-        
-        print(f"Updating server {server.name} status to {status} (PID: {pid})")
-        
-        server.status = status
-        if pid is not None:
-            server.pid = pid
-        server.updated_at = datetime.utcnow()
-        
-        db.session.commit()
-        
-        return jsonify({'message': 'Status updated'})
-        
-    except Exception as e:
-        print(f"Error in update_server_status: {e}")
-        return jsonify({'error': str(e)}), 500
+    """Aktualizuje status serwera od agenta"""
+    # Weryfikacja tokena agenta
+    agent_token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    if not agent_token:
+        return jsonify({'error': 'Missing authorization token'}), 401
+    
+    agent = Agent.query.filter_by(token=agent_token).first()
+    if not agent:
+        return jsonify({'error': 'Invalid agent token'}), 401
+    
+    data = request.get_json()
+    status = data.get('status')
+    pid = data.get('pid')
+    
+    if status not in ['running', 'stopped', 'starting', 'stopping']:
+        return jsonify({'error': 'Invalid status'}), 400
+    
+    server = Server.query.get_or_404(server_id)
+    
+    # Sprawdź czy serwer należy do tego agenta
+    if server.agent_id != agent.id:
+        return jsonify({'error': 'Server not assigned to this agent'}), 403
+    
+    server.status = status
+    if pid is not None:
+        server.pid = pid
+    server.updated_at = datetime.utcnow()
+    
+    db.session.commit()
+    
+    return jsonify({'message': 'Status updated'})
 
-# Endpoint do pobierania szczegółów serwera (dla agenta)
-@main.route('/api/agent/servers/<int:server_id>', methods=['GET'])
-@agent_token_required
-def get_server_details(server_id):
-    """Pobiera szczegóły serwera dla agenta"""
-    try:
-        agent = request.agent
-        
-        server = Server.query.get(server_id)
-        if not server:
-            return jsonify({'error': 'Server not found'}), 404
-        
-        if server.agent_id != agent.id:
-            return jsonify({'error': 'Server not assigned to this agent'}), 403
-        
-        return jsonify(server.to_dict())
-        
-    except Exception as e:
-        print(f"Error in get_server_details: {e}")
-        return jsonify({'error': str(e)}), 500
-
-# Endpoint do testowania połączenia z agentem (dla panelu)
-@main.route('/agents/<int:agent_id>/ping', methods=['POST'])
+@main.route('/agents/<int:agent_id>/test-connection', methods=['POST'])
 @jwt_required()
-def ping_agent(agent_id):
-    """Testuje połączenie z agentem (dla panelu)"""
+def test_agent_connection(agent_id):
+    """Testuje połączenie z agentem"""
     current_user_id = get_jwt_identity()
     user = User.query.get(current_user_id)
     
@@ -3104,6 +2249,8 @@ def ping_agent(agent_id):
     agent = Agent.query.get_or_404(agent_id)
     
     try:
+        # Spróbuj wysłać testowe zapytanie do agenta
+        import requests
         response = requests.get(
             f"{agent.url}/status",
             headers={'Authorization': f'Bearer {agent.token}'},
@@ -3111,10 +2258,11 @@ def ping_agent(agent_id):
         )
         
         if response.status_code == 200:
+            agent_data = response.json()
             return jsonify({
                 'success': True,
-                'message': 'Agent is responding',
-                'agent_status': response.json()
+                'message': 'Connection successful',
+                'agent_status': agent_data
             })
         else:
             return jsonify({
@@ -3125,29 +2273,8 @@ def ping_agent(agent_id):
     except requests.exceptions.RequestException as e:
         return jsonify({
             'success': False,
-            'message': f'Failed to connect to agent: {str(e)}'
+            'message': f'Connection failed: {str(e)}'
         }), 400
-
-# Endpoint do pobierania plików serwera (dla agenta)
-@main.route('/api/agent/servers/<int:server_id>/download', methods=['GET'])
-@agent_token_required
-def download_server_files(server_id):
-    """Pobiera pliki serwera (jeśli potrzebne dla agenta)"""
-    agent = request.agent
-    
-    server = Server.query.get(server_id)
-    if not server:
-        return jsonify({'error': 'Server not found'}), 404
-    
-    if server.agent_id != agent.id:
-        return jsonify({'error': 'Server not assigned to this agent'}), 403
-    
-    # Tutaj logika zwracania plików serwera
-    # Na razie zwracamy tylko informacje
-    return jsonify({
-        'server': server.to_dict(),
-        'files_available': True
-    })
 
 @main.route('/agents/<int:agent_id>/deploy-server', methods=['POST'])
 @jwt_required()
@@ -3199,1218 +2326,6 @@ def deploy_server_to_agent(agent_id):
             'success': False,
             'message': f'Failed to deploy to agent: {str(e)}'
         }), 400
-        
-@main.route('/agents/<int:agent_id>/test', methods=['GET'])
-@jwt_required()
-def test_agent_connection(agent_id):
-    """Testuje połączenie z agentem"""
-    current_user_id = get_jwt_identity()
-    user = User.query.get(current_user_id)
-    
-    if user.role != 'admin':
-        return jsonify({'error': 'Access denied'}), 403
-    
-    agent = Agent.query.get_or_404(agent_id)
-    
-    try:
-        response = requests.get(
-            f"{agent.url}/status",
-            headers={'Authorization': f'Bearer {agent.auth_token}'},
-            timeout=10
-        )
-        
-        if response.status_code == 200:
-            return jsonify({
-                'status': 'success',
-                'message': 'Agent is responding',
-                'agent_status': response.json()
-            })
-        else:
-            return jsonify({
-                'status': 'error',
-                'message': f'Agent responded with status {response.status_code}'
-            }), 400
-            
-    except requests.exceptions.RequestException as e:
-        return jsonify({
-            'status': 'error',
-            'message': f'Failed to connect to agent: {str(e)}'
-        }), 400
-
-@main.route('/servers/<int:server_id>/modpacks', methods=['GET'])
-@jwt_required()
-def get_available_modpacks(server_id):
-    """Pobiera modpacki z lokalnego katalogu servers/modpacks/"""
-    current_user_id = get_jwt_identity()
-    
-    if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
-        return jsonify({'error': 'Access denied'}), 403
-    
-    return jsonify(_get_local_modpacks())
-
-def _get_local_modpacks():
-    """Zwraca modpacki z lokalnego katalogu"""
-    import os
-    import glob
-    
-    # Ścieżka do katalogu z modpackami
-    modpacks_dir = os.path.join(current_app.config['SERVER_BASE_PATH'], '..', 'modpacks')
-    modpacks_dir = os.path.abspath(modpacks_dir)
-    
-    print(f"📁 Looking for modpacks in: {modpacks_dir}")
-    
-    # Utwórz katalog jeśli nie istnieje
-    os.makedirs(modpacks_dir, exist_ok=True)
-    
-    modpacks = []
-    
-    # Szukaj plików .zip i .mrpack
-    zip_files = glob.glob(os.path.join(modpacks_dir, "*.zip"))
-    mrpack_files = glob.glob(os.path.join(modpacks_dir, "*.mrpack"))
-    
-    all_files = zip_files + mrpack_files
-    print(f"📦 Found {len(all_files)} modpack files")
-    
-    for file_path in all_files:
-        try:
-            filename = os.path.basename(file_path)
-            file_size = os.path.getsize(file_path)
-            file_size_mb = file_size / 1024 / 1024
-            
-            # Wyodrębnij nazwę modpacka z nazwy pliku
-            name = os.path.splitext(filename)[0]
-            name = name.replace('_', ' ').replace('-', ' ').title()
-            
-            # Spróbuj wykryć wersję Minecrafta z nazwy
-            minecraft_version = '1.20.1'  # domyślna
-            if '1.20' in filename:
-                minecraft_version = '1.20.1'
-            elif '1.19' in filename:
-                minecraft_version = '1.19.2'
-            elif '1.18' in filename:
-                minecraft_version = '1.18.2'
-            elif '1.17' in filename:
-                minecraft_version = '1.17.1'
-            elif '1.16' in filename:
-                minecraft_version = '1.16.5'
-            elif '1.15' in filename:
-                minecraft_version = '1.15.2'
-            elif '1.14' in filename:
-                minecraft_version = '1.14.4'
-            elif '1.13' in filename:
-                minecraft_version = '1.13.2'
-            elif '1.12' in filename:
-                minecraft_version = '1.12.2'
-            
-            # Wykryj loader
-            loader = 'forge'  # domyślny
-            if 'fabric' in filename.lower():
-                loader = 'fabric'
-            elif 'quilt' in filename.lower():
-                loader = 'quilt'
-            elif 'forge' in filename.lower():
-                loader = 'forge'
-            
-            modpack_data = {
-                'id': filename,
-                'name': name,
-                'description': f'Local modpack: {filename}',
-                'versions': ['1.0'],
-                'minecraft': minecraft_version,
-                'loader': loader,
-                'author': 'Local',
-                'modCount': 0,
-                'fileSize': f"{file_size_mb:.1f} MB",
-                'downloadUrl': f"/servers/modpacks/download/{filename}",
-                'filename': filename,  # ← WAŻNE: to pole musi być!
-                'filePath': file_path,
-                'installed': False,
-                'source': 'local'
-            }
-            
-            # Dla debugowania - wypisz dane modpacka
-            print(f"✅ Local modpack: {modpack_data}")
-            
-            modpacks.append(modpack_data)
-            
-        except Exception as e:
-            print(f"❌ Error processing {file_path}: {e}")
-            continue
-    
-    # Jeśli nie ma lokalnych modpacków, pokaż przykładowe
-    if not modpacks:
-        modpacks = _get_sample_modpacks_info()
-    
-    return modpacks
-
-def _get_sample_modpacks_info():
-    """Przykładowe informacje jak dodać modpacki"""
-    return [
-        {
-            'id': 'sample-info',
-            'name': 'How to Add Modpacks',
-            'description': 'Place .zip or .mrpack files in servers/modpacks/ directory',
-            'versions': ['1.0'],
-            'minecraft': '1.20.1',
-            'loader': 'forge',
-            'author': 'System',
-            'modCount': 0,
-            'fileSize': '0 MB',
-            'downloadUrl': '',
-            'filename': 'README.txt',
-            'installed': False,
-            'source': 'info'
-        }
-    ]
-
-@main.route('/servers/modpacks/download/<filename>', methods=['GET'])
-@jwt_required()
-def download_local_modpack(filename):
-    """Pobiera lokalny modpack"""
-    try:
-        import os
-        from flask import send_file
-        
-        # Bezpieczna ścieżka - zapobiegaj directory traversal
-        safe_filename = os.path.basename(filename)
-        modpacks_dir = os.path.join(current_app.config['SERVER_BASE_PATH'], '..', 'modpacks')
-        modpacks_dir = os.path.abspath(modpacks_dir)
-        file_path = os.path.join(modpacks_dir, safe_filename)
-        
-        print(f"📥 Download request: {safe_filename}")
-        print(f"📁 File path: {file_path}")
-        
-        # Sprawdź czy plik istnieje
-        if not os.path.exists(file_path):
-            return jsonify({'error': 'Modpack file not found'}), 404
-        
-        # Sprawdź czy jest w katalogu modpacks
-        if not file_path.startswith(modpacks_dir):
-            return jsonify({'error': 'Invalid file path'}), 403
-        
-        return send_file(
-            file_path,
-            as_attachment=True,
-            download_name=safe_filename,
-            mimetype='application/zip'
-        )
-        
-    except Exception as e:
-        print(f"❌ Download error: {e}")
-        return jsonify({'error': str(e)}), 500
-
-def _detect_mod_loader(game_versions):
-    """Detect mod loader from game versions"""
-    versions = [v.lower() for v in game_versions]
-    if any('fabric' in v for v in versions):
-        return 'fabric'
-    elif any('forge' in v for v in versions):
-        return 'forge'
-    elif any('quilt' in v for v in versions):
-        return 'quilt'
-    elif any('neoforge' in v for v in versions):
-        return 'neoforge'
-    return 'forge'
-
-@main.route('/servers/<int:server_id>/modpacks/install', methods=['POST'])
-@jwt_required()
-def install_modpack(server_id):
-    current_user_id = get_jwt_identity()
-    server = Server.query.get_or_404(server_id)
-    
-    if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
-        return jsonify({'error': 'Access denied'}), 403
-    
-    if server.status == 'running':
-        return jsonify({'error': 'Server must be stopped to install modpack'}), 400
-    
-    data = request.get_json()
-    modpack_name = data.get('name')
-    download_url = data.get('downloadUrl')
-    filename = data.get('filename')
-    source = data.get('source', 'local')
-    
-    if not modpack_name:
-        return jsonify({'error': 'Modpack name is required'}), 400
-    
-    # Generate installation ID
-    installation_id = str(uuid.uuid4())
-    
-    # Store installation info
-    installation_info = {
-        'server_id': server_id,
-        'modpack_name': modpack_name,
-        'download_url': download_url,
-        'filename': filename,
-        'source': source,
-        'status': 'running',
-        'progress': 0,
-        'message': 'Starting installation...',
-        'started_at': datetime.utcnow().isoformat()
-    }
-    
-    # Store in global dict
-    if not hasattr(current_app, 'modpack_installations'):
-        current_app.modpack_installations = {}
-    current_app.modpack_installations[installation_id] = installation_info
-    
-    # Start async installation
-    thread = Thread(target=_async_install_modpack, args=(current_app._get_current_object(), installation_id, installation_info))
-    thread.daemon = True
-    thread.start()
-    
-    return jsonify({
-        'installation_id': installation_id,
-        'message': 'Modpack installation started',
-        'status': 'running'
-    })
-
-def _async_install_modpack(app, installation_id, installation_info):
-    """Async function to install modpack with application context - ADD files instead of replacing"""
-    with app.app_context():
-        try:
-            server_id = installation_info['server_id']
-            modpack_name = installation_info['modpack_name']
-            download_url = installation_info['download_url']
-            filename = installation_info['filename']
-            source = installation_info['source']
-            
-            server = Server.query.get(server_id)
-            if not server:
-                installation_info['status'] = 'error'
-                installation_info['message'] = 'Server not found'
-                return
-            
-            server_path = server_manager.get_server_path(server.name)
-            
-            # Update progress
-            installation_info['progress'] = 10
-            installation_info['message'] = 'Preparing installation...'
-            
-            # Stop server if running
-            if server.status == 'running':
-                installation_info['message'] = 'Stopping server...'
-                server_manager.stop_server(server_id)
-                time.sleep(5)
-            
-            # Download modpack
-            installation_info['progress'] = 20
-            installation_info['message'] = 'Downloading modpack...'
-            
-            modpack_path = None
-            if source == 'local' and filename:
-                # Use local modpack file
-                modpacks_dir = current_app.config.get('MODPACKS_PATH', os.path.join(current_app.config['SERVER_BASE_PATH'], '..', 'data', 'modpacks'))
-                modpack_path = os.path.join(modpacks_dir, filename)
-                
-                if not os.path.exists(modpack_path):
-                    installation_info['status'] = 'error'
-                    installation_info['message'] = f'Modpack file not found: {filename}'
-                    return
-            elif download_url:
-                # Download modpack
-                try:
-                    modpacks_dir = current_app.config.get('MODPACKS_PATH', os.path.join(current_app.config['SERVER_BASE_PATH'], '..', 'data', 'modpacks'))
-                    os.makedirs(modpacks_dir, exist_ok=True)
-                    
-                    # Generate filename if not provided
-                    if not filename:
-                        filename = f"modpack_{installation_id}.zip"
-                    
-                    modpack_path = os.path.join(modpacks_dir, filename)
-                    
-                    # Download file
-                    response = requests.get(download_url, stream=True)
-                    response.raise_for_status()
-                    
-                    total_size = int(response.headers.get('content-length', 0))
-                    downloaded_size = 0
-                    
-                    with open(modpack_path, 'wb') as f:
-                        for chunk in response.iter_content(chunk_size=8192):
-                            if chunk:
-                                f.write(chunk)
-                                downloaded_size += len(chunk)
-                                
-                                # Update progress
-                                if total_size > 0:
-                                    progress = 20 + (downloaded_size / total_size) * 50
-                                    installation_info['progress'] = min(progress, 70)
-                                    installation_info['message'] = f'Downloading: {downloaded_size/(1024*1024):.1f}MB / {total_size/(1024*1024):.1f}MB'
-                    
-                except Exception as e:
-                    installation_info['status'] = 'error'
-                    installation_info['message'] = f'Download failed: {str(e)}'
-                    return
-            else:
-                installation_info['status'] = 'error'
-                installation_info['message'] = 'No download URL or filename provided'
-                return
-            
-            # Extract modpack - ADD files instead of replacing
-            installation_info['progress'] = 70
-            installation_info['message'] = 'Extracting modpack files...'
-            
-            try:
-                with zipfile.ZipFile(modpack_path, 'r') as zip_ref:
-                    # Get list of all files in zip
-                    file_list = zip_ref.namelist()
-                    
-                    # Extract files one by one to handle conflicts
-                    extracted_count = 0
-                    total_files = len(file_list)
-                    
-                    for i, file_name in enumerate(file_list):
-                        # Skip directory entries
-                        if file_name.endswith('/'):
-                            continue
-                            
-                        # Calculate target path
-                        target_path = os.path.join(server_path, file_name)
-                        
-                        # Create directory if needed
-                        os.makedirs(os.path.dirname(target_path), exist_ok=True)
-                        
-                        # Extract file
-                        with zip_ref.open(file_name) as source_file:
-                            with open(target_path, 'wb') as target_file:
-                                target_file.write(source_file.read())
-                        
-                        extracted_count += 1
-                        
-                        # Update progress
-                        if i % 10 == 0:  # Update every 10 files to avoid too many updates
-                            progress = 70 + (i / total_files) * 25
-                            installation_info['progress'] = min(progress, 95)
-                            installation_info['message'] = f'Extracted {i}/{total_files} files...'
-                
-                installation_info['progress'] = 95
-                installation_info['message'] = f'Modpack extracted successfully ({extracted_count} files)'
-                
-            except Exception as e:
-                installation_info['status'] = 'error'
-                installation_info['message'] = f'Extraction failed: {str(e)}'
-                return
-            
-            # Update server properties with modpack info
-            installation_info['progress'] = 100
-            installation_info['message'] = 'Finalizing installation...'
-            
-            try:
-                properties = server_manager.get_server_properties(server.name) or {}
-                properties['modpack-name'] = modpack_name
-                properties['modpack-installed'] = 'true'
-                properties['modpack-install-date'] = datetime.utcnow().isoformat()
-                
-                # If this is a Forge modpack, update server type
-                if 'forge' in modpack_name.lower():
-                    properties['modpack-loader'] = 'forge'
-                elif 'fabric' in modpack_name.lower():
-                    properties['modpack-loader'] = 'fabric'
-                
-                server_manager.update_server_properties(server.name, properties)
-                
-                # Also update the server implementation if needed
-                if server.implementation == 'vanilla' and ('forge' in modpack_name.lower() or 'fabric' in modpack_name.lower()):
-                    server.implementation = 'modded'
-                    db.session.commit()
-                    
-            except Exception as e:
-                logger.warning(f"Could not update server properties: {e}")
-            
-            # Mark installation as complete
-            installation_info['status'] = 'completed'
-            installation_info['message'] = f'Modpack {modpack_name} installed successfully - files added to server'
-            installation_info['completed_at'] = datetime.utcnow().isoformat()
-            
-            logger.info(f"Modpack {modpack_name} installed successfully on server {server.name} - {extracted_count} files added")
-            
-        except Exception as e:
-            installation_info['status'] = 'error'
-            installation_info['message'] = f'Installation failed: {str(e)}'
-            logger.error(f"Modpack installation error: {e}")
-            import traceback
-            traceback.print_exc()
-
-@main.route('/servers/<int:server_id>/modpacks/install/progress/<installation_id>', methods=['GET'])
-@jwt_required()
-def get_modpack_installation_progress(server_id, installation_id):
-    current_user_id = get_jwt_identity()
-    
-    if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
-        return jsonify({'error': 'Access denied'}), 403
-    
-    if not hasattr(current_app, 'modpack_installations'):
-        return jsonify({'error': 'No installations found'}), 404
-    
-    installation_info = current_app.modpack_installations.get(installation_id)
-    if not installation_info:
-        return jsonify({'error': 'Installation not found'}), 404
-    
-    return jsonify({
-        'installation_id': installation_id,
-        'status': installation_info.get('status', 'unknown'),
-        'progress': installation_info.get('progress', 0),
-        'message': installation_info.get('message', ''),
-        'modpack_name': installation_info.get('modpack_name'),
-        'started_at': installation_info.get('started_at')
-    })
-
-def _install_from_local_file(server, modpack_path, modpack_name, modpack_filename):
-    """Instaluje modpack z lokalnego pliku"""
-    import zipfile
-    import os
-    import shutil
-    
-    # Sprawdź czy to ZIP
-    try:
-        with zipfile.ZipFile(modpack_path, 'r') as test_zip:
-            file_list = test_zip.namelist()
-            print(f"📦 ZIP contains {len(file_list)} files")
-    except zipfile.BadZipFile:
-        return jsonify({'error': 'File is not a valid ZIP archive'}), 400
-    
-    # Przygotuj ścieżkę serwera
-    server_path = server_manager.get_server_path(server.name)
-    print(f"📂 Server path: {server_path}")
-    
-    # Utwórz backup
-    if os.path.exists(server_path) and any(f for f in os.listdir(server_path) if not f.startswith('.')):
-        backup_path = f"{server_path}_backup_{int(datetime.utcnow().timestamp())}"
-        shutil.copytree(server_path, backup_path)
-        print(f"💾 Backup created: {backup_path}")
-    
-    # Wyczyść katalog serwera (zachowaj backups)
-    if os.path.exists(server_path):
-        for item in os.listdir(server_path):
-            if item == 'backups': 
-                continue
-            item_path = os.path.join(server_path, item)
-            if os.path.isfile(item_path):
-                os.unlink(item_path)
-            elif os.path.isdir(item_path):
-                shutil.rmtree(item_path)
-    
-    # Wypakuj modpack
-    extracted_count = 0
-    with zipfile.ZipFile(modpack_path, 'r') as zip_ref:
-        # Sprawdź strukturę archiwum
-        file_list = zip_ref.namelist()
-        
-        # Sprawdź czy ma jeden główny katalog
-        root_dirs = [f for f in file_list if f.count('/') == 1 and f.endswith('/')]
-        
-        if root_dirs and len(root_dirs) == 1:
-            # Wypakuj zawartość głównego katalogu (bez katalogu głównego)
-            root_dir = root_dirs[0]
-            
-            for file in file_list:
-                if file.startswith(root_dir) and not file.endswith('/'):
-                    relative_path = file[len(root_dir):]
-                    if relative_path:
-                        full_path = os.path.join(server_path, relative_path)
-                        os.makedirs(os.path.dirname(full_path), exist_ok=True)
-                        
-                        with zip_ref.open(file) as source, open(full_path, 'wb') as target:
-                            target.write(source.read())
-                        extracted_count += 1
-            
-            print(f"✅ Extracted {extracted_count} files from {root_dir}")
-        else:
-            # Wypakuj bezpośrednio
-            zip_ref.extractall(server_path)
-            extracted_count = len([f for f in file_list if not f.endswith('/')])
-            print(f"✅ Extracted {extracted_count} files directly")
-    
-    # Zaktualizuj properties serwera
-    properties = server_manager.get_server_properties(server.name) or {}
-    properties['modpack-name'] = modpack_name
-    properties['modpack-filename'] = modpack_filename
-    properties['modpack-source'] = 'local'
-    
-    server_manager.update_server_properties(server.name, properties)
-    
-    print(f"🎉 Successfully installed: {modpack_name}")
-    
-    return jsonify({
-        'message': f'Modpack {modpack_name} installed successfully!',
-        'files_extracted': extracted_count,
-        'source': 'local'
-    })
-
-@main.route('/servers/modpacks/upload', methods=['POST'])
-@jwt_required()
-def upload_modpack():
-    """Uploaduje nowy modpack do katalogu lokalnego"""
-    current_user_id = get_jwt_identity()
-    user = User.query.get(current_user_id)
-    
-    if user.role != 'admin':
-        return jsonify({'error': 'Only admins can upload modpacks'}), 403
-    
-    try:
-        if 'file' not in request.files:
-            return jsonify({'error': 'No file provided'}), 400
-        
-        file = request.files['file']
-        if file.filename == '':
-            return jsonify({'error': 'No file selected'}), 400
-        
-        # Sprawdź rozszerzenie
-        if not (file.filename.endswith('.zip') or file.filename.endswith('.mrpack')):
-            return jsonify({'error': 'Only .zip and .mrpack files are allowed'}), 400
-        
-        # Utwórz katalog modpacks
-        modpacks_dir = os.path.join(current_app.config['SERVER_BASE_PATH'], '..', 'modpacks')
-        os.makedirs(modpacks_dir, exist_ok=True)
-        
-        # Zapisz plik
-        file_path = os.path.join(modpacks_dir, file.filename)
-        file.save(file_path)
-        
-        print(f"✅ Uploaded modpack: {file.filename}")
-        
-        return jsonify({
-            'message': f'Modpack {file.filename} uploaded successfully!',
-            'filename': file.filename,
-            'size': f"{os.path.getsize(file_path) / 1024 / 1024:.2f} MB"
-        })
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@main.route('/servers/modpacks/list', methods=['GET'])
-@jwt_required()
-def list_local_modpacks():
-    """Listuje wszystkie lokalne modpacki"""
-    try:
-        import os
-        import glob
-        
-        modpacks_dir = os.path.join(current_app.config['SERVER_BASE_PATH'], '..', 'modpacks')
-        os.makedirs(modpacks_dir, exist_ok=True)
-        
-        zip_files = glob.glob(os.path.join(modpacks_dir, "*.zip"))
-        mrpack_files = glob.glob(os.path.join(modpacks_dir, "*.mrpack"))
-        
-        modpacks = []
-        for file_path in zip_files + mrpack_files:
-            filename = os.path.basename(file_path)
-            file_size = os.path.getsize(file_path)
-            
-            modpacks.append({
-                'filename': filename,
-                'size': file_size,
-                'size_mb': f"{file_size / 1024 / 1024:.2f} MB",
-                'modified': os.path.getmtime(file_path)
-            })
-        
-        return jsonify({'modpacks': modpacks})
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@main.route('/servers/<int:server_id>/modpacks/custom', methods=['POST'])
-@jwt_required()
-def create_custom_modpack(server_id):
-    """Tworzy custom modpack z listy modów"""
-    current_user_id = get_jwt_identity()
-    
-    if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
-        return jsonify({'error': 'Access denied'}), 403
-    
-    data = request.get_json()
-    modpack_name = data.get('name')
-    mods_list = data.get('mods', [])
-    minecraft_version = data.get('minecraft_version', '1.20.1')
-    loader = data.get('loader', 'fabric')
-    
-    try:
-        server = Server.query.get_or_404(server_id)
-        
-        if server.status == 'running':
-            return jsonify({'error': 'Server must be stopped'}), 400
-        
-        # Stwórz podstawową strukturę serwera
-        server_path = server_manager.get_server_path(server.name)
-        
-        # Pobierz server.jar dla danej wersji
-        success = _download_server_jar(server_path, minecraft_version, loader)
-        
-        if success:
-            # Zaktualizuj properties
-            properties = server_manager.get_server_properties(server.name) or {}
-            properties['modpack-name'] = modpack_name
-            properties['minecraft-version'] = minecraft_version
-            properties['modpack-loader'] = loader
-            properties['modpack-custom'] = 'true'
-            
-            server_manager.update_server_properties(server.name, properties)
-            
-            return jsonify({
-                'message': f'Custom modpack {modpack_name} created!',
-                'minecraft_version': minecraft_version,
-                'loader': loader
-            })
-        else:
-            return jsonify({'error': 'Failed to create modpack'}), 500
-            
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-def _download_server_jar(server_path, minecraft_version, loader):
-    """Pobiera server.jar dla danej wersji"""
-    try:
-        import requests
-        
-        if loader == 'fabric':
-            # Fabric installer
-            url = f"https://maven.fabricmc.net/net/fabricmc/fabric-installer/0.11.2/fabric-installer-0.11.2.jar"
-        elif loader == 'forge':
-            # Forge installer  
-            url = f"https://files.minecraftforge.net/net/minecraftforge/forge/{minecraft_version}-latest/forge-{minecraft_version}-latest-installer.jar"
-        else:
-            # Vanilla
-            url = f"https://piston-data.mojang.com/v1/objects/8f3112a1049751cc472ec13e397eade5336ca7ae/server.jar"
-        
-        response = requests.get(url, stream=True, timeout=60)
-        
-        if response.status_code == 200:
-            jar_path = os.path.join(server_path, 'server.jar')
-            with open(jar_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            return True
-        
-        return False
-        
-    except Exception as e:
-        print(f"Error downloading server jar: {e}")
-        return False
-
-def _auto_detect_modpack_properties(server_path, properties):
-    """Automatycznie wykrywa właściwości modpacka"""
-    if not os.path.exists(server_path):
-        return
-    
-    # Wykryj loader
-    for file in os.listdir(server_path):
-        if file.endswith('.jar'):
-            file_lower = file.lower()
-            if 'fabric' in file_lower:
-                properties['modpack-loader'] = 'fabric'
-            elif 'forge' in file_lower:
-                properties['modpack-loader'] = 'forge'
-            elif 'quilt' in file_lower:
-                properties['modpack-loader'] = 'quilt'
-            elif 'neoforge' in file_lower:
-                properties['modpack-loader'] = 'neoforge'
-            
-            # Wykryj wersję Minecrafta
-            for mc_ver in ['1.20', '1.19', '1.18', '1.17', '1.16', '1.15', '1.14', '1.13', '1.12']:
-                if mc_ver in file:
-                    properties['minecraft-version'] = mc_ver
-                    break
-
-@main.route('/servers/<int:server_id>/modpacks/current', methods=['GET'])
-@jwt_required()
-def get_current_modpack(server_id):
-    """Pobiera informacje o aktualnie zainstalowanym modpacku"""
-    current_user_id = get_jwt_identity()
-    
-    if not _check_permission(current_user_id, server_id, 'view'):
-        return jsonify({'error': 'Access denied'}), 403
-    
-    server = Server.query.get_or_404(server_id)
-    
-    try:
-        properties = server_manager.get_server_properties(server.name)
-        if not properties:
-            return jsonify({'modpack': None})
-        
-        modpack_name = properties.get('modpack-name')
-        modpack_version = properties.get('modpack-version')
-        
-        if not modpack_name:
-            return jsonify({'modpack': None})
-        
-        return jsonify({
-            'modpack': {
-                'name': modpack_name,
-                'version': modpack_version,
-                'minecraft-version': properties.get('minecraft-version'),
-                'modpack-loader': properties.get('modpack-loader'),
-                'description': properties.get('modpack-description', '')
-            }
-        })
-    except Exception as e:
-        print(f"Error getting current modpack: {e}")
-        return jsonify({'modpack': None})
-
-@main.route('/database/stats', methods=['GET'])
-@jwt_required()
-def get_database_stats():
-    """Pobiera statystyki bazy danych"""
-    current_user_id = get_jwt_identity()
-    
-    # Sprawdź uprawnienia administratora
-    current_user = User.query.get(current_user_id)
-    if not current_user or current_user.role != 'admin':
-        return jsonify({'error': 'Access denied - admin role required'}), 403
-    
-    try:
-        # Połączenie z bazą danych SQLite
-        db_path = current_app.config.get('SQLALCHEMY_DATABASE_URI', 'instance/mcpanel.db').replace('sqlite:///', '')
-        
-        import sqlite3
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
-        # Pobierz statystyki
-        cursor.execute("""
-            SELECT 
-                (SELECT COUNT(*) FROM sqlite_master WHERE type='table') as table_count,
-                (SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()) as db_size,
-                (SELECT freelist_count * page_size FROM pragma_freelist_count(), pragma_page_size()) as free_size
-        """)
-        stats = cursor.fetchone()
-        
-        # Pobierz informacje o tabelach
-        cursor.execute("""
-            SELECT name FROM sqlite_master 
-            WHERE type='table' AND name NOT LIKE 'sqlite_%'
-        """)
-        tables = cursor.fetchall()
-        
-        # Pobierz ostatnią kopię zapasową
-        backup_info = _get_last_backup_info()
-        
-        conn.close()
-        
-        return jsonify({
-            'size': f"{(stats[1] / 1024 / 1024):.1f} MB",
-            'freeSpace': f"{(stats[2] / 1024 / 1024):.1f} MB",
-            'tables': stats[0],
-            'activeTables': len(tables),
-            'inactiveTables': 0,
-            'lastBackup': backup_info.get('last_backup', 'Nigdy'),
-            'nextBackup': backup_info.get('next_backup', 'Nie zaplanowano')
-        })
-        
-    except Exception as e:
-        logging.error(f"Error getting database stats: {e}")
-        return jsonify({'error': 'Failed to get database statistics'}), 500
-
-
-@main.route('/database/tables', methods=['GET'])
-@jwt_required()
-def get_database_tables():
-    """Pobiera listę wszystkich tabel w bazie danych"""
-    current_user_id = get_jwt_identity()
-    
-    # Sprawdź uprawnienia administratora
-    current_user = User.query.get(current_user_id)
-    if not current_user or current_user.role != 'admin':
-        return jsonify({'error': 'Access denied - admin role required'}), 403
-    
-    try:
-        db_path = current_app.config.get('SQLALCHEMY_DATABASE_URI', 'instance/mcpanel.db').replace('sqlite:///', '')
-        
-        import sqlite3
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
-        # Pobierz listę tabel z metadanymi
-        cursor.execute("""
-            SELECT name, sql 
-            FROM sqlite_master 
-            WHERE type='table' AND name NOT LIKE 'sqlite_%'
-            ORDER BY name
-        """)
-        tables = cursor.fetchall()
-        
-        tables_with_info = []
-        for table_name, table_sql in tables:
-            # Pobierz liczbę wierszy
-            cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
-            row_count = cursor.fetchone()[0]
-            
-            # Pobierz rozmiar tabeli (przybliżony)
-            cursor.execute(f"PRAGMA table_info({table_name})")
-            columns = cursor.fetchall()
-            
-            tables_with_info.append({
-                'name': table_name,
-                'rows': row_count,
-                'size': _estimate_table_size(row_count, len(columns)),
-                'created_at': _get_table_creation_time(table_name),
-                'columns': len(columns)
-            })
-        
-        conn.close()
-        
-        return jsonify(tables_with_info)
-        
-    except Exception as e:
-        logging.error(f"Error getting database tables: {e}")
-        return jsonify({'error': 'Failed to get database tables'}), 500
-
-
-@main.route('/database/query', methods=['POST'])
-@jwt_required()
-def execute_database_query():
-    """Wykonuje zapytanie SQL na bazie danych"""
-    current_user_id = get_jwt_identity()
-    
-    # Sprawdź uprawnienia administratora
-    current_user = User.query.get(current_user_id)
-    if not current_user or current_user.role != 'admin':
-        return jsonify({'error': 'Access denied - admin role required'}), 403
-    
-    try:
-        data = request.get_json()
-        query = data.get('query', '').strip()
-        
-        if not query:
-            return jsonify({'error': 'Query is required'}), 400
-        
-        # Bezpieczeństwo - ograniczenia dla niebezpiecznych operacji
-        dangerous_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'CREATE', 'TRUNCATE']
-        query_upper = query.upper()
-        
-        # Dla użytkowników nie-admin, zezwól tylko na SELECT
-        if current_user.role != 'admin' and not query_upper.startswith('SELECT'):
-            return jsonify({'error': 'Only SELECT queries are allowed for non-admin users'}), 403
-        
-        # Dodatkowe zabezpieczenia przed niebezpiecznymi operacjami
-        if any(keyword in query_upper for keyword in dangerous_keywords) and current_user.role != 'admin':
-            return jsonify({'error': 'Dangerous operations require admin privileges'}), 403
-        
-        db_path = current_app.config.get('SQLALCHEMY_DATABASE_URI', 'instance/mcpanel.db').replace('sqlite:///', '')
-        
-        import sqlite3
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row  # Zwraca wyniki jako dict
-        cursor = conn.cursor()
-        
-        # Wykonaj zapytanie
-        cursor.execute(query)
-        
-        if query_upper.startswith('SELECT'):
-            results = cursor.fetchall()
-            # Konwertuj wyniki do listy słowników
-            results_list = [dict(row) for row in results]
-        else:
-            conn.commit()
-            results_list = [{'affected_rows': cursor.rowcount, 'message': 'Query executed successfully'}]
-        
-        conn.close()
-        
-        return jsonify(results_list)
-        
-    except sqlite3.Error as e:
-        logging.error(f"SQL error executing query: {e}")
-        return jsonify({'error': f'SQL error: {str(e)}'}), 500
-    except Exception as e:
-        logging.error(f"Error executing database query: {e}")
-        return jsonify({'error': 'Failed to execute query'}), 500
-
-
-@main.route('/database/row', methods=['POST'])
-@jwt_required()
-def add_database_row():
-    """Dodaje nowy wiersz do tabeli"""
-    current_user_id = get_jwt_identity()
-    
-    current_user = User.query.get(current_user_id)
-    if not current_user or current_user.role != 'admin':
-        return jsonify({'error': 'Access denied - admin role required'}), 403
-    
-    try:
-        data = request.get_json()
-        table = data.get('table')
-        row_data = data.get('data', {})
-        
-        if not table or not row_data:
-            return jsonify({'error': 'Table name and data are required'}), 400
-        
-        db_path = current_app.config.get('SQLALCHEMY_DATABASE_URI', 'instance/mcpanel.db').replace('sqlite:///', '')
-        
-        import sqlite3
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
-        columns = ', '.join(row_data.keys())
-        placeholders = ', '.join(['?' for _ in row_data])
-        values = list(row_data.values())
-        
-        query = f"INSERT INTO {table} ({columns}) VALUES ({placeholders})"
-        cursor.execute(query, values)
-        
-        new_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
-        
-        return jsonify({'id': new_id, **row_data})
-        
-    except Exception as e:
-        logging.error(f"Error adding database row: {e}")
-        return jsonify({'error': 'Failed to add row'}), 500
-
-
-@main.route('/database/row', methods=['PUT'])
-@jwt_required()
-def update_database_row():
-    """Aktualizuje istniejący wiersz w tabeli"""
-    current_user_id = get_jwt_identity()
-    
-    current_user = User.query.get(current_user_id)
-    if not current_user or current_user.role != 'admin':
-        return jsonify({'error': 'Access denied - admin role required'}), 403
-    
-    try:
-        data = request.get_json()
-        table = data.get('table')
-        row_id = data.get('id')
-        row_data = data.get('data', {})
-        
-        if not table or not row_id or not row_data:
-            return jsonify({'error': 'Table name, row ID and data are required'}), 400
-        
-        db_path = current_app.config.get('SQLALCHEMY_DATABASE_URI', 'instance/mcpanel.db').replace('sqlite:///', '')
-        
-        import sqlite3
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
-        set_clause = ', '.join([f"{key} = ?" for key in row_data.keys()])
-        values = list(row_data.values()) + [row_id]
-        
-        query = f"UPDATE {table} SET {set_clause} WHERE id = ?"
-        cursor.execute(query, values)
-        
-        conn.commit()
-        conn.close()
-        
-        return jsonify({'id': row_id, **row_data})
-        
-    except Exception as e:
-        logging.error(f"Error updating database row: {e}")
-        return jsonify({'error': 'Failed to update row'}), 500
-
-
-@main.route('/database/row', methods=['DELETE'])
-@jwt_required()
-def delete_database_row():
-    """Usuwa wiersz z tabeli"""
-    current_user_id = get_jwt_identity()
-    
-    current_user = User.query.get(current_user_id)
-    if not current_user or current_user.role != 'admin':
-        return jsonify({'error': 'Access denied - admin role required'}), 403
-    
-    try:
-        data = request.get_json()
-        table = data.get('table')
-        row_id = data.get('id')
-        
-        if not table or not row_id:
-            return jsonify({'error': 'Table name and row ID are required'}), 400
-        
-        db_path = current_app.config.get('SQLALCHEMY_DATABASE_URI', 'instance/mcpanel.db').replace('sqlite:///', '')
-        
-        import sqlite3
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
-        query = f"DELETE FROM {table} WHERE id = ?"
-        cursor.execute(query, [row_id])
-        
-        conn.commit()
-        conn.close()
-        
-        return jsonify({'success': True, 'message': 'Row deleted successfully'})
-        
-    except Exception as e:
-        logging.error(f"Error deleting database row: {e}")
-        return jsonify({'error': 'Failed to delete row'}), 500
-
-
-@main.route('/database/tables', methods=['POST'])
-@jwt_required()
-def create_database_table():
-    """Tworzy nową tabelę w bazie danych"""
-    current_user_id = get_jwt_identity()
-    
-    current_user = User.query.get(current_user_id)
-    if not current_user or current_user.role != 'admin':
-        return jsonify({'error': 'Access denied - admin role required'}), 403
-    
-    try:
-        data = request.get_json()
-        table_name = data.get('name')
-        columns = data.get('columns', [])
-        
-        if not table_name or not columns:
-            return jsonify({'error': 'Table name and columns are required'}), 400
-        
-        # Walidacja nazwy tabeli
-        if not table_name.replace('_', '').isalnum():
-            return jsonify({'error': 'Invalid table name'}), 400
-        
-        db_path = current_app.config.get('SQLALCHEMY_DATABASE_URI', 'instance/mcpanel.db').replace('sqlite:///', '')
-        
-        import sqlite3
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
-        # Buduj definicję kolumn
-        column_definitions = []
-        for col in columns:
-            col_def = f"{col['name']} {col['type']}"
-            if col.get('primaryKey'):
-                col_def += " PRIMARY KEY"
-            if col.get('autoIncrement'):
-                col_def += " AUTOINCREMENT"
-            column_definitions.append(col_def)
-        
-        create_query = f"CREATE TABLE {table_name} ({', '.join(column_definitions)})"
-        cursor.execute(create_query)
-        
-        conn.commit()
-        conn.close()
-        
-        return jsonify({'success': True, 'table': table_name})
-        
-    except Exception as e:
-        logging.error(f"Error creating database table: {e}")
-        return jsonify({'error': 'Failed to create table'}), 500
-
-
-@main.route('/database/backup', methods=['POST'])
-@jwt_required()
-def create_database_backup():
-    """Tworzy kopię zapasową bazy danych"""
-    current_user_id = get_jwt_identity()
-    
-    current_user = User.query.get(current_user_id)
-    if not current_user or current_user.role != 'admin':
-        return jsonify({'error': 'Access denied - admin role required'}), 403
-    
-    try:
-        db_path = current_app.config.get('SQLALCHEMY_DATABASE_URI', 'instance/mcpanel.db').replace('sqlite:///', '')
-        backup_dir = current_app.config.get('BACKUP_DIR', 'backups')
-        
-        # Utwórz katalog backup jeśli nie istnieje
-        os.makedirs(backup_dir, exist_ok=True)
-        
-        # Nazwa pliku backup z timestampem
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        backup_path = os.path.join(backup_dir, f'database_backup_{timestamp}.db')
-        
-        # Skopiuj bazę danych
-        shutil.copy2(db_path, backup_path)
-        
-        # Zapisz informację o backupie
-        _save_backup_info(backup_path)
-        
-        return jsonify({
-            'success': True, 
-            'message': 'Backup created successfully',
-            'backup_path': backup_path
-        })
-        
-    except Exception as e:
-        logging.error(f"Error creating database backup: {e}")
-        return jsonify({'error': 'Failed to create backup'}), 500
-
-
-@main.route('/database/export', methods=['GET'])
-@jwt_required()
-def export_database():
-    """Eksportuje bazę danych jako plik SQL"""
-    current_user_id = get_jwt_identity()
-    
-    current_user = User.query.get(current_user_id)
-    if not current_user or current_user.role != 'admin':
-        return jsonify({'error': 'Access denied - admin role required'}), 403
-    
-    try:
-        db_path = current_app.config.get('SQLALCHEMY_DATABASE_URI', 'instance/mcpanel.db').replace('sqlite:///', '')
-        
-        import sqlite3
-        conn = sqlite3.connect(db_path)
-        
-        # Tymczasowy plik SQL
-        temp_sql_path = f'/tmp/database_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.sql'
-        
-        with open(temp_sql_path, 'w') as f:
-            for line in conn.iterdump():
-                f.write(f'{line}\n')
-        
-        conn.close()
-        
-        return send_file(temp_sql_path, as_attachment=True, download_name='database_export.sql')
-        
-    except Exception as e:
-        logging.error(f"Error exporting database: {e}")
-        return jsonify({'error': 'Failed to export database'}), 500
-
-
-# Funkcje pomocnicze
-def _get_last_backup_info():
-    """Pobiera informacje o ostatniej kopii zapasowej"""
-    backup_dir = current_app.config.get('BACKUP_DIR', 'backups')
-    try:
-        if os.path.exists(backup_dir):
-            backups = [f for f in os.listdir(backup_dir) if f.startswith('database_backup_')]
-            if backups:
-                latest_backup = max(backups)
-                backup_time = datetime.fromtimestamp(os.path.getctime(os.path.join(backup_dir, latest_backup)))
-                return {
-                    'last_backup': backup_time.strftime('%Y-%m-%d %H:%M:%S'),
-                    'next_backup': (backup_time + timedelta(hours=24)).strftime('%Y-%m-%d %H:%M:%S')
-                }
-    except Exception as e:
-        logging.error(f"Error getting backup info: {e}")
-    
-    return {'last_backup': 'Nigdy', 'next_backup': 'Nie zaplanowano'}
-
-
-def _save_backup_info(backup_path):
-    """Zapisuje informacje o backupie"""
-    try:
-        backup_info = {
-            'path': backup_path,
-            'created_at': datetime.now().isoformat(),
-            'size': os.path.getsize(backup_path)
-        }
-        # Możesz zapisać to w osobnej tabeli w bazie danych
-    except Exception as e:
-        logging.error(f"Error saving backup info: {e}")
-
-
-def _estimate_table_size(row_count, column_count):
-    """Szacuje rozmiar tabeli"""
-    estimated_size = row_count * column_count * 100  # ~100 bajtów na kolumnę
-    if estimated_size < 1024:
-        return f"{estimated_size} B"
-    elif estimated_size < 1024 * 1024:
-        return f"{estimated_size / 1024:.1f} KB"
-    else:
-        return f"{estimated_size / (1024 * 1024):.1f} MB"
-
-
-def _get_table_creation_time(table_name):
-    """Pobiera przybliżony czas utworzenia tabeli"""
-    try:
-        db_path = current_app.config.get('SQLALCHEMY_DATABASE_URI', 'instance/mcpanel.db').replace('sqlite:///', '')
-        table_path = f"{db_path}-{table_name}"
-        if os.path.exists(table_path):
-            return datetime.fromtimestamp(os.path.getctime(table_path)).strftime('%Y-%m-%d')
-    except:
-        pass
-    return 'Nieznana'
 
 def _check_permission(user_id, server_id, permission):
     user = User.query.get(user_id)
