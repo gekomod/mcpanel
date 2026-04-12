@@ -349,7 +349,6 @@ function BackupServer() {
       setBackups(response.data.backups || []);
       setError(null);
     } catch (error) {
-      console.error('Error fetching backups:', error);
       setError(t('backup.error.fetch'));
     } finally {
       setLoading(false);
@@ -366,7 +365,6 @@ function BackupServer() {
       
       setTimeout(fetchBackups, 2000);
     } catch (error) {
-      console.error('Error creating backup:', error);
       toast.error(t('backup.create.error'));
     } finally {
       setCreatingBackup(false);
@@ -376,7 +374,7 @@ function BackupServer() {
   const handleRestoreBackup = async (backupName) => {
     if (restoringBackup) return;
 
-    if (!window.confirm(t('backup.restore.confirm', { name: backupName }))) {
+    if (!window.confirm('Czy na pewno chcesz przywrócić ten backup? Obecne dane zostaną nadpisane.')) {
       return;
     }
 
@@ -387,7 +385,6 @@ function BackupServer() {
       
       setTimeout(fetchBackups, 2000);
     } catch (error) {
-      console.error('Error restoring backup:', error);
       toast.error(t('backup.restore.error'));
     } finally {
       setRestoringBackup(null);
@@ -404,7 +401,6 @@ function BackupServer() {
       
       setBackups(backups.filter(backup => backup.name !== backupName));
     } catch (error) {
-      console.error('Error deleting backup:', error);
       toast.error(t('backup.delete.error'));
     } finally {
       setDeletingBackup(null);

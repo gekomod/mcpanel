@@ -1,3 +1,4 @@
+import { toast } from 'react-toastify';
 import React, { useState } from 'react';
 import styled from 'styled-components';
 import { 
@@ -369,7 +370,7 @@ function Support() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    alert(t('support.thankYouMessage', {
+    toast.info(t('support.thankYouMessage', {
       subject: formData.subject,
       email: formData.email,
       category: formData.category
@@ -455,7 +456,7 @@ function Support() {
             <p>{t('support.community.description')}</p>
             <p><strong>{t('support.tip')}:</strong> {t('support.community.tip')}</p>
           </SupportCardContent>
-          <SupportLink href="#" onClick={(e) => { e.preventDefault(); alert(t('support.community.soon')); }}>
+          <SupportLink href="#" onClick={(e) => { e.preventDefault(); toast.info(t('support.community.soon')); }}>
             <FiExternalLink /> {t('support.community.action')}
           </SupportLink>
         </SupportCard>

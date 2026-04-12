@@ -48,7 +48,7 @@ function App() {
             pauseOnFocusLoss
             draggable
             pauseOnHover
-            theme="light"
+            theme="dark"
           />
           <Routes>
             <Route path="/login" element={<Login />} />

@@ -1,358 +1,69 @@
-/* Global Styles */
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-
-
-       body {
-    color: #a4aabc;
-    line-height: 1.6;
-    background: black;
-    min-height: 100vh;
-    position: relative;
-        }
-
-        body::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-image: url(https://4kwallpapers.com/images/wallpapers/minecraft-spring-to-3840x2160-21999.jpg);
-    background-size: cover;
-    background-position: center;
-    background-blend-mode: overlay;
-    z-index: -1;
-    background-color: #1f2334;
-        }
-
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+/* Global Reset & Base */
+*, *::before, *::after {
+  margin: 0; padding: 0;
+  box-sizing: border-box;
 }
 
-/* Scrollbar Styles */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
+html { scroll-behavior: smooth; }
 
-::-webkit-scrollbar-track {
-  background: #2e3245;
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #3a3f57;
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #4b5268;
-}
-
-/* Form Elements */
-input, select, textarea {
-  font-family: inherit;
-}
-
-/* Button Styles */
-button {
-  font-family: inherit;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-/* Table Styles */
-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-th, td {
-  padding: 0.75rem;
-  text-align: left;
-  border-bottom: 1px solid #3a3f57;
-}
-
-th {
-
-  color: #fff;
-  font-weight: 600;
-}
-
-tr:hover {
-  background-color: #222b43;
-}
-
-/* Card Styles */
-.card {
-  background: #2e3245;
-  border-radius: 10px;
-  padding: 20px;
-  border: 1px solid #3a3f57;
-  margin-bottom: 20px;
-}
-
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
-
-.card-title {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: #fff;
-  margin: 0;
-}
-
-/* Modal Styles */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 20px;
-}
-
-.modal-content {
-  background: #2e3245;
-  border-radius: 12px;
-  padding: 30px;
-  width: 100%;
-  max-width: 500px;
-  max-height: 90vh;
-  overflow-y: auto;
-  border: 1px solid #3a3f57;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
-
-.modal-title {
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: #fff;
-  margin: 0;
-}
-
-.modal-close {
-  background: none;
-  border: none;
+body {
+  font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   color: #a4aabc;
-  font-size: 1.5rem;
-  cursor: pointer;
-  padding: 0;
-  width: 30px;
-  height: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  
-  &:hover {
-    background: #3a3f57;
-    color: #fff;
-  }
+  line-height: 1.6;
+  min-height: 100vh;
+  background: #0f1524;
+  position: relative;
 }
 
-/* Loading Spinner */
-.spinner {
-  border: 2px solid #3a3f57;
-  border-top: 2px solid #3b82f6;
-  border-radius: 50%;
-  width: 20px;
-  height: 20px;
-  animation: spin 1s linear infinite;
-  display: inline-block;
-  margin-right: 8px;
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url(https://4kwallpapers.com/images/wallpapers/minecraft-spring-to-3840x2160-21999.jpg);
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  opacity: 0.07;
+  z-index: -1;
+  pointer-events: none;
 }
 
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+/* Typography */
+h1,h2,h3,h4,h5,h6 { font-weight: 700; color: #fff; }
+a { color: #3b82f6; text-decoration: none; }
+a:hover { color: #60a5fa; }
+code, pre {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Monaco', monospace;
 }
 
-/* Status Badges */
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 12px;
-  border-radius: 20px;
-  font-size: 0.8rem;
-  font-weight: 500;
-}
+/* Scrollbars */
+::-webkit-scrollbar { width: 7px; height: 7px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2a2f4a; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #3a3f57; }
 
-.status-running {
-  background-color: rgba(16, 185, 129, 0.2);
-  color: #10b981;
+/* Form elements */
+input, select, textarea, button {
+  font-family: inherit;
 }
+button { cursor: pointer; }
 
-.status-stopped {
-  background-color: rgba(248, 113, 113, 0.2);
-  color: #f87171;
-}
+/* Tables */
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid #2a2f4a; }
+th { color: #6b7293; font-size: 12px; text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; }
 
-.status-starting {
-  background-color: rgba(245, 158, 11, 0.2);
-  color: #f59e0b;
-}
-
-.status-stopping {
-  background-color: rgba(245, 158, 11, 0.2);
-  color: #f59e0b;
-}
-
-.status-restarting {
-  background-color: rgba(245, 158, 11, 0.2);
-  color: #f59e0b;
-}
-
-.status-downloading {
-  background-color: rgba(59, 130, 246, 0.2);
-  color: #3b82f6;
-}
-
-/* Utility Classes */
-.text-center {
-  text-align: center;
-}
-
-.text-right {
-  text-align: right;
-}
-
-.mb-1 {
-  margin-bottom: 0.5rem;
-}
-
-.mb-2 {
-  margin-bottom: 1rem;
-}
-
-.mb-3 {
-  margin-bottom: 1.5rem;
-}
-
-.mt-1 {
-  margin-top: 0.5rem;
-}
-
-.mt-2 {
-  margin-top: 1rem;
-}
-
-.mt-3 {
-  margin-top: 1.5rem;
-}
-
-.p-1 {
-  padding: 0.5rem;
-}
-
-.p-2 {
-  padding: 1rem;
-}
-
-.p-3 {
-  padding: 1.5rem;
-}
-
-.d-flex {
-  display: flex;
-}
-
-.align-items-center {
-  align-items: center;
-}
-
-.justify-content-between {
-  justify-content: space-between;
-}
-
-.gap-1 {
-  gap: 0.5rem;
-}
-
-.gap-2 {
-  gap: 1rem;
-}
-
-.gap-3 {
-  gap: 1.5rem;
-}
-
-/* Responsive Design */
-@media (max-width: 768px) {
-  .modal-content {
-    margin: 10px;
-    padding: 20px;
-  }
-  
-  .card {
-    padding: 15px;
-  }
-  
-  table {
-    font-size: 0.9rem;
-  }
-  
-  th, td {
-    padding: 0.5rem;
-  }
-}
-
+/* Toast overrides */
 .Toastify__toast {
   background: #2e3245 !important;
-  color: #fff !important;
   border: 1px solid #3a3f57 !important;
+  color: #e2e8f0 !important;
+  border-radius: 10px !important;
+  font-family: inherit !important;
 }
-
-.Toastify__toast-body {
-  color: #fff !important;
-}
-
-.Toastify__progress-bar {
-  background: #3b82f6 !important;
-}
-
-.Toastify__close-button {
-  color: #a4aabc !important;
-}
-
-/* Animation Classes */
-.fade-in {
-  animation: fadeIn 0.3s ease-in;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-.slide-in {
-  animation: slideIn 0.3s ease-out;
-}
-
-@keyframes slideIn {
-  from { transform: translateY(-20px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
+.Toastify__toast--success { border-left: 3px solid #10b981 !important; }
+.Toastify__toast--error { border-left: 3px solid #ef4444 !important; }
+.Toastify__toast--warning { border-left: 3px solid #fbbf24 !important; }
+.Toastify__toast--info { border-left: 3px solid #3b82f6 !important; }
+.Toastify__progress-bar { background: #3b82f6 !important; }
+.Toastify__close-button { color: #6b7293 !important; }

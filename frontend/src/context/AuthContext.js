@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 
 const AuthContext = createContext();
@@ -8,47 +8,67 @@ export function useAuth() {
 }
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
+  const [user, setUser]     = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Verify token on startup
   useEffect(() => {
-    // Check if user is logged in on app start
     const token = localStorage.getItem('access_token');
     const savedUser = localStorage.getItem('user');
-    
     if (token && savedUser) {
-      setUser(JSON.parse(savedUser));
-      // Verify token is still valid
+      try { setUser(JSON.parse(savedUser)); } catch { localStorage.removeItem('user'); }
       api.get('/auth/profiles')
+        .then(res => {
+          setUser(res.data);
+          localStorage.setItem('user', JSON.stringify(res.data));
+        })
         .catch(() => {
-          logout();
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('user');
+          setUser(null);
         });
     }
     setLoading(false);
   }, []);
 
-  const login = (token, userData) => {
+  const login = useCallback((token, userData) => {
     localStorage.setItem('access_token', token);
     localStorage.setItem('user', JSON.stringify(userData));
-    localStorage.setItem('preferred-language', userData.language);
+    if (userData.language) {
+      localStorage.setItem('preferred-language', userData.language);
+    }
     setUser(userData);
-  };
+  }, []);
 
-  const logout = () => {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('user');
-    setUser(null);
-  };
+  const logout = useCallback(async () => {
+    const sessionId = user?.session_id;
+    try {
+      await api.post('/auth/logout', { session_id: sessionId });
+    } catch { /* silent */ } finally {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('user');
+      setUser(null);
+    }
+  }, [user]);
 
-  const value = {
-    user,
-    login,
-    logout,
-    loading
-  };
+  const updateUser = useCallback((updatedData) => {
+    setUser(prev => {
+      const next = { ...prev, ...updatedData };
+      localStorage.setItem('user', JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  // Called by LanguageContext to persist language preference
+  const updateUserLanguage = useCallback(async (lang) => {
+    try {
+      await api.put('/auth/profiles', { language: lang });
+      updateUser({ language: lang });
+    } catch { /* silent - non-critical */ }
+  }, [updateUser]);
 
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider value={{ user, login, logout, updateUser, updateUserLanguage, loading }}>
       {!loading && children}
     </AuthContext.Provider>
   );

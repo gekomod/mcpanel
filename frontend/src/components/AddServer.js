@@ -503,9 +503,8 @@ function AddServer({ isOpen, onClose, onServerAdded }) {
     setLoadingAgents(true);
     try {
       const response = await api.get('/agents');
-      setAgents(response.data);
+      setAgents(response.data || []);
     } catch (error) {
-      console.error('Error loading agents:', error);
       setAgents([]);
     } finally {
       setLoadingAgents(false);
@@ -533,7 +532,6 @@ function AddServer({ isOpen, onClose, onServerAdded }) {
       }
       setVersions(versionsData);
     } catch (error) {
-      console.error('Error loading versions:', error);
     } finally {
       setLoadingVersions(false);
     }

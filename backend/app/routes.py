@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify, current_app, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from .models import db, User, Server, Permission, BedrockVersion, Addon, UserSession, Agent
+from .models import db, User, Server, Permission, BedrockVersion, Addon, UserSession, Agent, ScheduledTask
 from .managers import server_manager, file_manager
 from .bedrock_manager import BedrockAddonManager
 from zoneinfo import ZoneInfo
@@ -23,9 +23,27 @@ logging.basicConfig(
 )
 logger = logging.getLogger('MCPanelRoutes')
 
+
+def _get_current_user():
+    """Helper: pobiera aktualnego użytkownika z JWT z bezpieczną konwersją str->int."""
+    try:
+        user_id = int(get_jwt_identity())
+        return User.query.get(user_id)
+    except (ValueError, TypeError):
+        return None
+
+
 main = Blueprint('main', __name__)
 
 installation_progress = {}
+
+
+@main.route('/api/version', methods=['GET'])
+def get_app_version():
+    """Zwraca wersję aplikacji."""
+    return jsonify({'version': '1.0.0', 'name': 'MCPanel'})
+
+
 
 def get_bedrock_manager():
     from flask import current_app
@@ -184,7 +202,7 @@ class AgentClient:
 @main.route('/servers', methods=['GET'])
 @jwt_required()
 def get_servers():
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
     if user.role == 'admin':
@@ -199,7 +217,7 @@ def get_servers():
 @main.route('/servers', methods=['POST'])
 @jwt_required()
 def create_server():
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
     if user.role != 'admin':
@@ -278,7 +296,7 @@ def create_server():
 @main.route('/servers/<int:server_id>', methods=['DELETE'])
 @jwt_required()
 def delete_server(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
     if user.role != 'admin':
@@ -335,7 +353,7 @@ def delete_server(server_id):
 @main.route('/servers/<int:server_id>', methods=['GET'])
 @jwt_required()
 def get_server(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     
     # Check permissions
@@ -347,7 +365,7 @@ def get_server(server_id):
 @main.route('/servers/<int:server_id>/start', methods=['POST'])
 @jwt_required()
 def start_server(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     
     if not _check_permission(current_user_id, server_id, 'can_start'):
@@ -413,7 +431,7 @@ def start_server(server_id):
 @main.route('/servers/<int:server_id>/stop', methods=['POST'])
 @jwt_required()
 def stop_server(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     
     if not _check_permission(current_user_id, server_id, 'can_stop'):
@@ -447,7 +465,7 @@ def stop_server(server_id):
 @main.route('/servers/<int:server_id>/restart', methods=['POST'])
 @jwt_required()
 def restart_server(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     
     if not _check_permission(current_user_id, server_id, 'can_restart'):
@@ -495,7 +513,7 @@ def restart_server(server_id):
 @main.route('/servers/<int:server_id>/files', methods=['GET'])
 @jwt_required()
 def list_files(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     path = request.args.get('path', '')
 
@@ -521,7 +539,7 @@ def list_files(server_id):
 @main.route('/servers/<int:server_id>/files/read', methods=['GET'])
 @jwt_required()
 def read_file(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     file_path = request.args.get('path', '')
 
@@ -547,7 +565,7 @@ def read_file(server_id):
 @main.route('/servers/<int:server_id>/files/write', methods=['POST'])
 @jwt_required()
 def write_file(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     data = request.get_json()
     file_path = data.get('path', '')
@@ -575,7 +593,7 @@ def write_file(server_id):
 @main.route('/servers/<int:server_id>/files/upload', methods=['POST'])
 @jwt_required()
 def upload_file(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     if not _check_permission(current_user_id, server_id, 'can_edit_files'):
         return jsonify({'error': 'Access denied'}), 403
@@ -611,7 +629,7 @@ def upload_file(server_id):
 @main.route('/servers/<int:server_id>/files/mkdir', methods=['POST'])
 @jwt_required()
 def create_directory(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     data = request.get_json()
     dir_path = data.get('path', '')
@@ -644,7 +662,7 @@ def create_directory(server_id):
 @main.route('/servers/<int:server_id>/files/download', methods=['GET'])
 @jwt_required()
 def download_file(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     file_path = request.args.get('path', '')
     
@@ -678,7 +696,7 @@ def download_file(server_id):
 @main.route('/servers/<int:server_id>/files/delete', methods=['POST'])
 @jwt_required()
 def delete_file(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     data = request.get_json()
     item_path = data.get('path', '')
@@ -714,7 +732,7 @@ def delete_file(server_id):
 @main.route('/servers/<int:server_id>/files/rename', methods=['POST'])
 @jwt_required()
 def rename_file(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     data = request.get_json()
     old_path = data.get('old_path', '')
@@ -750,7 +768,7 @@ def rename_file(server_id):
 @jwt_required()
 def copy_file(server_id):
     """Kopiuje plik lub katalog"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     data = request.get_json()
     source_path = data.get('source_path', '')
@@ -778,7 +796,7 @@ def copy_file(server_id):
 @jwt_required()
 def move_file(server_id):
     """Przenosi plik lub katalog"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     data = request.get_json()
     source_path = data.get('source_path', '')
@@ -806,7 +824,7 @@ def move_file(server_id):
 @jwt_required()
 def get_file_info(server_id):
     """Pobiera informacje o pliku lub katalogu"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     file_path = request.args.get('path', '')
     
@@ -831,7 +849,7 @@ def get_file_info(server_id):
 @main.route('/servers/<int:server_id>/properties', methods=['GET'])
 @jwt_required()
 def get_properties(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     
     # Check permissions
@@ -847,7 +865,7 @@ def get_properties(server_id):
 @main.route('/servers/<int:server_id>/properties', methods=['POST'])
 @jwt_required()
 def update_properties(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     properties = request.get_json()
     
@@ -864,7 +882,7 @@ def update_properties(server_id):
 @main.route('/servers/<int:server_id>/users', methods=['GET'])
 @jwt_required()
 def get_server_users(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     
     # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_manage_users'):
@@ -893,7 +911,7 @@ def get_server_users(server_id):
 @main.route('/servers/<int:server_id>/users', methods=['POST'])
 @jwt_required()
 def add_server_user(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     data = request.get_json()
     username = data.get('username')
     permissions = data.get('permissions', {})
@@ -934,7 +952,7 @@ def add_server_user(server_id):
 @main.route('/servers/<int:server_id>/users/<int:user_id>', methods=['PUT'])
 @jwt_required()
 def update_server_user(server_id, user_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     data = request.get_json()
     permissions = data.get('permissions', {})
     
@@ -960,7 +978,7 @@ def update_server_user(server_id, user_id):
 @main.route('/servers/<int:server_id>/download-progress', methods=['GET'])
 @jwt_required()
 def get_download_progress(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     
     # Check permissions
     if not _check_permission(current_user_id, server_id, 'view'):
@@ -969,15 +987,12 @@ def get_download_progress(server_id):
     progress = server_manager.get_download_progress(server_id)
     
     # Stop polling if progress is complete or error
-    if progress['status'] in ['complete', 'error', 'idle']:
-        print(f"Stopping polling for server {server_id} - status: {progress['status']}")
-    
     return jsonify(progress)
 
 @main.route('/servers/<int:server_id>/users/<int:user_id>', methods=['DELETE'])
 @jwt_required()
 def remove_server_user(server_id, user_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     
     # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_manage_users'):
@@ -995,7 +1010,7 @@ def remove_server_user(server_id, user_id):
 @main.route('/servers/<int:server_id>/cancel-download', methods=['POST'])
 @jwt_required()
 def cancel_download(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     
     # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_start'):
@@ -1010,24 +1025,46 @@ def cancel_download(server_id):
 @main.route('/users', methods=['GET'])
 @jwt_required()
 def get_users():
-    current_user_id = get_jwt_identity()
-    user = User.query.get(current_user_id)
-    
-    # Only admins can see all users
-    if user.role != 'admin':
+    current_user = _get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Unauthorized'}), 401
+    if current_user.role != 'admin':
         return jsonify({'error': 'Access denied'}), 403
-    
     users = User.query.all()
-    return jsonify([user.to_dict() for user in users])
-    
+    return jsonify([u.to_dict() for u in users])
+
+
+@main.route('/users/<int:user_id>', methods=['DELETE'])
+@jwt_required()
+def delete_user_alias(user_id):
+    """Alias dla /auth/users/<id> DELETE — dla kompatybilności."""
+    current_user = _get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Unauthorized'}), 401
+    if current_user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    if user_id == current_user.id:
+        return jsonify({'error': 'Cannot delete your own account'}), 400
+    user = User.query.get_or_404(user_id)
+    from .models import Permission
+    Permission.query.filter_by(user_id=user_id).delete()
+    from .models import UserSession
+    UserSession.query.filter_by(user_id=user_id).delete()
+    db.session.delete(user)
+    db.session.commit()
+    return jsonify({'message': 'User deleted successfully'})
+
+
 # Endpointy do zarządzania wersjami Bedrock
 @main.route('/bedrock-versions', methods=['GET'])
 @jwt_required()
 def get_bedrock_versions():
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
     # Only admins can manage bedrock versions
+    if not user:
+        return jsonify({'error': 'Unauthorized'}), 401
     if user.role != 'admin':
         return jsonify({'error': 'Access denied'}), 403
     
@@ -1037,10 +1074,12 @@ def get_bedrock_versions():
 @main.route('/bedrock-versions/all', methods=['GET'])
 @jwt_required()
 def get_all_bedrock_versions():
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
     # Only admins can manage bedrock versions
+    if not user:
+        return jsonify({'error': 'Unauthorized'}), 401
     if user.role != 'admin':
         return jsonify({'error': 'Access denied'}), 403
     
@@ -1050,10 +1089,12 @@ def get_all_bedrock_versions():
 @main.route('/bedrock-versions', methods=['POST'])
 @jwt_required()
 def add_bedrock_version():
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
     # Only admins can add bedrock versions
+    if not user:
+        return jsonify({'error': 'Unauthorized'}), 401
     if user.role != 'admin':
         return jsonify({'error': 'Access denied'}), 403
     
@@ -1081,10 +1122,12 @@ def add_bedrock_version():
 @main.route('/bedrock-versions/<int:version_id>', methods=['PUT'])
 @jwt_required()
 def update_bedrock_version(version_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
     # Only admins can update bedrock versions
+    if not user:
+        return jsonify({'error': 'Unauthorized'}), 401
     if user.role != 'admin':
         return jsonify({'error': 'Access denied'}), 403
     
@@ -1114,10 +1157,12 @@ def update_bedrock_version(version_id):
 @main.route('/bedrock-versions/<int:version_id>', methods=['DELETE'])
 @jwt_required()
 def delete_bedrock_version(version_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
     # Only admins can delete bedrock versions
+    if not user:
+        return jsonify({'error': 'Unauthorized'}), 401
     if user.role != 'admin':
         return jsonify({'error': 'Access denied'}), 403
     
@@ -1142,7 +1187,7 @@ def delete_bedrock_version(version_id):
 @main.route('/servers/<int:server_id>/real-status', methods=['GET'])
 @jwt_required()
 def get_real_server_status(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     
     if not _check_permission(current_user_id, server_id, 'view'):
@@ -1203,10 +1248,10 @@ def get_real_server_status(server_id):
 @main.route('/servers/<int:server_id>/logs', methods=['GET'])
 @jwt_required()
 def get_server_logs(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     
-    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
+    if not _check_permission(current_user_id, server_id, 'view'):
         return jsonify({'error': 'Access denied'}), 403
     
     lines = request.args.get('lines', 100, type=int)
@@ -1232,7 +1277,7 @@ def get_server_logs(server_id):
 @main.route('/servers/<int:server_id>/command', methods=['POST'])
 @jwt_required()
 def send_command(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     data = request.get_json()
     command = data.get('command', '')
     
@@ -1265,11 +1310,11 @@ def send_command(server_id):
 @main.route('/servers/<int:server_id>/realtime-output', methods=['GET'])
 @jwt_required()
 def get_realtime_output(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     
     # Check permissions
-    if not _check_permission(current_user_id, server_id, 'can_edit_files'):
+    if not _check_permission(current_user_id, server_id, 'view'):
         return jsonify({'error': 'Access denied'}), 403
     
     # Get real-time output from server manager
@@ -1283,10 +1328,12 @@ def get_realtime_output(server_id):
 @main.route('/addons', methods=['GET'])
 @jwt_required()
 def get_addons():
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
     # Only admins can manage addons
+    if not user:
+        return jsonify({'error': 'Unauthorized'}), 401
     if user.role != 'admin':
         return jsonify({'error': 'Access denied'}), 403
     
@@ -1296,10 +1343,12 @@ def get_addons():
 @main.route('/addons', methods=['POST'])
 @jwt_required()
 def create_addon():
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
     # Only admins can create addons
+    if not user:
+        return jsonify({'error': 'Unauthorized'}), 401
     if user.role != 'admin':
         return jsonify({'error': 'Access denied'}), 403
     
@@ -1356,10 +1405,12 @@ def create_addon():
 @main.route('/addons/<int:addon_id>', methods=['PUT'])
 @jwt_required()
 def update_addon(addon_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
     # Only admins can update addons
+    if not user:
+        return jsonify({'error': 'Unauthorized'}), 401
     if user.role != 'admin':
         return jsonify({'error': 'Access denied'}), 403
     
@@ -1392,7 +1443,7 @@ def update_addon(addon_id):
 @main.route('/servers/<int:server_id>/installed-addons', methods=['GET'])
 @jwt_required()
 def get_installed_addons(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
 
     if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
@@ -1445,7 +1496,7 @@ def get_installed_addons(server_id):
 @main.route('/servers/<int:server_id>/addons/<int:addon_id>/install', methods=['POST'])
 @jwt_required()
 def install_addon(server_id, addon_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
         return jsonify({'error': 'Access denied'}), 403
 
@@ -1510,10 +1561,12 @@ def install_addon(server_id, addon_id):
 @main.route('/admin/fix-installed-addons', methods=['POST'])
 @jwt_required()
 def fix_installed_addons():
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
     # Only admins can run this
+    if not user:
+        return jsonify({'error': 'Unauthorized'}), 401
     if user.role != 'admin':
         return jsonify({'error': 'Access denied'}), 403
     
@@ -1580,7 +1633,7 @@ def fix_installed_addons():
 @main.route('/servers/<int:server_id>/addons/<int:addon_id>/uninstall', methods=['POST'])
 @jwt_required()
 def uninstall_addon(server_id, addon_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
         return jsonify({'error': 'Access denied'}), 403
 
@@ -1633,7 +1686,7 @@ def uninstall_addon(server_id, addon_id):
 @main.route('/servers/<int:server_id>/addons/<int:addon_id>/enable', methods=['POST'])
 @jwt_required()
 def enable_addon(server_id, addon_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     
     # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
@@ -1671,7 +1724,7 @@ def enable_addon(server_id, addon_id):
 @main.route('/servers/<int:server_id>/addons/<int:addon_id>/disable', methods=['POST'])
 @jwt_required()
 def disable_addon(server_id, addon_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     
     # Check permissions
     if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
@@ -1709,10 +1762,12 @@ def disable_addon(server_id, addon_id):
 @main.route('/addons/<int:addon_id>', methods=['DELETE'])
 @jwt_required()
 def delete_addon(addon_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
     # Only admins can delete addons
+    if not user:
+        return jsonify({'error': 'Unauthorized'}), 401
     if user.role != 'admin':
         return jsonify({'error': 'Access denied'}), 403
     
@@ -1726,10 +1781,12 @@ def delete_addon(addon_id):
 @main.route('/addons/types', methods=['GET'])
 @jwt_required()
 def get_addon_types():
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
     # Only admins can access addon types
+    if not user:
+        return jsonify({'error': 'Unauthorized'}), 401
     if user.role != 'admin':
         return jsonify({'error': 'Access denied'}), 403
     
@@ -1741,7 +1798,7 @@ def get_addon_types():
 @main.route('/servers/<int:server_id>/performance', methods=['GET'])
 @jwt_required()
 def get_server_performance(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     
     # Check permissions
@@ -1794,14 +1851,11 @@ def get_server_performance(server_id):
                 server.pid = None
                 db.session.commit()
         
-        # Pobierz liczbę graczy z server.properties (dla Minecraft)
-        try:
-            properties = server_manager.get_server_properties(server.name)
-            if properties and 'max-players' in properties:
-                # To jest uproszczenie - w rzeczywistości trzeba by parsować listę graczy
-                performance_data['players_online'] = 0  # Tymczasowo 0
-        except:
-            pass
+        # Pobierz liczbę graczy z server_manager
+        with server_manager.lock:
+            players = list(server_manager.server_players.get(server_id, []))
+        performance_data['players_online'] = len(players)
+        performance_data['players'] = players
         
         # TPS - trudne do zmierzenia bez bezpośredniego dostępu do logów serwera
         # Można spróbować oszacować na podstawie obciążenia CPU
@@ -1818,7 +1872,7 @@ def get_server_performance(server_id):
 @main.route('/servers/<int:server_id>/quick-settings', methods=['GET'])
 @jwt_required()
 def get_quick_settings(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     
     # Check permissions
@@ -1839,7 +1893,7 @@ def get_quick_settings(server_id):
 @main.route('/servers/<int:server_id>/quick-settings', methods=['POST'])
 @jwt_required()
 def update_quick_settings(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     data = request.get_json()
     
@@ -1872,7 +1926,7 @@ def update_quick_settings(server_id):
 @main.route('/servers/<int:server_id>/backups', methods=['GET'])
 @jwt_required()
 def get_server_backups(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     
     # Check permissions
@@ -1911,7 +1965,7 @@ def get_server_backups(server_id):
 @main.route('/servers/<int:server_id>/backups', methods=['POST'])
 @jwt_required()
 def create_server_backup(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     
     # Check permissions
@@ -1994,7 +2048,7 @@ def create_server_backup(server_id):
 @main.route('/servers/<int:server_id>/backups/<backup_name>', methods=['DELETE'])
 @jwt_required()
 def delete_server_backup(server_id, backup_name):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     
     # Check permissions
@@ -2019,7 +2073,7 @@ def delete_server_backup(server_id, backup_name):
 @main.route('/servers/<int:server_id>/backups/<backup_name>/restore', methods=['POST'])
 @jwt_required()
 def restore_server_backup(server_id, backup_name):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     
     # Check permissions
@@ -2052,7 +2106,7 @@ def restore_server_backup(server_id, backup_name):
 @main.route('/servers/<int:server_id>/console', methods=['GET'])
 @jwt_required()
 def get_console_output(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     
     if not _check_permission(current_user_id, server_id, 'can_edit_files'):
@@ -2081,7 +2135,7 @@ def get_console_output(server_id):
 @main.route('/servers/<int:server_id>/console', methods=['POST'])
 @jwt_required()
 def send_console_command(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     data = request.get_json()
     command = data.get('command', '')
     
@@ -2105,7 +2159,7 @@ def send_console_command(server_id):
 @main.route('/servers/<int:server_id>/size', methods=['GET'])
 @jwt_required()
 def get_server_size(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     
     # Check permissions
@@ -2138,10 +2192,12 @@ def check_port():
     """
     Sprawdza dostępność portu
     """
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
     # Only admins can check ports
+    if not user:
+        return jsonify({'error': 'Unauthorized'}), 401
     if user.role != 'admin':
         return jsonify({'error': 'Access denied'}), 403
     
@@ -2182,7 +2238,7 @@ def check_server_files(server_id):
     """
     Sprawdza czy serwer ma zainstalowane pliki (lokalnie lub na agencie)
     """
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     
     # Check permissions
@@ -2283,7 +2339,7 @@ def check_server_files(server_id):
 @main.route('/servers/<int:server_id>/install', methods=['POST'])
 @jwt_required()
 def install_server(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     
     if not _check_permission(current_user_id, server_id, 'can_start'):
@@ -2403,7 +2459,7 @@ def get_installation_progress(server_id):
     """
     Pobiera postęp instalacji serwera - używa get_download_progress
     """
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     
     # Check permissions
     if not _check_permission(current_user_id, server_id, 'view'):
@@ -2439,7 +2495,7 @@ def clean_install_server(server_id):
     """
     Czyści instalację serwera i rozpoczyna nową
     """
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     
     # Check permissions - tylko admin
@@ -2479,7 +2535,7 @@ def get_download_status(server_id):
     """
     Pobiera status pobierania plików serwera - używa get_download_progress
     """
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     
     # Check permissions
     if not _check_permission(current_user_id, server_id, 'view'):
@@ -2499,7 +2555,7 @@ def get_download_status(server_id):
 @jwt_required()
 def get_user_profile():
     """Pobiera profil użytkownika"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get_or_404(current_user_id)
     
     return jsonify(user.to_dict())
@@ -2508,7 +2564,7 @@ def get_user_profile():
 @jwt_required()
 def update_user_profile():
     """Aktualizuje profil użytkownika"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get_or_404(current_user_id)
     data = request.get_json()
     
@@ -2544,7 +2600,7 @@ def update_user_profile():
 @jwt_required()
 def get_user_notifications():
     """Pobiera ustawienia powiadomień użytkownika"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get_or_404(current_user_id)
     
     notification_settings = user.get_notification_settings()
@@ -2555,7 +2611,7 @@ def get_user_notifications():
 @jwt_required()
 def update_user_notifications():
     """Aktualizuje ustawienia powiadomień użytkownika"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get_or_404(current_user_id)
     data = request.get_json()
     
@@ -2577,7 +2633,7 @@ def update_user_notifications():
 @jwt_required()
 def change_user_password():
     """Zmienia hasło użytkownika"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get_or_404(current_user_id)
     data = request.get_json()
     
@@ -2602,7 +2658,7 @@ def change_user_password():
 @jwt_required()
 def export_user_data():
     """Inicjuje eksport danych użytkownika"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get_or_404(current_user_id)
     
     # Tutaj logika eksportu danych - symulacja
@@ -2617,7 +2673,7 @@ def export_user_data():
 @jwt_required()
 def get_user_sessions():
     """Pobiera aktywne sesje użytkownika"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get_or_404(current_user_id)
 
     active_sessions = UserSession.query.filter_by(
@@ -2631,7 +2687,7 @@ def get_user_sessions():
 @jwt_required()
 def revoke_user_session(session_id):
     """Unieważnia sesję użytkownika"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get_or_404(current_user_id)
     
     session = UserSession.query.filter_by(
@@ -2648,7 +2704,7 @@ def revoke_user_session(session_id):
 @jwt_required()
 def enable_2fa():
     """Włącza uwierzytelnianie dwuskładnikowe"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get_or_404(current_user_id)
     data = request.get_json()
     
@@ -2669,7 +2725,7 @@ def enable_2fa():
 @jwt_required()
 def disable_2fa():
     """Wyłącza uwierzytelnianie dwuskładnikowe"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get_or_404(current_user_id)
     
     user.disable_two_factor()
@@ -2680,7 +2736,7 @@ def disable_2fa():
 @jwt_required()
 def generate_2fa_secret():
     """Generuje sekret 2FA"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get_or_404(current_user_id)
 
     import secrets
@@ -2749,7 +2805,7 @@ def get_agents():
 @main.route('/agents', methods=['POST'])
 @jwt_required()
 def create_agent():
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
     if user.role != 'admin':
@@ -2786,7 +2842,7 @@ def create_agent():
 @jwt_required()
 def get_agent(agent_id):
     """Pobiera szczegóły agenta"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
     if user.role != 'admin':
@@ -2799,7 +2855,7 @@ def get_agent(agent_id):
 @jwt_required()
 def update_agent(agent_id):
     """Aktualizuje agenta"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
     if user.role != 'admin':
@@ -2844,7 +2900,7 @@ def update_agent(agent_id):
 @jwt_required()
 def delete_agent(agent_id):
     """Usuwa agenta"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
     if user.role != 'admin':
@@ -2869,7 +2925,7 @@ def delete_agent(agent_id):
 @jwt_required()
 def restart_agent(agent_id):
     """Wysyła komendę restartu do agenta"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
     if user.role != 'admin':
@@ -2900,7 +2956,7 @@ def restart_agent(agent_id):
 @jwt_required()
 def get_agent_servers(agent_id):
     """Pobiera serwery przypisane do agenta"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
     if user.role != 'admin':
@@ -2914,7 +2970,7 @@ def get_agent_servers(agent_id):
 @main.route('/servers/<int:server_id>/assign-to-agent', methods=['POST'])
 @jwt_required()
 def assign_server_to_agent(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
     if user.role != 'admin':
@@ -3095,7 +3151,7 @@ def get_server_details(server_id):
 @jwt_required()
 def ping_agent(agent_id):
     """Testuje połączenie z agentem (dla panelu)"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
     if user.role != 'admin':
@@ -3153,7 +3209,7 @@ def download_server_files(server_id):
 @jwt_required()
 def deploy_server_to_agent(agent_id):
     """Wdraża serwer na agencie"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
     if user.role != 'admin':
@@ -3204,7 +3260,7 @@ def deploy_server_to_agent(agent_id):
 @jwt_required()
 def test_agent_connection(agent_id):
     """Testuje połączenie z agentem"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
     if user.role != 'admin':
@@ -3241,7 +3297,7 @@ def test_agent_connection(agent_id):
 @jwt_required()
 def get_available_modpacks(server_id):
     """Pobiera modpacki z lokalnego katalogu servers/modpacks/"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     
     if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
         return jsonify({'error': 'Access denied'}), 403
@@ -3415,7 +3471,7 @@ def _detect_mod_loader(game_versions):
 @main.route('/servers/<int:server_id>/modpacks/install', methods=['POST'])
 @jwt_required()
 def install_modpack(server_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     server = Server.query.get_or_404(server_id)
     
     if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
@@ -3635,7 +3691,7 @@ def _async_install_modpack(app, installation_id, installation_info):
 @main.route('/servers/<int:server_id>/modpacks/install/progress/<installation_id>', methods=['GET'])
 @jwt_required()
 def get_modpack_installation_progress(server_id, installation_id):
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     
     if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
         return jsonify({'error': 'Access denied'}), 403
@@ -3742,7 +3798,7 @@ def _install_from_local_file(server, modpack_path, modpack_name, modpack_filenam
 @jwt_required()
 def upload_modpack():
     """Uploaduje nowy modpack do katalogu lokalnego"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
     if user.role != 'admin':
@@ -3814,7 +3870,7 @@ def list_local_modpacks():
 @jwt_required()
 def create_custom_modpack(server_id):
     """Tworzy custom modpack z listy modów"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     
     if not _check_permission(current_user_id, server_id, 'can_install_plugins'):
         return jsonify({'error': 'Access denied'}), 403
@@ -3916,7 +3972,7 @@ def _auto_detect_modpack_properties(server_path, properties):
 @jwt_required()
 def get_current_modpack(server_id):
     """Pobiera informacje o aktualnie zainstalowanym modpacku"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     
     if not _check_permission(current_user_id, server_id, 'view'):
         return jsonify({'error': 'Access denied'}), 403
@@ -3951,7 +4007,7 @@ def get_current_modpack(server_id):
 @jwt_required()
 def get_database_stats():
     """Pobiera statystyki bazy danych"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     
     # Sprawdź uprawnienia administratora
     current_user = User.query.get(current_user_id)
@@ -4006,7 +4062,7 @@ def get_database_stats():
 @jwt_required()
 def get_database_tables():
     """Pobiera listę wszystkich tabel w bazie danych"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     
     # Sprawdź uprawnienia administratora
     current_user = User.query.get(current_user_id)
@@ -4060,7 +4116,7 @@ def get_database_tables():
 @jwt_required()
 def execute_database_query():
     """Wykonuje zapytanie SQL na bazie danych"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     
     # Sprawdź uprawnienia administratora
     current_user = User.query.get(current_user_id)
@@ -4120,7 +4176,7 @@ def execute_database_query():
 @jwt_required()
 def add_database_row():
     """Dodaje nowy wiersz do tabeli"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     
     current_user = User.query.get(current_user_id)
     if not current_user or current_user.role != 'admin':
@@ -4162,7 +4218,7 @@ def add_database_row():
 @jwt_required()
 def update_database_row():
     """Aktualizuje istniejący wiersz w tabeli"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     
     current_user = User.query.get(current_user_id)
     if not current_user or current_user.role != 'admin':
@@ -4203,7 +4259,7 @@ def update_database_row():
 @jwt_required()
 def delete_database_row():
     """Usuwa wiersz z tabeli"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     
     current_user = User.query.get(current_user_id)
     if not current_user or current_user.role != 'admin':
@@ -4240,7 +4296,7 @@ def delete_database_row():
 @jwt_required()
 def create_database_table():
     """Tworzy nową tabelę w bazie danych"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     
     current_user = User.query.get(current_user_id)
     if not current_user or current_user.role != 'admin':
@@ -4291,7 +4347,7 @@ def create_database_table():
 @jwt_required()
 def create_database_backup():
     """Tworzy kopię zapasową bazy danych"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     
     current_user = User.query.get(current_user_id)
     if not current_user or current_user.role != 'admin':
@@ -4329,7 +4385,7 @@ def create_database_backup():
 @jwt_required()
 def export_database():
     """Eksportuje bazę danych jako plik SQL"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     
     current_user = User.query.get(current_user_id)
     if not current_user or current_user.role != 'admin':
@@ -4413,7 +4469,9 @@ def _get_table_creation_time(table_name):
     return 'Nieznana'
 
 def _check_permission(user_id, server_id, permission):
-    user = User.query.get(user_id)
+    user = User.query.get(int(user_id) if user_id else 0)
+    if not user:
+        return False
     if user.role == 'admin':
         return True
     
@@ -4440,3 +4498,690 @@ def _check_permission(user_id, server_id, permission):
         return perm.can_install_plugins
     
     return False
+
+
+# ─── Brakujące endpointy bazy danych ─────────────────────────────────────────
+
+@main.route('/database/tables/<string:table_name>', methods=['DELETE'])
+@jwt_required()
+def delete_database_table(table_name):
+    """Usuwa tabelę z bazy danych (tylko admin)."""
+    current_user = _get_current_user()
+    if not current_user or current_user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    # Zabezpieczenie przed usunięciem systemowych tabel
+    protected = {'user', 'server', 'agent', 'permission', 'addon', 'bedrock_version',
+                 'user_session', 'agent_heartbeat'}
+    if table_name.lower() in protected:
+        return jsonify({'error': f'Tabela "{table_name}" jest chroniona i nie może być usunięta'}), 403
+    try:
+        from . import db
+        db.session.execute(db.text(f'DROP TABLE IF EXISTS "{table_name}"'))
+        db.session.commit()
+        return jsonify({'message': f'Tabela "{table_name}" została usunięta'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@main.route('/database/tables/<string:table_name>/rows', methods=['POST'])
+@jwt_required()
+def add_table_row(table_name):
+    """Dodaje wiersz do tabeli."""
+    current_user = _get_current_user()
+    if not current_user or current_user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    data = request.get_json() or {}
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    try:
+        from . import db
+        cols = ', '.join(f'"{k}"' for k in data.keys())
+        vals = ', '.join(f':{k}' for k in data.keys())
+        db.session.execute(db.text(f'INSERT INTO "{table_name}" ({cols}) VALUES ({vals})'), data)
+        db.session.commit()
+        return jsonify({'message': 'Wiersz dodany'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@main.route('/database/tables/<string:table_name>/rows/<int:row_id>', methods=['PUT'])
+@jwt_required()
+def update_table_row(table_name, row_id):
+    """Aktualizuje wiersz w tabeli."""
+    current_user = _get_current_user()
+    if not current_user or current_user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    data = request.get_json() or {}
+    data.pop('id', None)
+    if not data:
+        return jsonify({'error': 'No data to update'}), 400
+    try:
+        from . import db
+        sets = ', '.join(f'"{k}" = :{k}' for k in data.keys())
+        data['_row_id'] = row_id
+        db.session.execute(db.text(f'UPDATE "{table_name}" SET {sets} WHERE id = :_row_id'), data)
+        db.session.commit()
+        return jsonify({'message': 'Wiersz zaktualizowany'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@main.route('/database/tables/<string:table_name>/rows/<int:row_id>', methods=['DELETE'])
+@jwt_required()
+def delete_table_row(table_name, row_id):
+    """Usuwa wiersz z tabeli."""
+    current_user = _get_current_user()
+    if not current_user or current_user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    try:
+        from . import db
+        db.session.execute(db.text(f'DELETE FROM "{table_name}" WHERE id = :id'), {'id': row_id})
+        db.session.commit()
+        return jsonify({'message': 'Wiersz usunięty'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@main.route('/database/clear', methods=['POST'])
+@jwt_required()
+def clear_database():
+    """Czyści dane testowe / resetuje liczniki (NIE usuwa struktury)."""
+    current_user = _get_current_user()
+    if not current_user or current_user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    try:
+        from . import db
+        # Czyść tylko nie-krytyczne tabele
+        clearable = ['agent_heartbeat']
+        cleared = []
+        for table in clearable:
+            try:
+                db.session.execute(db.text(f'DELETE FROM "{table}"'))
+                cleared.append(table)
+            except Exception:
+                pass
+        db.session.commit()
+        return jsonify({'message': f'Wyczyszczono tabele: {", ".join(cleared) if cleared else "brak"}'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@main.route('/database/import', methods=['POST'])
+@jwt_required()
+def import_database():
+    """Importuje bazę danych z pliku SQL."""
+    current_user = _get_current_user()
+    if not current_user or current_user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    file = request.files['file']
+    if not file.filename.endswith('.sql'):
+        return jsonify({'error': 'Only .sql files are supported'}), 400
+    try:
+        from . import db
+        sql_content = file.read().decode('utf-8')
+        statements = [s.strip() for s in sql_content.split(';') if s.strip()]
+        executed = 0
+        for stmt in statements:
+            try:
+                db.session.execute(db.text(stmt))
+                executed += 1
+            except Exception:
+                pass
+        db.session.commit()
+        return jsonify({'message': f'Import zakończony: {executed} instrukcji'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+# ─── Aktualizacja serwera Bedrock ─────────────────────────────────────────────
+
+def _fetch_bedrock_latest(timeout=20):
+    """
+    Pobiera najnowszą wersję BDS i URL do pobrania.
+    Próbuje kilku źródeł po kolei.
+    Zwraca (version_str, linux_url) lub rzuca wyjątek.
+    """
+    import re as _re
+
+    # Nagłówki imitujące przeglądarkę - wymagane przez Mojang
+    hdrs = {
+        'User-Agent': (
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
+            '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+        ),
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Cache-Control': 'no-cache',
+    }
+
+    errors = []
+
+    # ── Źródło 1: oficjalna strona Mojang ────────────────────────────────
+    try:
+        r = requests.get(
+            'https://www.minecraft.net/en-us/download/server/bedrock',
+            headers=hdrs, timeout=timeout, allow_redirects=True
+        )
+        r.raise_for_status()
+        m = _re.search(
+            r'https://minecraft\.azureedge\.net/bin-linux/'
+            r'bedrock-server-([0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?)\.zip',
+            r.text
+        )
+        if m:
+            ver = m.group(1)
+            url = m.group(0)
+            return ver, url
+        errors.append("mojang: URL not found in page HTML")
+    except Exception as e:
+        errors.append(f"mojang: {e}")
+
+    # ── Źródło 2: API Geyser/BedrockProtocol ─────────────────────────────
+    try:
+        r = requests.get(
+            'https://api.geysermc.org/v2/utils/bedrockprotocol/versions',
+            headers={'User-Agent': 'MCPanel/1.0'}, timeout=timeout
+        )
+        r.raise_for_status()
+        data = r.json()
+        # Zwraca listę; ostatni = najnowszy
+        if data:
+            ver = list(data.values())[-1] if isinstance(data, dict) else data[-1]
+            if isinstance(ver, dict):
+                ver = ver.get('minecraftVersion') or ver.get('version', '')
+            if ver:
+                url = f"https://minecraft.azureedge.net/bin-linux/bedrock-server-{ver}.zip"
+                return str(ver), url
+        errors.append("geyser: no version in response")
+    except Exception as e:
+        errors.append(f"geyser: {e}")
+
+    # ── Źródło 3: GitHub bedrock-version cache ────────────────────────────
+    try:
+        for gh_url in [
+            'https://raw.githubusercontent.com/nicklvsa/bedrock-version/main/version.json',
+            'https://raw.githubusercontent.com/Bedrock-OSS/BDS-Versions/main/version.json',
+        ]:
+            try:
+                r = requests.get(gh_url, headers={'User-Agent': 'MCPanel/1.0'}, timeout=timeout)
+                if r.ok:
+                    data = r.json()
+                    ver = data.get('version') or data.get('linux') or data.get('bedrock', '')
+                    if ver:
+                        url = f"https://minecraft.azureedge.net/bin-linux/bedrock-server-{ver}.zip"
+                        return str(ver), url
+            except Exception:
+                continue
+        errors.append("github: no version found")
+    except Exception as e:
+        errors.append(f"github: {e}")
+
+    raise RuntimeError(
+        "Nie udało się pobrać informacji o najnowszej wersji Bedrock. "
+        f"Błędy: {'; '.join(errors)}"
+    )
+
+
+def _download_bedrock_zip(url, dest_path, server_id, server_manager):
+    """
+    Pobiera plik ZIP z serwerem Bedrock.
+    Używa requests z chunked transfer i nagłówkami imitującymi przeglądarkę.
+    Aktualizuje progress w server_manager.
+    """
+    hdrs = {
+        'User-Agent': (
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
+            '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+        ),
+        'Accept': 'application/octet-stream,*/*;q=0.9',
+        'Accept-Encoding': 'identity',  # Nie kompresuj - chcemy surowe bajty
+        'Referer': 'https://www.minecraft.net/',
+    }
+
+    server_manager._update_progress(server_id, 'downloading', 5,
+                                    'Łączenie z serwerem Mojang...')
+
+    try:
+        r = requests.get(url, headers=hdrs, stream=True, timeout=60,
+                         allow_redirects=True)
+        r.raise_for_status()
+    except requests.exceptions.HTTPError as e:
+        raise RuntimeError(f"Serwer odrzucił żądanie: HTTP {e.response.status_code} — {url}")
+    except requests.exceptions.ConnectionError as e:
+        raise RuntimeError(f"Błąd połączenia: {e}")
+    except requests.exceptions.Timeout:
+        raise RuntimeError("Timeout — serwer nie odpowiada")
+
+    total = int(r.headers.get('content-length', 0))
+    downloaded = 0
+    chunk = 65536  # 64 KB chunks
+
+    server_manager._update_progress(server_id, 'downloading', 8,
+        f'Pobieranie ({total/(1024*1024):.1f} MB)...',
+        total, 0)
+
+    with open(dest_path, 'wb') as f:
+        for data in r.iter_content(chunk_size=chunk):
+            if not data:
+                continue
+            f.write(data)
+            downloaded += len(data)
+            if total > 0:
+                pct = min(75, int((downloaded / total) * 75))
+                mb_done = downloaded / 1048576
+                mb_total = total / 1048576
+                server_manager._update_progress(
+                    server_id, 'downloading', pct,
+                    f'Pobieranie: {mb_done:.1f} / {mb_total:.1f} MB',
+                    total, downloaded
+                )
+
+    if not os.path.exists(dest_path) or os.path.getsize(dest_path) == 0:
+        raise RuntimeError("Plik ZIP jest pusty po pobraniu")
+
+    final_size = os.path.getsize(dest_path)
+    server_manager._update_progress(server_id, 'downloading', 78,
+        f'Pobrano {final_size/(1024*1024):.1f} MB — rozpakowywanie...',
+        final_size, final_size)
+    return final_size
+
+
+@main.route('/bedrock/latest-version', methods=['GET'])
+@jwt_required()
+def get_bedrock_latest_version():
+    """Zwraca najnowszą wersję Bedrock Dedicated Server."""
+    try:
+        version, linux_url = _fetch_bedrock_latest()
+        windows_url = linux_url.replace('/bin-linux/', '/bin-win/')
+        return jsonify({
+            'version': version,
+            'download_url_linux': linux_url,
+            'download_url_windows': windows_url,
+        })
+    except RuntimeError as e:
+        return jsonify({'error': str(e)}), 502
+    except Exception as e:
+        logger.exception('get_bedrock_latest_version error')
+        return jsonify({'error': str(e)}), 500
+
+
+@main.route('/servers/<int:server_id>/update-bedrock', methods=['POST'])
+@jwt_required()
+def update_bedrock_server(server_id):
+    """
+    Aktualizuje serwer Bedrock do najnowszej (lub podanej) wersji.
+    Body (opcjonalne): { version, download_url }
+    """
+    current_user = _get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    server = Server.query.get_or_404(server_id)
+    if server.type != 'bedrock':
+        return jsonify({'error': 'Endpoint tylko dla serwerów Bedrock'}), 400
+    if not _check_permission(current_user.id, server_id, 'can_start'):
+        return jsonify({'error': 'Brak uprawnień'}), 403
+
+    data = request.get_json() or {}
+    new_version  = data.get('version', '').strip()
+    download_url = data.get('download_url', '').strip()
+
+    # Jeśli nie podano wersji/URL — pobierz najnowszą
+    if not new_version or not download_url:
+        try:
+            new_version, download_url = _fetch_bedrock_latest()
+        except RuntimeError as e:
+            return jsonify({'error': str(e)}), 502
+        except Exception as e:
+            return jsonify({'error': f'Błąd pobierania wersji: {e}'}), 502
+
+    current_version = server.version
+    if new_version == current_version:
+        return jsonify({
+            'message': f'Serwer już jest na wersji {current_version}',
+            'already_latest': True,
+        }), 200
+
+    # Zatrzymaj serwer jeśli działa
+    was_running = server.status == 'running'
+    if was_running:
+        ok, msg = server_manager.stop_server(server_id)
+        if not ok:
+            return jsonify({'error': f'Nie można zatrzymać serwera: {msg}'}), 500
+        server.status = 'stopped'
+        db.session.commit()
+
+    # Wyczyść poprzedni progress
+    server_manager._update_progress(server_id, 'preparing', 0,
+                                    'Przygotowywanie aktualizacji...')
+
+    # Uruchom w tle z app context
+    from flask import current_app
+    app_ctx = current_app._get_current_object()
+
+    def _worker():
+        with app_ctx.app_context():
+            _run_bedrock_update(server_id, new_version, download_url, was_running)
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+
+    return jsonify({
+        'message'      : f'Aktualizacja z {current_version} → {new_version} rozpoczęta',
+        'server_id'    : server_id,
+        'from_version' : current_version,
+        'to_version'   : new_version,
+        'download_url' : download_url,
+    })
+
+
+def _run_bedrock_update(server_id, new_version, download_url, was_running):
+    """Logika aktualizacji — działa w wątku w kontekście aplikacji."""
+    import zipfile as _zf
+    import shutil  as _sh
+
+    def _progress(status, pct, msg, total=0, done=0):
+        server_manager._update_progress(server_id, status, pct, msg, total, done)
+
+    try:
+        server = Server.query.get(server_id)
+        if not server:
+            return
+
+        server_path = server_manager.get_server_path(server.name)
+        if not os.path.isdir(server_path):
+            _progress('error', 0, f'Katalog serwera nie istnieje: {server_path}')
+            return
+
+        # ── 1. Backup danych ───────────────────────────────────────────────
+        _progress('preparing', 3, 'Tworzenie backupu danych serwera...')
+        backup_dir = os.path.join(server_path, '_update_backup')
+        os.makedirs(backup_dir, exist_ok=True)
+
+        preserve_dirs  = ['worlds', 'behavior_packs', 'resource_packs',
+                          'development_behavior_packs', 'development_resource_packs']
+        preserve_files = ['server.properties', 'allowlist.json', 'whitelist.json',
+                          'permissions.json', 'valid_known_packs.json']
+
+        for item in preserve_dirs:
+            src = os.path.join(server_path, item)
+            if os.path.isdir(src):
+                dst = os.path.join(backup_dir, item)
+                if os.path.exists(dst):
+                    _sh.rmtree(dst)
+                _sh.copytree(src, dst)
+                logger.info(f'Backup dir: {item}')
+
+        for item in preserve_files:
+            src = os.path.join(server_path, item)
+            if os.path.isfile(src):
+                _sh.copy2(src, os.path.join(backup_dir, item))
+
+        # ── 2. Pobierz ZIP ────────────────────────────────────────────────
+        zip_path = os.path.join(server_path, f'_bedrock_update_{new_version}.zip')
+        try:
+            _download_bedrock_zip(download_url, zip_path, server_id, server_manager)
+        except RuntimeError as e:
+            _progress('error', 0, f'Błąd pobierania: {e}')
+            logger.error(f'Bedrock update download error: {e}')
+            return
+        except Exception as e:
+            _progress('error', 0, f'Nieoczekiwany błąd pobierania: {e}')
+            logger.exception('Bedrock update download unexpected error')
+            return
+
+        # ── 3. Rozpakuj — zachowaj dane ───────────────────────────────────
+        _progress('extracting', 80, 'Rozpakowywanie nowych plików serwera...')
+        preserve_set = set(preserve_dirs + preserve_files)
+
+        try:
+            with _zf.ZipFile(zip_path, 'r') as zf:
+                members = zf.namelist()
+                total   = len(members)
+                for i, member in enumerate(members):
+                    top = member.rstrip('/').split('/')[0]
+                    if top in preserve_set:
+                        continue  # Nie nadpisuj danych
+                    try:
+                        zf.extract(member, server_path)
+                    except Exception:
+                        pass
+                    if i % 30 == 0:
+                        pct = 80 + int((i / total) * 15)
+                        _progress('extracting', pct, f'Rozpakowywanie {i+1}/{total}...')
+        except _zf.BadZipFile:
+            _progress('error', 0, 'Pobrany plik ZIP jest uszkodzony')
+            return
+        except Exception as e:
+            _progress('error', 0, f'Błąd rozpakowywania: {e}')
+            return
+        finally:
+            try:
+                os.remove(zip_path)
+            except Exception:
+                pass
+
+        # ── 4. Uprawnienia dla binarki ─────────────────────────────────────
+        binary = 'bedrock_server.exe' if os.name == 'nt' else 'bedrock_server'
+        bin_path = os.path.join(server_path, binary)
+        if os.path.exists(bin_path) and os.name != 'nt':
+            os.chmod(bin_path, 0o755)
+
+        # ── 5. Przywróć dane (bezpieczeństwo) ─────────────────────────────
+        for item in preserve_dirs:
+            src = os.path.join(backup_dir, item)
+            dst = os.path.join(server_path, item)
+            if os.path.isdir(src) and not os.path.isdir(dst):
+                _sh.copytree(src, dst)
+        for item in preserve_files:
+            src = os.path.join(backup_dir, item)
+            dst = os.path.join(server_path, item)
+            if os.path.isfile(src) and not os.path.isfile(dst):
+                _sh.copy2(src, dst)
+
+        # Usuń backup tymczasowy
+        try:
+            _sh.rmtree(backup_dir)
+        except Exception:
+            pass
+
+        # ── 6. Zaktualizuj bazę danych ─────────────────────────────────────
+        _progress('starting', 97, 'Zapisywanie wersji w bazie danych...')
+        server_obj = Server.query.get(server_id)
+        if server_obj:
+            old = server_obj.version
+            server_obj.version = new_version
+            server_obj.status  = 'stopped'
+            db.session.commit()
+            logger.info(f'Bedrock {server_obj.name}: {old} → {new_version}')
+
+        _progress('complete', 100,
+                  f'✅ Aktualizacja do {new_version} zakończona pomyślnie!')
+
+    except Exception as e:
+        logger.exception(f'_run_bedrock_update fatal error server {server_id}')
+        server_manager._update_progress(server_id, 'error', 0,
+                                        f'Błąd krytyczny: {str(e)}')
+
+
+# ─── Uprawnienia globalne (dla UserAdminManager) ──────────────────────────────
+
+@main.route('/admin/permissions', methods=['GET'])
+@jwt_required()
+def get_all_permissions():
+    """Zwraca wszystkie uprawnienia wszystkich użytkowników do wszystkich serwerów"""
+    current_user_id = int(get_jwt_identity())
+    user = User.query.get(current_user_id)
+    if not user or user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+
+    perms = Permission.query.all()
+    result = []
+    for p in perms:
+        u = User.query.get(p.user_id)
+        s = Server.query.get(p.server_id)
+        if u and s:
+            result.append({
+                'id': p.id,
+                'user_id': p.user_id,
+                'username': u.username,
+                'server_id': p.server_id,
+                'server_name': s.name,
+                'can_start': p.can_start,
+                'can_stop': p.can_stop,
+                'can_restart': p.can_restart,
+                'can_edit_files': p.can_edit_files,
+                'can_manage_users': p.can_manage_users,
+                'can_install_plugins': p.can_install_plugins,
+            })
+    return jsonify(result)
+
+@main.route('/admin/permissions', methods=['POST'])
+@jwt_required()
+def create_permission():
+    """Dodaj/aktualizuj uprawnienie użytkownika do serwera"""
+    current_user_id = int(get_jwt_identity())
+    user = User.query.get(current_user_id)
+    if not user or user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+
+    data = request.get_json()
+    user_id = data.get('user_id')
+    server_id = data.get('server_id')
+
+    if not user_id or not server_id:
+        return jsonify({'error': 'user_id i server_id są wymagane'}), 400
+
+    perm = Permission.query.filter_by(user_id=user_id, server_id=server_id).first()
+    if not perm:
+        perm = Permission(user_id=user_id, server_id=server_id)
+        db.session.add(perm)
+
+    perm.can_start = data.get('can_start', False)
+    perm.can_stop = data.get('can_stop', False)
+    perm.can_restart = data.get('can_restart', False)
+    perm.can_edit_files = data.get('can_edit_files', False)
+    perm.can_manage_users = data.get('can_manage_users', False)
+    perm.can_install_plugins = data.get('can_install_plugins', False)
+    db.session.commit()
+    return jsonify({'message': 'OK'})
+
+@main.route('/admin/permissions/<int:perm_id>', methods=['DELETE'])
+@jwt_required()
+def delete_permission(perm_id):
+    current_user_id = int(get_jwt_identity())
+    user = User.query.get(current_user_id)
+    if not user or user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+
+    perm = Permission.query.get_or_404(perm_id)
+    db.session.delete(perm)
+    db.session.commit()
+    return jsonify({'message': 'Usunięto'})
+
+# ─── Zadania zaplanowane ──────────────────────────────────────────────────────
+
+@main.route('/admin/tasks', methods=['GET'])
+@jwt_required()
+def get_tasks():
+    current_user_id = int(get_jwt_identity())
+    user = User.query.get(current_user_id)
+    if not user or user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+    tasks = ScheduledTask.query.order_by(ScheduledTask.created_at.desc()).all()
+    return jsonify([t.to_dict() for t in tasks])
+
+@main.route('/admin/tasks', methods=['POST'])
+@jwt_required()
+def create_task():
+    current_user_id = int(get_jwt_identity())
+    user = User.query.get(current_user_id)
+    if not user or user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+
+    data = request.get_json()
+    required = ['server_id', 'name', 'task_type', 'cron_expr']
+    for f in required:
+        if not data.get(f):
+            return jsonify({'error': f'Pole {f} jest wymagane'}), 400
+
+    task = ScheduledTask(
+        server_id=data['server_id'],
+        name=data['name'],
+        task_type=data['task_type'],
+        cron_expr=data['cron_expr'],
+        command=data.get('command', ''),
+        enabled=data.get('enabled', True)
+    )
+    db.session.add(task)
+    db.session.commit()
+    return jsonify(task.to_dict()), 201
+
+@main.route('/admin/tasks/<int:task_id>', methods=['PUT'])
+@jwt_required()
+def update_task(task_id):
+    current_user_id = int(get_jwt_identity())
+    user = User.query.get(current_user_id)
+    if not user or user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+
+    task = ScheduledTask.query.get_or_404(task_id)
+    data = request.get_json()
+    for field in ['name', 'task_type', 'cron_expr', 'command', 'enabled']:
+        if field in data:
+            setattr(task, field, data[field])
+    db.session.commit()
+    return jsonify(task.to_dict())
+
+@main.route('/admin/tasks/<int:task_id>', methods=['DELETE'])
+@jwt_required()
+def delete_task(task_id):
+    current_user_id = int(get_jwt_identity())
+    user = User.query.get(current_user_id)
+    if not user or user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+
+    task = ScheduledTask.query.get_or_404(task_id)
+    db.session.delete(task)
+    db.session.commit()
+    return jsonify({'message': 'Usunięto'})
+
+@main.route('/admin/tasks/<int:task_id>/run', methods=['POST'])
+@jwt_required()
+def run_task_now(task_id):
+    """Uruchom zadanie natychmiast"""
+    from datetime import datetime as dt
+    current_user_id = int(get_jwt_identity())
+    user = User.query.get(current_user_id)
+    if not user or user.role != 'admin':
+        return jsonify({'error': 'Access denied'}), 403
+
+    task = ScheduledTask.query.get_or_404(task_id)
+    server = Server.query.get(task.server_id)
+    if not server:
+        return jsonify({'error': 'Serwer nie istnieje'}), 404
+
+    try:
+        if task.task_type == 'restart':
+            server_manager.restart_server(task.server_id)
+        elif task.task_type == 'stop':
+            server_manager.stop_server(task.server_id)
+        elif task.task_type == 'start':
+            server_manager.start_server(server)
+        elif task.task_type == 'command' and task.command:
+            server_manager.send_command(task.server_id, task.command)
+
+        task.last_run = dt.utcnow()
+        db.session.commit()
+        return jsonify({'message': f'Zadanie "{task.name}" wykonane'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

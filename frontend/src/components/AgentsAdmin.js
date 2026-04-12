@@ -15,6 +15,7 @@ import {
 import { FaMemory } from "react-icons/fa6";
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
+import { toast } from 'react-toastify';
 
 const AgentsContainer = styled.div`
   padding: 20px;
@@ -382,7 +383,7 @@ function AgentsAdmin() {
   const fetchAgents = async () => {
     try {
       const response = await api.get('/agents');
-      const mappedAgents = response.data.map(agent => {
+      const mappedAgents = (response.data || []).map(agent => {
         const lastUpdate = new Date(agent.last_update).getTime();
         const isOnline = agent.status === 'online' && (Date.now() - lastUpdate) < 120000; // 2 minutes
         
@@ -396,7 +397,6 @@ function AgentsAdmin() {
       });
       setAgents(mappedAgents);
     } catch (error) {
-      console.error('Error fetching agents:', error);
     } finally {
       setLoading(false);
     }
@@ -419,34 +419,32 @@ function AgentsAdmin() {
       fetchAgents();
       e.target.reset();
     } catch (error) {
-      console.error('Error adding agent:', error);
-      alert('Błąd podczas dodawania agenta');
+      toast.error(error.response?.data?.error || 'Błąd podczas dodawania agenta');
     }
   };
 
   const handleRestartAgent = async (agentId) => {
-    if (window.confirm('Czy na pewno chcesz zrestartować tego agenta?')) {
-      try {
-        await api.post(`/agents/${agentId}/restart`);
-        fetchAgents();
-      } catch (error) {
-        console.error('Error restarting agent:', error);
-        alert('Błąd podczas restartowania agenta');
-      }
+    const tid = toast.loading('Restartowanie agenta...');
+    try {
+      await api.post(`/agents/${agentId}/restart`);
+      toast.update(tid, { render: '✅ Agent zrestartowany', type: 'success', isLoading: false, autoClose: 3000 });
+      fetchAgents();
+    } catch (error) {
+      toast.update(tid, { render: `❌ ${error.response?.data?.error || 'Błąd restartowania'}`, type: 'error', isLoading: false, autoClose: 4000 });
     }
   };
   
-	const handleDeleteAgent = async (agentId) => {
-	  if (window.confirm('Czy na pewno chcesz usunąć tego agenta? Ta operacja jest nieodwracalna.')) {
-		try {
-		  await api.delete(`/agents/${agentId}`);
-		  fetchAgents();
-		} catch (error) {
-		  console.error('Error deleting agent:', error);
-		  alert('Błąd podczas usuwania agenta');
-		}
-	  }
-	};
+  const handleDeleteAgent = async (agentId) => {
+    if (!window.confirm('Usunąć agenta? Operacja nieodwracalna.')) return;
+    const tid = toast.loading('Usuwanie agenta...');
+    try {
+      await api.delete(`/agents/${agentId}`);
+      toast.update(tid, { render: '✅ Agent usunięty', type: 'success', isLoading: false, autoClose: 3000 });
+      fetchAgents();
+    } catch (error) {
+      toast.update(tid, { render: `❌ ${error.response?.data?.error || 'Błąd usuwania'}`, type: 'error', isLoading: false, autoClose: 4000 });
+    }
+  };
 	
 	const handleEditAgent = (agent) => {
 	  setEditingAgent(agent);
@@ -474,8 +472,7 @@ function AgentsAdmin() {
       setEditingAgent(null);
       fetchAgents();
     } catch (error) {
-      console.error('Error updating agent:', error);
-      alert('Błąd podczas aktualizacji agenta: ' + (error.response?.data?.error || error.message));
+      toast.error('Błąd aktualizacji: ' + (error.response?.data?.error || error.message));
     }
   };
 

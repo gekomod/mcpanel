@@ -21,6 +21,7 @@ import {
 } from 'react-icons/fi';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
+import { toast } from 'react-toastify';
 import { useLanguage } from '../context/LanguageContext';
 
 const Container = styled.div`
@@ -518,7 +519,6 @@ function UserManager() {
       const data = await response.json();
       return data.xuid;
     } catch (error) {
-      console.error('Error fetching XUID:', error);
       throw new Error(t('user.manager.error.fetch.xuid', { gamertag }));
     } finally {
       setFetchingXuid(false);
@@ -530,7 +530,6 @@ function UserManager() {
       const response = await api.get(`/servers/${serverId}`);
       setServer(response.data);
     } catch (error) {
-      console.error('Error fetching server:', error);
     }
   };
 
@@ -545,7 +544,6 @@ function UserManager() {
         await fetchPlayerPermissions();
       }
     } catch (error) {
-      console.error('Error fetching data:', error);
     } finally {
       setLoading(false);
     }
@@ -554,9 +552,8 @@ function UserManager() {
   const fetchServerUsers = async () => {
     try {
       const response = await api.get(`/servers/${serverId}/users`);
-      setUsers(response.data);
+      setUsers(response.data || []);
     } catch (error) {
-      console.error('Error fetching server users:', error);
     }
   };
 
@@ -570,7 +567,6 @@ function UserManager() {
         setWhitelist([]);
       }
     } catch (error) {
-      console.error('Error fetching whitelist:', error);
       setWhitelist([]);
     }
   };
@@ -586,7 +582,6 @@ function UserManager() {
       const data = await response.json();
       return data.gamertag;
     } catch (error) {
-      console.error('Error fetching gamertag:', error);
       return null;
     }
   };
@@ -602,7 +597,6 @@ function UserManager() {
             newGamertagMap[player.xuid] = gamertag;
           }
         } catch (error) {
-          console.error(`Error fetching gamertag for XUID ${player.xuid}:`, error);
         }
       }
     }
@@ -629,18 +623,15 @@ function UserManager() {
             setPlayerPermissions(formattedPermissions);
             fetchGamertagsForPlayers(formattedPermissions);
           } else {
-            console.warn('Permissions data is not an array:', permissionsData);
             setPlayerPermissions([]);
           }
         } catch (parseError) {
-          console.error('Error parsing JSON:', parseError);
           setPlayerPermissions([]);
         }
       } else {
         setPlayerPermissions([]);
       }
     } catch (error) {
-      console.error('Error fetching player permissions:', error);
       if (error.response?.status === 404) {
         setPlayerPermissions([]);
       } else {
@@ -654,7 +645,6 @@ function UserManager() {
       const response = await api.get('/users');
       setAvailableUsers(response.data);
     } catch (error) {
-      console.error('Error fetching available users:', error);
       setAvailableUsers([]);
     }
   };
@@ -681,8 +671,7 @@ function UserManager() {
       
       fetchServerUsers();
     } catch (error) {
-      console.error('Error adding user:', error);
-      alert(t('user.manager.error.add.user'));
+      toast.error(t('user.manager.error.add.user'));
     }
   };
 
@@ -696,8 +685,7 @@ function UserManager() {
       setSelectedUser(null);
       fetchServerUsers();
     } catch (error) {
-      console.error('Error updating user:', error);
-      alert(t('user.manager.error.edit.user'));
+      toast.error(t('user.manager.error.edit.user'));
     }
   };
 
@@ -710,8 +698,7 @@ function UserManager() {
       await api.delete(`/servers/${serverId}/users/${userId}`);
       fetchServerUsers();
     } catch (error) {
-      console.error('Error removing user:', error);
-      alert(t('user.manager.error.remove.user'));
+      toast.error(t('user.manager.error.remove.user'));
     }
   };
 
@@ -723,7 +710,7 @@ function UserManager() {
       const currentWhitelist = [...whitelist];
       
       if (currentWhitelist.some(user => user.name === newWhitelistUser.username)) {
-        alert(t('user.manager.error.add.whitelist'));
+        toast.error(t('user.manager.error.add.whitelist'));
         return;
       }
       
@@ -741,8 +728,7 @@ function UserManager() {
       setNewWhitelistUser({ username: '' });
       fetchWhitelist();
     } catch (error) {
-      console.error('Error adding to whitelist:', error);
-      alert(error.message || t('user.manager.error.add.whitelist'));
+      toast.error(error.message || t('user.manager.error.add.whitelist'));
     } finally {
       setFetchingXuid(false);
     }
@@ -763,8 +749,7 @@ function UserManager() {
       
       fetchWhitelist();
     } catch (error) {
-      console.error('Error removing from whitelist:', error);
-      alert(t('user.manager.error.remove.whitelist'));
+      toast.error(t('user.manager.error.remove.whitelist'));
     }
   };
 
@@ -807,8 +792,7 @@ function UserManager() {
       });
       fetchPlayerPermissions();
     } catch (error) {
-      console.error('Error saving player permissions:', error);
-      alert(error.message || t('user.manager.error.save.permissions'));
+      toast.error(error.message || t('user.manager.error.save.permissions'));
     } finally {
       setFetchingXuid(false);
     }
@@ -836,8 +820,7 @@ function UserManager() {
       
       fetchPlayerPermissions();
     } catch (error) {
-      console.error('Error removing player permissions:', error);
-      alert(t('user.manager.error.remove.permissions'));
+      toast.error(t('user.manager.error.remove.permissions'));
     }
   };
 

@@ -1070,7 +1070,6 @@ function DatabaseAdminManager() {
       fetchTables();
       fetchDatabaseStats();
     } catch (error) {
-      console.error('Error creating table:', error);
       toast.error('Błąd podczas tworzenia tabeli');
     } finally {
       setLoading(false);
@@ -1082,7 +1081,6 @@ function DatabaseAdminManager() {
       const response = await api.get('/database/stats');
       setDatabaseStats(response.data);
     } catch (error) {
-      console.error('Error fetching database stats:', error);
       toast.error(t('database.action.error') || 'Błąd podczas pobierania statystyk bazy danych');
     }
   };
@@ -1092,7 +1090,6 @@ function DatabaseAdminManager() {
       const response = await api.get('/database/tables');
       setTables(response.data);
     } catch (error) {
-      console.error('Error fetching tables:', error);
       setTables(DEMO_TABLES);
       toast.error(t('database.action.error') || 'Błąd podczas pobierania listy tabel');
     }
@@ -1110,8 +1107,6 @@ function DatabaseAdminManager() {
       setQueryResults(response.data.results || response.data);
       toast.success((t('database.query.execute') || 'Zapytanie wykonane') + ' - ' + (t('common.success') || 'Sukces'));
     } catch (error) {
-      console.error('Error executing query:', error);
-      
       // Fallback to demo data
       if (query.toLowerCase().includes('select * from users')) {
         setQueryResults(DEMO_DATA);
@@ -1154,7 +1149,7 @@ function DatabaseAdminManager() {
           await createBackup();
           break;
         case 'clear':
-          if (window.confirm(t('database.action.clear.confirm') || 'Czy na pewno chcesz wyczyścić bazę danych?')) {
+          if (window.confirm('Czy na pewno chcesz wyczyścić bazę danych? OPERACJA NIEODWRACALNA!')) {
             await clearDatabase();
           }
           break;
@@ -1162,7 +1157,6 @@ function DatabaseAdminManager() {
           break;
       }
     } catch (error) {
-      console.error(`Error performing ${action}:`, error);
       toast.error(t('database.action.error') || 'Wystąpił błąd');
     }
   };
@@ -1187,7 +1181,6 @@ function DatabaseAdminManager() {
       
       toast.success(`Baza danych wyeksportowana w formacie ${exportFormat.toUpperCase()} pomyślnie`);
     } catch (error) {
-      console.error('Error exporting database:', error);
       toast.error('Błąd podczas eksportowania bazy danych');
     }
   };
@@ -1215,7 +1208,6 @@ function DatabaseAdminManager() {
         fetchDatabaseStats();
         fetchTables();
       } catch (error) {
-        console.error('Error importing database:', error);
         toast.error('Błąd podczas importowania bazy danych');
       } finally {
         setLoading(false);
@@ -1230,7 +1222,6 @@ function DatabaseAdminManager() {
       toast.success('Kopia zapasowa utworzona pomyślnie');
       fetchDatabaseStats();
     } catch (error) {
-      console.error('Error creating backup:', error);
       toast.error('Błąd podczas tworzenia kopii zapasowej');
     }
   };
@@ -1243,7 +1234,6 @@ function DatabaseAdminManager() {
       fetchTables();
       setQueryResults([]);
     } catch (error) {
-      console.error('Error clearing database:', error);
       toast.error('Błąd podczas czyszczenia bazy danych');
     }
   };
@@ -1268,7 +1258,6 @@ function DatabaseAdminManager() {
       setEditingRow(null);
       setEditedData({});
     } catch (error) {
-      console.error('Error updating row:', error);
       toast.error('Błąd podczas aktualizacji wiersza');
     }
   };
@@ -1281,7 +1270,6 @@ function DatabaseAdminManager() {
       setQueryResults(prev => prev.filter((_, i) => i !== index));
       toast.success('Wiersz usunięty pomyślnie');
     } catch (error) {
-      console.error('Error deleting row:', error);
       toast.error('Błąd podczas usuwania wiersza');
     }
   };
@@ -1294,7 +1282,6 @@ function DatabaseAdminManager() {
       setNewRowData({});
       toast.success('Nowy wiersz dodany pomyślnie');
     } catch (error) {
-      console.error('Error adding row:', error);
       toast.error('Błąd podczas dodawania wiersza');
     }
   };
@@ -1314,7 +1301,6 @@ function DatabaseAdminManager() {
       toast.success(`Tabela "${tableName}" usunięta pomyślnie`);
       fetchDatabaseStats();
     } catch (error) {
-      console.error('Error deleting table:', error);
       toast.error('Błąd podczas usuwania tabeli');
     }
   };

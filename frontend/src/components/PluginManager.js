@@ -490,7 +490,6 @@ function PluginManager() {
       const response = await api.get(`/servers/${serverId}`);
       setServer(response.data);
     } catch (error) {
-      console.error('Error fetching server:', error);
       setError(t('plugin.manager.error.server'));
     }
   };
@@ -507,7 +506,6 @@ function PluginManager() {
       setAddons(allAddons);
       
     } catch (error) {
-      console.error('Error fetching addons:', error);
       setError(t('plugin.manager.error.fetch'));
     } finally {
       setLoading(false);
@@ -518,9 +516,8 @@ function PluginManager() {
     try {
       // Pobierz zainstalowane addony dla tego serwera
       const response = await api.get(`/servers/${serverId}/installed-addons`);
-      setInstalledAddons(response.data);
+      setInstalledAddons(response.data || []);
     } catch (error) {
-      console.error('Error fetching installed addons:', error);
       // Fallback do lokalnej listy jeśli endpoint nie istnieje
       const simulatedInstalled = addons.filter(addon => addon.is_installed);
       setInstalledAddons(simulatedInstalled);
@@ -569,7 +566,6 @@ function PluginManager() {
       }));
       
     } catch (error) {
-      console.error('Error installing addon:', error);
       toast.error(error.response?.data?.error || t('plugin.manager.installation.error', { name: addon.name }));
     } finally {
       setInstalling(prev => ({ ...prev, [addon.id]: false }));
@@ -577,7 +573,7 @@ function PluginManager() {
   };
 
   const handleUninstallAddon = async (addonId) => {
-    if (!window.confirm(t('plugin.manager.uninstallation.confirm'))) {
+    if (!window.confirm('Czy na pewno chcesz odinstalować ten plugin?')) {
       return;
     }
     
@@ -593,7 +589,6 @@ function PluginManager() {
       toast.success(t('plugin.manager.uninstallation.success'));
       
     } catch (error) {
-      console.error('Error uninstalling addon:', error);
       toast.error(error.response?.data?.error || t('plugin.manager.uninstallation.error'));
     } finally {
       setInstalling(prev => ({ ...prev, [addonId]: false }));
@@ -613,7 +608,6 @@ function PluginManager() {
       toast.success(response.data.message || t('plugin.manager.toggle.success'));
       
     } catch (error) {
-      console.error('Error toggling addon:', error);
       toast.error(error.response?.data?.error || t('plugin.manager.toggle.error'));
     } finally {
       setInstalling(prev => ({ ...prev, [addonId]: false }));

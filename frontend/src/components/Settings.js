@@ -1254,7 +1254,7 @@ function Settings() {
   const checkPermissions = async () => {
     try {
       const response = await api.get(`/servers/${serverId}/users`);
-      const currentUser = response.data.find(u => u.user_id === user.id);
+      const currentUser = (response.data || []).find(u => u.user_id === user.id);
       
       if (currentUser && currentUser.permissions.can_edit_files) {
         setHasPermission(true);
@@ -1319,13 +1319,11 @@ function Settings() {
             });
           }
         } catch (error) {
-          console.log(`Could not check world directory ${dir.name}:`, error);
         }
       }
       
       setWorlds(worldsList);
     } catch (error) {
-      console.log('Error fetching worlds:', error);
       setWorlds([]);
     } finally {
       setLoadingWorlds(false);
@@ -1340,7 +1338,7 @@ function Settings() {
       // Spróbuj pobrać modpacks z API
       try {
         const response = await api.get(`/servers/${serverId}/modpacks`);
-        let modpacksFromApi = response.data;
+        let modpacksFromApi = response.data || [];
 
         // Pobierz aktualny modpack
         const currentResponse = await api.get(`/servers/${serverId}/modpacks/current`);
@@ -1361,7 +1359,6 @@ function Settings() {
           }
         }
       } catch (apiError) {
-        console.log('API modpacks not available, using fallback:', apiError);
         // Fallback do lokalnej listy
         const serverModpackName = properties['modpack-name'];
         const updatedModpacks = availableModpacks.map(modpack => ({
@@ -1377,7 +1374,6 @@ function Settings() {
         }
       }
     } catch (error) {
-      console.log('Error fetching modpacks:', error);
       // Ostateczny fallback
       setModpacks(availableModpacks);
     } finally {
@@ -1452,17 +1448,12 @@ function Settings() {
         downloadUrl: modpack.downloadUrl,
         source: 'download'
       };
-
-      console.log('Sending install data:', installData);
-      
       // Start installation
       const startResponse = await api.post(`/servers/${serverId}/modpacks/install`, installData, {
         timeout: 30000 // 30 seconds timeout for start
       });
 
       const installationId = startResponse.data.installation_id;
-      console.log('Installation started with ID:', installationId);
-
       // Track installation progress
       let attempts = 0;
       const maxAttempts = 600; // 10 minutes max
@@ -1473,9 +1464,6 @@ function Settings() {
         try {
           const progressResponse = await api.get(`/servers/${serverId}/modpacks/install/progress/${installationId}`);
           const progress = progressResponse.data;
-          
-          console.log(`Installation progress: ${progress.progress}% - ${progress.message}`);
-          
           // Update progress state
           setInstallationProgress(progress.progress || 0);
           setInstallationMessage(progress.message || t('server.settings.modpack.installing') || 'Installing...');
@@ -1514,8 +1502,6 @@ function Settings() {
       
     } catch (error) {
       const errorMsg = error.response?.data?.error || error.message;
-      console.error('Installation error:', errorMsg);
-      
       if (error.code === 'ECONNABORTED') {
         showError(t('server.settings.modpack.installError', { name: modpack.name }) || 'Installation timeout - server is taking too long to respond');
       } else {
@@ -1588,7 +1574,7 @@ function Settings() {
     const modpack = modpacks.find(mp => mp.id === selectedModpack);
     if (!modpack) return;
 
-    if (!window.confirm(t('server.settings.modpack.removeConfirm', { name: modpack.name }) || `Are you sure you want to remove ${modpack.name}? This will delete all mod files and cannot be undone.`)) {
+    if (!window.confirm(`Usunąć modpack "${modpack.name}"? Wszystkie pliki modów zostaną usunięte.`)) {
       return;
     }
 
@@ -1720,7 +1706,6 @@ function Settings() {
       showInfo(t('server.settings.worldPacksUpdated', { worldName }) || `World pack files updated for ${worldName}`);
 
     } catch (error) {
-      console.error('Error updating world pack files:', error);
       showError(t('server.settings.worldPacksError') || 'Could not update world pack files automatically');
     }
   };

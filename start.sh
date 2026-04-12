@@ -1,12 +1,8 @@
 #!/bin/bash
-cd /app/backend
-screen -dmS backend python3 run.py
-
-cd /app/frontend
-screen -dmS frontend npm run start
-
-echo "Uruchomione procesy:"
-screen -list
-
-while true; do sleep 3600; done
+# Uruchom backend w tle
+python3 backend/run.py &
+# Poczekaj chwilę na uruchomienie backendu
+sleep 5
+# Uruchom frontend
+cd frontend && npm start
 

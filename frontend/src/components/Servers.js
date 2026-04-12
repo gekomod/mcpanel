@@ -222,13 +222,12 @@ function Servers() {
   const fetchServers = async () => {
     try {
       const response = await api.get('/servers');
-      setServers(response.data);
+      setServers(response.data || []);
       
       response.data.forEach(server => {
         checkServerRealStatus(server.id);
       });
-    } catch (error) {
-      console.error('Error fetching servers:', error);
+    } catch {
     } finally {
       setLoading(false);
     }
@@ -241,9 +240,7 @@ function Servers() {
         ...prev,
         [serverId]: response.data
       }));
-    } catch (error) {
-      console.error('Error checking real status:', error);
-    }
+    } catch { /* silent */ }
   };
 
   const checkRealStatus = () => {
@@ -283,7 +280,7 @@ function Servers() {
       <ServerGrid>
         {servers.map(server => {
           const isRunning = isServerReallyRunning(server);
-          const playerCount = isRunning ? '4/20' : '0/20';
+          const playerCount = `${server.player_count || 0}/${server.max_players || 20}`;
           
           return (
             <ServerCard key={server.id} onClick={() => handleServerClick(server.id)}>
@@ -306,7 +303,7 @@ function Servers() {
                 </ServerDetail>
                 <ServerDetail>
                   <ServerDetailLabel>Lokalizacja:</ServerDetailLabel>
-                  <ServerDetailValue>Europa</ServerDetailValue>
+                  <ServerDetailValue>{server.agent?.location || 'Lokalny'}</ServerDetailValue>
                 </ServerDetail>
               </ServerCardDetails>
               

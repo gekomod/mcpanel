@@ -671,7 +671,6 @@ function AgentManagement() {
 
       setServers(serversResponse.data);
     } catch (error) {
-      console.error('Error fetching agent data:', error);
       toast.error('Błąd podczas ładowania danych agenta');
     } finally {
       setLoading(false);
@@ -704,7 +703,6 @@ function AgentManagement() {
         fetchAgentData();
         toast.success('Komenda restartu została wysłana do agenta');
       } catch (error) {
-        console.error('Error restarting agent:', error);
         toast.error('Błąd podczas restartowania agenta: ' + (error.response?.data?.error || error.message));
       }
     }, {
@@ -725,13 +723,11 @@ function AgentManagement() {
         
         // Dodatkowe informacje o statusie agenta jeśli są dostępne
         if (response.data.agent_status) {
-          console.log('Status agenta:', response.data.agent_status);
         }
       } else {
         toast.error(`Połączenie z agentem: BŁĄD - ${response.data.message}`);
       }
     } catch (error) {
-      console.error('Test connection error:', error);
       toast.error('Błąd podczas testowania połączenia z agentem: ' + (error.response?.data?.error || error.message));
     }
   };
@@ -772,7 +768,6 @@ function AgentManagement() {
         toast.error('Błąd podczas pobierania logów');
       }
     } catch (error) {
-      console.error('Error fetching logs:', error);
       setLogs([`Błąd połączenia: ${error.message}`]);
       toast.error('Błąd połączenia podczas pobierania logów');
     } finally {
@@ -810,7 +805,6 @@ function AgentManagement() {
         toast.error('Błąd podczas pobierania logów');
       }
     } catch (error) {
-      console.error('Error downloading logs:', error);
       toast.error('Błąd podczas pobierania logów');
     }
   };
@@ -839,7 +833,6 @@ function AgentManagement() {
       fetchAgentData();
       toast.success('Ustawienia agenta zostały zaktualizowane');
     } catch (error) {
-      console.error('Error updating agent:', error);
       toast.error('Błąd podczas aktualizacji agenta: ' + (error.response?.data?.error || error.message));
     }
   };
@@ -851,7 +844,6 @@ function AgentManagement() {
         navigate('/agents');
         toast.success('Agent został usunięty pomyślnie');
       } catch (error) {
-        console.error('Error deleting agent:', error);
         const errorMessage = error.response?.data?.error || 'Błąd podczas usuwania agenta';
         if (error.response?.data?.servers) {
           toast.error(`${errorMessage}\nSerwery: ${error.response.data.servers.join(', ')}`);

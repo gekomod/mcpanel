@@ -523,9 +523,8 @@ function AddonManager() {
     try {
       setLoading(true);
       const response = await api.get('/addons');
-      setAddons(response.data);
+      setAddons(response.data || []);
     } catch (error) {
-      console.error('Error fetching addons:', error);
       toast.error(t('plugin.manager.error.fetch'));
     } finally {
       setLoading(false);
@@ -537,7 +536,6 @@ function AddonManager() {
       const response = await api.get('/addons/types');
       setTypes(response.data.types);
     } catch (error) {
-      console.error('Error fetching addon types:', error);
     }
   };
 
@@ -559,7 +557,6 @@ function AddonManager() {
         const bedrockResponse = await api.get('/bedrock-versions');
         bedrockVersions = bedrockResponse.data.map(v => v.version);
       } catch (error) {
-        console.error('Error loading bedrock versions:', error);
         bedrockVersions = ['1.20.15', '1.20.10', '1.20.1', '1.19.83', '1.19.70'];
       }
 
@@ -578,7 +575,6 @@ function AddonManager() {
 
       setMinecraftVersions(allVersions);
     } catch (error) {
-      console.error('Error loading Minecraft versions:', error);
       setMinecraftVersions([
         '1.20.4', '1.20.1', '1.19.4', '1.18.2', '1.17.1', 
         '1.16.5', '1.15.2', '1.14.4', '1.13.2', '1.12.2'
@@ -676,7 +672,6 @@ function AddonManager() {
 		
 		fetchAddons();
 	  } catch (error) {
-		console.error('Error saving addon:', error);
 		toast.error(error.response?.data?.error || 'Failed to save addon');
 	  }
 	};
@@ -710,7 +705,6 @@ function AddonManager() {
       toast.success(t('plugin.manager.uninstallation.success'));
       fetchAddons();
     } catch (error) {
-      console.error('Error deleting addon:', error);
       toast.error(t('plugin.manager.uninstallation.error'));
     }
   };
@@ -724,7 +718,6 @@ function AddonManager() {
       toast.success(t('plugin.manager.toggle.success'));
       fetchAddons();
     } catch (error) {
-      console.error('Error toggling addon status:', error);
       toast.error(t('plugin.manager.toggle.error'));
     }
   };

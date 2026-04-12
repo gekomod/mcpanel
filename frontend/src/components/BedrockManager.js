@@ -10,6 +10,7 @@ import {
   FiSearch
 } from 'react-icons/fi';
 import api from '../services/api';
+import { toast } from 'react-toastify';
 import { useLanguage } from '../context/LanguageContext';
 
 const Container = styled.div`
@@ -333,9 +334,8 @@ function BedrockManager() {
   const fetchVersions = async () => {
     try {
       const response = await api.get('/bedrock-versions/all');
-      setVersions(response.data);
+      setVersions(response.data || []);
     } catch (error) {
-      console.error('Error fetching bedrock versions:', error);
       setError(t('bedrock.versions.error.fetch'));
     } finally {
       setLoading(false);
@@ -395,7 +395,7 @@ function BedrockManager() {
       await api.delete(`/bedrock-versions/${version.id}`);
       fetchVersions();
     } catch (error) {
-      alert(error.response?.data?.error || t('bedrock.versions.error.delete'));
+      toast.error(error.response?.data?.error || 'Błąd usuwania wersji');
     }
   };
 
@@ -406,7 +406,7 @@ function BedrockManager() {
       });
       fetchVersions();
     } catch (error) {
-      alert(t('bedrock.versions.error.toggle'));
+      toast.error('Błąd zmiany statusu');
     }
   };
 

@@ -4,7 +4,8 @@ import {
   FiFolder, 
   FiFile, 
   FiSave, 
-  FiEdit, 
+  FiEdit,
+  FiEdit2,
   FiTrash2, 
   FiPlus,
   FiArrowLeft,
@@ -486,7 +487,6 @@ function FileEditor() {
       const response = await api.get(`/servers/${serverId}`);
       setServer(response.data);
     } catch (error) {
-      console.error('Error fetching server:', error);
       setError(t('files.errorLoadServer'));
       showError(t('files.errorLoadServer'));
     }
@@ -569,7 +569,6 @@ function FileEditor() {
         showError('Received invalid data from server');
       }
     } catch (error) {
-      console.error('Error loading files:', error);
       const errorMsg = t('files.errorLoadFiles');
       setError(errorMsg);
       showError(errorMsg);
@@ -606,7 +605,6 @@ function FileEditor() {
         showError(errorMsg);
       }
     } catch (error) {
-      console.error('Error loading file:', error);
       const errorMsg = `Failed to load file: ${error.response?.data?.error || error.message}`;
       setError(errorMsg);
       showError(errorMsg);
@@ -630,7 +628,6 @@ function FileEditor() {
       
       showSuccess(t('files.savedSuccess'));
     } catch (error) {
-      console.error('Error saving file:', error);
       const errorMsg = `Failed to save file: ${error.response?.data?.error || error.message}`;
       setError(errorMsg);
       showError(errorMsg);
@@ -663,7 +660,6 @@ function FileEditor() {
       setNewItemName('');
       loadFiles(currentPath);
     } catch (error) {
-      console.error('Error creating item:', error);
       const errorMsg = `Failed to create ${newItemType}: ${error.response?.data?.error || error.message}`;
       showError(errorMsg);
     } finally {
@@ -678,39 +674,24 @@ const handleFileUpload = async (event) => {
   try {
     setLoading(true);
     const formData = new FormData();
-    
-    // POPRAWIONE: Prawidłowe dodanie pliku z nazwą
     formData.append('file', file, file.name);
-    
-    // Dodaj ścieżkę jako form field
     if (currentPath) {
       formData.append('path', currentPath);
     }
 
-    console.log('Uploading file:', file.name, 'Size:', file.size, 'Type:', file.type);
-    console.log('Upload to path:', currentPath);
-    
-    // Debug: sprawdź zawartość FormData
-    for (let [key, value] of formData.entries()) {
-      console.log('FormData:', key, value);
-    }
-
     const response = await api.post(`/servers/${serverId}/files/upload`, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      },
+      headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 60000
     });
-    
+
     showSuccess(t('files.uploadSuccess'));
     loadFiles(currentPath);
   } catch (error) {
-    console.error('Error uploading file:', error);
     const errorMsg = error.response?.data?.error || `Failed to upload file: ${error.message}`;
     showError(errorMsg);
   } finally {
     setLoading(false);
-    event.target.value = ''; // Reset input
+    event.target.value = '';
   }
 };
 
@@ -725,6 +706,58 @@ const handleFileUpload = async (event) => {
     loadFiles(parentPath);
     setSelectedFile(null);
     showInfo(t('files.navigateUp'));
+  };
+
+  const deleteItem = async (file) => {
+    const fullPath = currentPath ? `${currentPath}/${file.name}` : file.name;
+    if (!window.confirm(`Usunąć "${file.name}"? Tej operacji nie można cofnąć.`)) return;
+    try {
+      await api.post(`/servers/${serverId}/files/delete`, { path: fullPath, is_directory: file.is_dir });
+      showSuccess(`Usunięto: ${file.name}`);
+      loadFiles(currentPath);
+      if (selectedFile?.name === file.name) { setSelectedFile(null); setFileContent(''); }
+    } catch (err) {
+      showError(err.response?.data?.error || 'Nie można usunąć pliku');
+    }
+  };
+
+  const renameItem = async (file) => {
+    const newName = window.prompt(`Nowa nazwa dla "${file.name}":`, file.name);
+    if (!newName || newName === file.name) return;
+    const oldPath = currentPath ? `${currentPath}/${file.name}` : file.name;
+    const newPath = currentPath ? `${currentPath}/${newName}` : newName;
+    try {
+      await api.post(`/servers/${serverId}/files/rename`, { old_path: oldPath, new_path: newPath });
+      showSuccess(`Zmieniono nazwę na: ${newName}`);
+      loadFiles(currentPath);
+    } catch (err) {
+      showError(err.response?.data?.error || 'Nie można zmienić nazwy');
+    }
+  };
+
+  const downloadFile = async (file) => {
+    if (file.is_dir) { showInfo('Nie można pobrać folderu'); return; }
+    const fullPath = currentPath ? `${currentPath}/${file.name}` : file.name;
+    try {
+      const r = await api.get(`/servers/${serverId}/files/download`, {
+        params: { path: fullPath }, responseType: 'blob'
+      });
+      const url = URL.createObjectURL(new Blob([r.data]));
+      const a = document.createElement('a');
+      a.href = url; a.download = file.name; a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      showError('Błąd pobierania pliku');
+    }
+  };
+
+  const downloadCurrentFile = () => {
+    if (!selectedFile) return;
+    const blob = new Blob([fileContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = selectedFile.name; a.click();
+    URL.revokeObjectURL(url);
   };
 
   const getBreadcrumbItems = () => {
@@ -1003,22 +1036,42 @@ const handleFileUpload = async (event) => {
                     onClick={() => loadFileContent(file)}
                     selected={selectedFile && selectedFile.name === file.name}
                     title={file.is_dir ? t('files.directory') : `${t('files.file')}: ${file.name}`}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
                   >
-                    <FileIcon $isDir={file.is_dir}>
-                      {file.is_dir ? <FiFolder size={18} /> : <FiFile size={16} />}
-                    </FileIcon>
-                    <FileInfo>
-                      <FileName>
-                        {file.name}
-                        {!file.is_dir && <FileTypeIndicator>{getFileExtension(file.name)}</FileTypeIndicator>}
-                      </FileName>
-                      <FileMeta>
-                        <span>{formatDate(file.modified)}</span>
-                        {!file.is_dir && file.size !== undefined && (
-                          <FileSize>{formatFileSize(file.size)}</FileSize>
-                        )}
-                      </FileMeta>
-                    </FileInfo>
+                    <div style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}>
+                      <FileIcon $isDir={file.is_dir}>
+                        {file.is_dir ? <FiFolder size={18} /> : <FiFile size={16} />}
+                      </FileIcon>
+                      <FileInfo>
+                        <FileName>
+                          {file.name}
+                          {!file.is_dir && <FileTypeIndicator>{getFileExtension(file.name)}</FileTypeIndicator>}
+                        </FileName>
+                        <FileMeta>
+                          <span>{formatDate(file.modified)}</span>
+                          {!file.is_dir && file.size !== undefined && (
+                            <FileSize>{formatFileSize(file.size)}</FileSize>
+                          )}
+                        </FileMeta>
+                      </FileInfo>
+                    </div>
+                    <div style={{ display: 'flex', gap: 4, flexShrink: 0, marginLeft: 8 }}
+                      onClick={e => e.stopPropagation()}>
+                      {!file.is_dir && (
+                        <button title="Pobierz" onClick={() => downloadFile(file)}
+                          style={{ background: 'none', border: 'none', color: '#6b7293', cursor: 'pointer', padding: '3px 5px', borderRadius: 4 }}>
+                          <FiDownload size={13} />
+                        </button>
+                      )}
+                      <button title="Zmień nazwę" onClick={() => renameItem(file)}
+                        style={{ background: 'none', border: 'none', color: '#6b7293', cursor: 'pointer', padding: '3px 5px', borderRadius: 4 }}>
+                        <FiEdit2 size={13} />
+                      </button>
+                      <button title="Usuń" onClick={() => deleteItem(file)}
+                        style={{ background: 'none', border: 'none', color: '#6b7293', cursor: 'pointer', padding: '3px 5px', borderRadius: 4 }}>
+                        <FiTrash2 size={13} />
+                      </button>
+                    </div>
                   </FileItem>
                 ))}
                 
@@ -1054,7 +1107,7 @@ const handleFileUpload = async (event) => {
                   >
                     <FiSave /> {saving ? t('files.saving') : t('files.save')}
                   </ActionButton>
-                  <ActionButton disabled title={t('files.download')}>
+                  <ActionButton onClick={downloadCurrentFile} title={t('files.download')}>
                     <FiDownload /> {t('files.download')}
                   </ActionButton>
                 </EditorActions>

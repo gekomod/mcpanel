@@ -465,7 +465,22 @@ class ServerManager:
         
         try:
             if server_data['type'] == 'java':
-                cmd = self._get_java_start_command(server_path, server_data)
+                # Find the server jar file
+                import glob as _glob
+                jar_files = _glob.glob(os.path.join(server_path, '*.jar'))
+                # Prefer server.jar, paper.jar, purpur.jar over others
+                priority = ['server.jar', 'paper.jar', 'purpur.jar', 'spigot.jar', 'craftbukkit.jar', 'fabric-server-launch.jar']
+                jar_file = None
+                for pname in priority:
+                    candidate = os.path.join(server_path, pname)
+                    if os.path.exists(candidate):
+                        jar_file = pname
+                        break
+                if not jar_file and jar_files:
+                    jar_file = os.path.basename(jar_files[0])
+                if not jar_file:
+                    return False, "No server JAR file found - install the server first"
+                cmd = self._get_java_start_command(server_path, jar_file, server_data)
             else:  # bedrock
                 cmd = self._get_bedrock_start_command(server_path, server_data)
             
@@ -489,7 +504,9 @@ class ServerManager:
                     'status': 'running',
                     'type': server_data['type'],
                     'start_time': datetime.now(),
-                    'output_buffer': []
+                    'output_buffer': [],
+                    'player_count': 0,
+                    'players': []
                 }
             
             # Uruchom wątek do przechwytywania outputu
@@ -533,19 +550,17 @@ class ServerManager:
         java_cmd = self._find_java_executable()
     
         # Optymalne argumenty JVM dla małej pamięci
-        jvm_args = [
+        jvm_flags = [
             f'-Xmx{memory}',
             f'-Xms{memory}',
             '-XX:+UseG1GC',
             '-XX:+UnlockExperimentalVMOptions',
             '-XX:MaxGCPauseMillis=100',
-            '-jar', jar_file,
-            'nogui'
         ]
     
         # Dla małej pamięci (<2GB) użyj bardziej agresywnych ustawień
         if 'M' in memory or ('G' in memory and float(memory.replace('G', '')) < 2):
-            jvm_args.extend([
+            jvm_flags.extend([
                 '-XX:+DisableExplicitGC',
                 '-XX:G1NewSizePercent=30',
                 '-XX:G1MaxNewSizePercent=40',
@@ -554,7 +569,7 @@ class ServerManager:
                 '-XX:InitiatingHeapOccupancyPercent=15'
             ])
     
-        cmd = [java_cmd] + jvm_args
+        cmd = [java_cmd] + jvm_flags + ['-jar', jar_file, 'nogui']
         return cmd
     
     def _get_bedrock_start_command(self, server_path, server_data):
@@ -651,17 +666,19 @@ class ServerManager:
                 
                 if line:
                     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    formatted_line = f"[{timestamp}] {line.strip()}\n"
+                    raw_line = line.strip()
+                    formatted_line = f"[{timestamp}] {raw_line}\n"
                     output_buffer.append(formatted_line)
                     
                     # Ogranicz bufor do 1000 linii
                     if len(output_buffer) > 1000:
                         output_buffer.pop(0)
                     
-                    # Zapisz w pamięci
+                    # Zapisz w pamięci + śledź graczy
                     with self.lock:
                         if server_name in self.server_info:
                             self.server_info[server_name]['output_buffer'] = output_buffer
+                            self._update_player_count(server_name, raw_line)
                     
                     # Zapisz do pliku
                     self._write_to_log_file(server_name, formatted_line)
@@ -675,6 +692,55 @@ class ServerManager:
             if server_name in self.server_info:
                 self.server_info[server_name]['status'] = 'stopped'
     
+    def _update_player_count(self, server_name, line):
+        """Parsuj linie logu i aktualizuj licznik graczy. Wywoluj wewnatrz self.lock."""
+        import re
+        info = self.server_info.get(server_name)
+        if not info:
+            return
+
+        # Bedrock: "Player Spawned: <name> xuid: ..."
+        m = re.search(r'Player Spawned: (\S+)', line)
+        if m:
+            name = m.group(1)
+            players = info.setdefault('players', [])
+            if name not in players:
+                players.append(name)
+            info['player_count'] = len(players)
+            logger.info(f"[{server_name}] + {name} ({info['player_count']} online)")
+            return
+
+        # Bedrock: "Player disconnected: <name>, xuid: ..."
+        m = re.search(r'Player disconnected: (\S+)', line)
+        if m:
+            name = m.group(1).rstrip(',')
+            players = info.setdefault('players', [])
+            if name in players:
+                players.remove(name)
+            info['player_count'] = len(players)
+            logger.info(f"[{server_name}] - {name} ({info['player_count']} online)")
+            return
+
+        # Java: "<name> joined the game" / "<name> left the game"
+        m = re.search(r': (\S+) joined the game', line)
+        if m:
+            name = m.group(1)
+            players = info.setdefault('players', [])
+            if name not in players:
+                players.append(name)
+            info['player_count'] = len(players)
+            logger.info(f"[{server_name}] + {name} ({info['player_count']} online)")
+            return
+
+        m = re.search(r': (\S+) left the game', line)
+        if m:
+            name = m.group(1)
+            players = info.setdefault('players', [])
+            if name in players:
+                players.remove(name)
+            info['player_count'] = len(players)
+            logger.info(f"[{server_name}] - {name} ({info['player_count']} online)")
+
     def _write_to_log_file(self, server_name, line):
         """Zapisz linię do pliku logu"""
         try:
@@ -1124,9 +1190,15 @@ class MCPanelAgent:
             """Endpoint do pobierania statusu serwera"""
             try:
                 status = self.server_manager.get_server_status(server_name)
+                with self.server_manager.lock:
+                    info = self.server_manager.server_info.get(server_name, {})
+                    player_count = info.get('player_count', 0)
+                    players = list(info.get('players', []))
                 return jsonify({
                     'server': server_name,
-                    'status': status
+                    'status': status,
+                    'player_count': player_count,
+                    'players': players
                 })
                 
             except Exception as e:

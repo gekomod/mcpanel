@@ -21,6 +21,7 @@ class ServerManager:
         self.download_threads = {}
         self.download_processes = {} 
         self.server_outputs = {} 
+        self.server_players = {}   # server_id -> list of player names
         self.lock = threading.Lock()
     
     def get_server_path(self, server_name):
@@ -842,12 +843,12 @@ class ServerManager:
     # Pozostałe metody bez zmian (stop_server, send_command, etc.)
     def stop_server(self, server_id):
         try:
-            if server_id not in self.processes:
-                if server_id in self.download_progress:
-                    del self.download_progress[server_id]
-                return False, "Server not running"
-            
-            process = self.processes[server_id]
+            with self.lock:
+                if server_id not in self.processes:
+                    if server_id in self.download_progress:
+                        del self.download_progress[server_id]
+                    return False, "Server not running"
+                process = self.processes[server_id]
             
             try:
                 if process.stdin:
@@ -946,6 +947,7 @@ class ServerManager:
             
                 with self.lock:
                     self.server_outputs[server_id] = output_buffer
+                    self._update_player_count(server_id, line.strip())
             
                 print(f"Server {server_id}: {line.strip()}")
             
@@ -978,6 +980,8 @@ class ServerManager:
             del self.processes[server_id]
         if server_id in self.output_listeners:
             del self.output_listeners[server_id]
+        with self.lock:
+            self.server_players[server_id] = []
         if server_id in self.server_outputs:
             del self.server_outputs[server_id]
     
@@ -1183,6 +1187,41 @@ class ServerManager:
         except Exception as e:
             print(f"Error creating default server properties: {e}")
     
+    def _update_player_count(self, server_id, line):
+        """Parsuj linię logu i aktualizuj listę graczy. Wywołuj wewnątrz self.lock."""
+        import re
+        players = self.server_players.setdefault(server_id, [])
+
+        # Bedrock: "Player Spawned: <name> xuid: ..."
+        m = re.search(r'Player Spawned: (\S+)', line)
+        if m:
+            name = m.group(1)
+            if name not in players:
+                players.append(name)
+            return
+
+        # Bedrock: "Player disconnected: <name>, xuid: ..."
+        m = re.search(r'Player disconnected: (\S+)', line)
+        if m:
+            name = m.group(1).rstrip(',')
+            if name in players:
+                players.remove(name)
+            return
+
+        # Java: "<name> joined the game" / "<name> left the game"
+        m = re.search(r': (\S+) joined the game', line)
+        if m:
+            name = m.group(1)
+            if name not in players:
+                players.append(name)
+            return
+
+        m = re.search(r': (\S+) left the game', line)
+        if m:
+            name = m.group(1)
+            if name in players:
+                players.remove(name)
+
     def get_server_status(self, server_id):
         """Get detailed status of a server"""
         from flask import current_app

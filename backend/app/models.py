@@ -158,7 +158,9 @@ class User(db.Model):
         return {
             'id': self.id,
             'username': self.username,
+            'email': self.email,
             'role': self.role,
+            'is_active': self.is_active,
             'full_name': self.full_name,
             'avatar_url': self.avatar_url,
             'created_at': self.created_at.isoformat()
@@ -529,4 +531,33 @@ class AgentHeartbeat(db.Model):
             'disk_usage': self.disk_usage,
             'running_servers': self.running_servers,
             'timestamp': self.timestamp.isoformat()
+        }
+
+class ScheduledTask(db.Model):
+    """Zaplanowane zadania dla serwerów (restart, backup, komenda)"""
+    id = db.Column(db.Integer, primary_key=True)
+    server_id = db.Column(db.Integer, db.ForeignKey('server.id'), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    task_type = db.Column(db.String(20), nullable=False)  # restart, stop, start, command
+    cron_expr = db.Column(db.String(50), nullable=False)   # np. "0 3 * * *"
+    command = db.Column(db.String(500), nullable=True)     # dla type=command
+    enabled = db.Column(db.Boolean, default=True)
+    last_run = db.Column(db.DateTime, nullable=True)
+    next_run = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    server = db.relationship('Server', backref=db.backref('scheduled_tasks', lazy=True))
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'server_id': self.server_id,
+            'name': self.name,
+            'task_type': self.task_type,
+            'cron_expr': self.cron_expr,
+            'command': self.command,
+            'enabled': self.enabled,
+            'last_run': self.last_run.isoformat() if self.last_run else None,
+            'next_run': self.next_run.isoformat() if self.next_run else None,
+            'created_at': self.created_at.isoformat()
         }

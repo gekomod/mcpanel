@@ -225,9 +225,9 @@ function ChangePassword() {
 		  confirm_password: confirmPassword
 		});
       
-      if (result.success) {
+      if (result.data?.success) {
         setIsSuccess(true);
-        setMessage(result.message || 'Hasło zostało pomyślnie zmienione!');
+        setMessage(result.data?.message || 'Hasło zostało pomyślnie zmienione!');
         
         // Wyczyść pola po sukcesie
         setCurrentPassword('');
@@ -240,7 +240,7 @@ function ChangePassword() {
         }, 2000);
       } else {
         setIsSuccess(false);
-        setMessage(result.message || 'Wystąpił błąd podczas zmiany hasła');
+        setMessage(result.data?.message || 'Wystąpił błąd podczas zmiany hasła');
       }
       
     } catch (error) {

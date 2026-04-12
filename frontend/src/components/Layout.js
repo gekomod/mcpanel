@@ -263,8 +263,8 @@ function Layout({ children }) {
     { path: '/support', icon: FiHelpCircle, label: t('nav.support') },
   ];
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate('/login');
   };
 

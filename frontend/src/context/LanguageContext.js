@@ -57,8 +57,7 @@ const t = (key, params = {}) => {
     } else if (translations[defaultLanguage] && translations[defaultLanguage][key] !== undefined) {
       translation = translations[defaultLanguage][key];
     } else {
-      console.warn(`Translation not found for key: ${key}`);
-      return key;
+      return key; // missing translation
     }
 
     if (params && typeof params === 'object') {
@@ -69,7 +68,6 @@ const t = (key, params = {}) => {
     
     return translation;
   } catch (error) {
-    console.error('Translation error:', error);
     return key;
   }
 };

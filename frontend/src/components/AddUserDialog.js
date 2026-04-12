@@ -1,334 +1,193 @@
 import React, { useState } from 'react';
-import styled from 'styled-components';
-import { FiX, FiUserPlus, FiEye, FiEyeOff } from 'react-icons/fi';
+import styled, { keyframes } from 'styled-components';
+import { FiX, FiUserPlus, FiUser, FiMail, FiLock, FiEye, FiEyeOff, FiCheck, FiAlertCircle } from 'react-icons/fi';
 import api from '../services/api';
-import { useLanguage } from '../context/LanguageContext';
+import { toast } from 'react-toastify';
 
-const DialogOverlay = styled.div`
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
+const fadeIn = keyframes`from{opacity:0}to{opacity:1}`;
+const slideUp = keyframes`from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}`;
+
+const Overlay = styled.div`
+  position:fixed;inset:0;background:rgba(0,0,0,.75);
+  display:flex;align-items:center;justify-content:center;z-index:9999;
+  animation:${fadeIn} .2s ease;padding:20px;
+`;
+const Modal = styled.div`
+  background:#2e3245;border-radius:14px;padding:28px 32px;
+  width:100%;max-width:440px;border:1px solid #3a3f57;
+  box-shadow:0 20px 60px rgba(0,0,0,.5);
+  animation:${slideUp} .25s ease;
+`;
+const Head = styled.div`
+  display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid #3a3f57;
+`;
+const Title = styled.h2`
+  font-size:18px;font-weight:700;color:#fff;margin:0;
+  display:flex;align-items:center;gap:10px;
+`;
+const CloseBtn = styled.button`
+  background:none;border:none;color:#6b7293;cursor:pointer;padding:4px;
+  display:flex;align-items:center;border-radius:6px;
+  &:hover{color:#fff;background:#35394e;}
 `;
 
-const DialogContent = styled.div`
-  background: white;
-  border-radius: 12px;
-  padding: 24px;
-  width: 90%;
-  max-width: 500px;
-  max-height: 90vh;
-  overflow-y: auto;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
-`;
-
-const DialogHeader = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-  padding-bottom: 15px;
-  border-bottom: 1px solid #e5e7eb;
-`;
-
-const DialogTitle = styled.h2`
-  margin: 0;
-  font-size: 1.5rem;
-  color: #374151;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-`;
-
-const CloseButton = styled.button`
-  background: none;
-  border: none;
-  font-size: 1.5rem;
-  cursor: pointer;
-  color: #6b7280;
-  padding: 5px;
-  border-radius: 6px;
-  
-  &:hover {
-    background: #f3f4f6;
-    color: #374151;
-  }
-`;
-
-const Form = styled.form`
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-`;
-
-const FormGroup = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-`;
-
+const Field = styled.div`margin-bottom:16px;`;
 const Label = styled.label`
-  font-weight: 500;
-  color: #374151;
-  font-size: 0.9rem;
+  display:block;font-size:13px;font-weight:500;color:#a4aabc;margin-bottom:6px;
 `;
-
+const InputWrap = styled.div`
+  display:flex;align-items:center;gap:10px;
+  background:#1a1f35;border:1.5px solid ${p=>p.$focus?'#3b82f6':'#2a2f4a'};
+  border-radius:9px;padding:0 14px;transition:border-color .2s;
+`;
+const IIcon = styled.span`color:#4b5268;font-size:15px;flex-shrink:0;`;
 const Input = styled.input`
-  padding: 12px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  font-size: 1rem;
-  
-  &:focus {
-    outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-  }
-  
-  &:disabled {
-    background-color: #f9fafb;
-    color: #6b7280;
-  }
+  flex:1;background:transparent;border:none;outline:none;
+  color:#fff;font-size:14px;padding:11px 0;
+  &::placeholder{color:#3a4060;}
+`;
+const ToggleBtn = styled.button`
+  background:none;border:none;color:#4b5268;cursor:pointer;
+  display:flex;align-items:center;padding:2px;
+  &:hover{color:#a4aabc;}
 `;
 
-const PasswordInputWrapper = styled.div`
-  position: relative;
+const ErrBox = styled.div`
+  background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);
+  border-radius:8px;padding:10px 13px;margin-bottom:14px;
+  display:flex;align-items:center;gap:8px;color:#f87171;font-size:13px;
+`;
+const OkBox = styled.div`
+  background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.25);
+  border-radius:8px;padding:10px 13px;margin-bottom:14px;
+  display:flex;align-items:center;gap:8px;color:#10b981;font-size:13px;
 `;
 
-const TogglePasswordButton = styled.button`
-  position: absolute;
-  right: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  background: none;
-  border: none;
-  color: #6b7280;
-  cursor: pointer;
-  padding: 5px;
-  
-  &:hover {
-    color: #374151;
-  }
+const BtnRow = styled.div`
+  display:flex;justify-content:flex-end;gap:10px;
+  margin-top:22px;padding-top:16px;border-top:1px solid #3a3f57;
 `;
-
-const ErrorMessage = styled.div`
-  color: #dc2626;
-  font-size: 0.9rem;
-  margin-top: 4px;
+const CancelBtn = styled.button`
+  padding:9px 18px;background:#35394e;color:#a4aabc;border:none;border-radius:8px;
+  cursor:pointer;font-size:14px;transition:all .2s;
+  &:hover{background:#3d4260;color:#fff;}
 `;
-
-const SuccessMessage = styled.div`
-  color: #059669;
-  font-size: 0.9rem;
-  margin-top: 4px;
-`;
-
-const ButtonGroup = styled.div`
-  display: flex;
-  gap: 12px;
-  justify-content: flex-end;
-  margin-top: 20px;
-`;
-
-const Button = styled.button`
-  padding: 12px 20px;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  transition: all 0.2s;
-  
-  ${props => props.$variant === 'primary' ? `
-    background: #10b981;
-    color: white;
-    
-    &:hover:not(:disabled) {
-      background: #059669;
-    }
-  ` : `
-    background: #f3f4f6;
-    color: #374151;
-    
-    &:hover:not(:disabled) {
-      background: #e5e7eb;
-    }
-  `}
-  
-  &:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
+const SubmitBtn = styled.button`
+  padding:9px 20px;background:#3b82f6;color:#fff;border:none;border-radius:8px;
+  cursor:pointer;font-size:14px;font-weight:500;
+  display:flex;align-items:center;gap:7px;transition:all .2s;
+  &:hover:not(:disabled){background:#2563eb;}
+  &:disabled{opacity:.5;cursor:not-allowed;}
 `;
 
 function AddUserDialog({ isOpen, onClose, onUserAdded }) {
-  const [formData, setFormData] = useState({
-    username: '',
-    email: '',
-    password: ''
-  });
-  const [showPassword, setShowPassword] = useState(false);
+  const [form, setForm] = useState({ username: '', email: '', password: '' });
+  const [showPwd, setShowPwd] = useState(false);
+  const [focus, setFocus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const { t } = useLanguage(); // Dodaj hook tłumaczeń
 
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
-    
-    // Clear messages when user starts typing
+  if (!isOpen) return null;
+
+  const reset = () => {
+    setForm({ username: '', email: '', password: '' });
+    setError(''); setSuccess(''); setFocus(null);
+  };
+
+  const handleClose = () => { reset(); onClose(); };
+
+  const handleChange = (field) => (e) => {
+    setForm(p => ({ ...p, [field]: e.target.value }));
     if (error) setError('');
-    if (success) setSuccess('');
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!form.username.trim() || !form.email.trim() || !form.password) {
+      setError('Wszystkie pola są wymagane'); return;
+    }
+    if (form.password.length < 6) {
+      setError('Hasło musi mieć co najmniej 6 znaków'); return;
+    }
     setLoading(true);
-    setError('');
-    setSuccess('');
-
     try {
-      const response = await api.post('/auth/register', formData);
-      
-      setSuccess(t('user.add.success') || 'User created successfully!');
-      setFormData({ username: '', email: '', password: '' });
-      
-      // Callback to refresh users list
-      if (onUserAdded) {
-        onUserAdded();
-      }
-      
-      // Auto-close after 2 seconds
-      setTimeout(() => {
-        onClose();
-      }, 2000);
-      
-    } catch (error) {
-      console.error('Error creating user:', error);
-      const errorMessage = error.response?.data?.error || t('user.add.error') || 'Failed to create user';
-      setError(errorMessage);
-      toast.error(errorMessage); // Dodaj toast error
+      await api.post('/auth/register', form);
+      setSuccess('Użytkownik utworzony!');
+      toast.success(`Użytkownik "${form.username}" dodany`);
+      if (onUserAdded) onUserAdded();
+      setTimeout(() => { reset(); onClose(); }, 1500);
+    } catch (err) {
+      const msg = err.response?.data?.error || 'Błąd tworzenia użytkownika';
+      setError(msg);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleClose = () => {
-    setFormData({ username: '', email: '', password: '' });
-    setError('');
-    setSuccess('');
-    onClose();
-  };
-
-  if (!isOpen) return null;
+  const F = (field) => ({
+    value: form[field],
+    onChange: handleChange(field),
+    onFocus: () => setFocus(field),
+    onBlur: () => setFocus(null),
+  });
 
   return (
-    <DialogOverlay onClick={handleClose}>
-      <DialogContent onClick={(e) => e.stopPropagation()}>
-        <DialogHeader>
-          <DialogTitle>
-            <FiUserPlus />
-            {t('user.add.title') || 'Add New User'}
-          </DialogTitle>
-          <CloseButton onClick={handleClose}>
-            <FiX />
-          </CloseButton>
-        </DialogHeader>
+    <Overlay onClick={handleClose}>
+      <Modal onClick={e => e.stopPropagation()}>
+        <Head>
+          <Title><FiUserPlus size={18} /> Nowy użytkownik</Title>
+          <CloseBtn onClick={handleClose}><FiX size={20} /></CloseBtn>
+        </Head>
 
-        <Form onSubmit={handleSubmit}>
-          <FormGroup>
-            <Label htmlFor="username">{t('user.username') || 'Username'} *</Label>
-            <Input
-              type="text"
-              id="username"
-              name="username"
-              value={formData.username}
-              onChange={handleInputChange}
-              required
-              disabled={loading}
-              placeholder={t('user.username.placeholder') || 'Enter username'}
-            />
-          </FormGroup>
+        {error && <ErrBox><FiAlertCircle size={15} /> {error}</ErrBox>}
+        {success && <OkBox><FiCheck size={15} /> {success}</OkBox>}
 
-          <FormGroup>
-            <Label htmlFor="email">{t('user.email') || 'Email'} *</Label>
-            <Input
-              type="email"
-              id="email"
-              name="email"
-              value={formData.email}
-              onChange={handleInputChange}
-              required
-              disabled={loading}
-              placeholder={t('user.email.placeholder') || 'user@example.com'}
-            />
-          </FormGroup>
+        <form onSubmit={handleSubmit} autoComplete="off">
+          <Field>
+            <Label>Nazwa użytkownika *</Label>
+            <InputWrap $focus={focus === 'username'}>
+              <IIcon><FiUser size={15} /></IIcon>
+              <Input type="text" placeholder="np. jankowalski" {...F('username')} />
+            </InputWrap>
+          </Field>
 
-          <FormGroup>
-            <Label htmlFor="password">{t('user.password') || 'Password'} *</Label>
-            <PasswordInputWrapper>
+          <Field>
+            <Label>Adres email *</Label>
+            <InputWrap $focus={focus === 'email'}>
+              <IIcon><FiMail size={15} /></IIcon>
+              <Input type="email" placeholder="jan@example.com" {...F('email')} />
+            </InputWrap>
+          </Field>
+
+          <Field>
+            <Label>Hasło * (min. 6 znaków)</Label>
+            <InputWrap $focus={focus === 'password'}>
+              <IIcon><FiLock size={15} /></IIcon>
               <Input
-                type={showPassword ? 'text' : 'password'}
-                id="password"
-                name="password"
-                value={formData.password}
-                onChange={handleInputChange}
-                required
-                disabled={loading}
-                placeholder={t('user.password.placeholder') || 'Enter password'}
-                minLength="6"
+                type={showPwd ? 'text' : 'password'}
+                placeholder="••••••••"
+                value={form.password}
+                onChange={handleChange('password')}
+                onFocus={() => setFocus('password')}
+                onBlur={() => setFocus(null)}
               />
-              <TogglePasswordButton
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                disabled={loading}
-                title={showPassword ? t('user.password.hide') || 'Hide password' : t('user.password.show') || 'Show password'}
-              >
-                {showPassword ? <FiEyeOff /> : <FiEye />}
-              </TogglePasswordButton>
-            </PasswordInputWrapper>
-          </FormGroup>
+              <ToggleBtn type="button" onClick={() => setShowPwd(s => !s)} tabIndex={-1}>
+                {showPwd ? <FiEyeOff size={15} /> : <FiEye size={15} />}
+              </ToggleBtn>
+            </InputWrap>
+          </Field>
 
-          {error && <ErrorMessage>{error}</ErrorMessage>}
-          {success && <SuccessMessage>{success}</SuccessMessage>}
-
-          <ButtonGroup>
-            <Button
-              type="button"
-              onClick={handleClose}
-              disabled={loading}
-            >
-              <FiX /> {t('common.cancel') || 'Cancel'}
-            </Button>
-            <Button
-              type="submit"
-              $variant="primary"
-              disabled={loading || !formData.username || !formData.email || !formData.password}
-            >
-              {loading ? (
-                t('user.add.creating') || 'Creating...'
-              ) : (
-                <>
-                  <FiUserPlus /> {t('user.add.create') || 'Create User'}
-                </>
-              )}
-            </Button>
-          </ButtonGroup>
-        </Form>
-      </DialogContent>
-    </DialogOverlay>
+          <BtnRow>
+            <CancelBtn type="button" onClick={handleClose}>Anuluj</CancelBtn>
+            <SubmitBtn type="submit" disabled={loading}>
+              {loading ? 'Tworzenie...' : <><FiCheck size={14} /> Utwórz</>}
+            </SubmitBtn>
+          </BtnRow>
+        </form>
+      </Modal>
+    </Overlay>
   );
 }
 

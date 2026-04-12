@@ -448,12 +448,21 @@ function UpdateAdminManager() {
   // Pobierz aktualną wersję z systemu
   const getCurrentVersion = async () => {
     try {
-      // W prawdziwej aplikacji to powinno być z API systemu
-      // Na razie zwracamy pusty string - pobierzemy z GitHub
-      return '';
-    } catch (error) {
-      console.error('Error getting current version:', error);
-      return '';
+      // Próba pobrania wersji z backendu
+      const r = await fetch('/api/version').catch(() => null);
+      if (r && r.ok) {
+        const data = await r.json();
+        return data.version || '';
+      }
+      // Fallback: wersja z package.json (dostępna przez manifest)
+      const manifest = await fetch('/manifest.json').catch(() => null);
+      if (manifest && manifest.ok) {
+        const data = await manifest.json();
+        return data.version || '1.0.0';
+      }
+      return '1.0.0';
+    } catch {
+      return '1.0.0';
     }
   };
 
@@ -493,7 +502,6 @@ function UpdateAdminManager() {
       await loadGitHubData(currentVer);
       
     } catch (error) {
-      console.error('Error loading data:', error);
       toast.error('Błąd podczas ładowania danych');
     } finally {
       setLoading(false);
@@ -502,26 +510,16 @@ function UpdateAdminManager() {
 
   const loadGitHubData = async (currentVersion) => {
     try {
-      console.log('Ładowanie danych z GitHub...');
-      
       // Pobieranie informacji o repozytorium
       const repoResponse = await fetch(`${GITHUB_API_BASE}/${GITHUB_REPO}`);
       if (!repoResponse.ok) throw new Error(`GitHub API error: ${repoResponse.status}`);
       const repoData = await repoResponse.json();
-      console.log('Repo data:', repoData);
-      
       // Pobieranie ostatnich wydań
       const releasesResponse = await fetch(`${GITHUB_API_BASE}/${GITHUB_REPO}/releases`);
       if (!releasesResponse.ok) throw new Error(`GitHub releases error: ${releasesResponse.status}`);
       const releasesData = await releasesResponse.json();
-      console.log('Releases data:', releasesData);
-
       const latestRelease = releasesData[0];
       const latestVersion = latestRelease ? latestRelease.tag_name : null;
-
-      console.log('Latest release:', latestRelease);
-      console.log('Latest version:', latestVersion);
-
       // Jeśli nie mamy aktualnej wersji z systemu, użyj najnowszej z GitHub
       let actualCurrentVersion = currentVersion;
       if (!actualCurrentVersion && latestVersion) {
@@ -570,8 +568,6 @@ function UpdateAdminManager() {
       }
 
     } catch (error) {
-      console.error('Error loading GitHub data:', error);
-      
       // Pokaż prawdziwy błąd
       setUpdateStatus('error');
       setCurrentVersion('unknown');
@@ -629,7 +625,6 @@ function UpdateAdminManager() {
       setUpdateStatus('checking');
       await loadGitHubData(currentVersion);
     } catch (error) {
-      console.error('Error checking updates:', error);
       setUpdateStatus('error');
       toast.error('Błąd podczas sprawdzania aktualizacji');
     }
@@ -667,7 +662,6 @@ function UpdateAdminManager() {
       }, 200);
 
     } catch (error) {
-      console.error('Error during update:', error);
       setIsUpdating(false);
       toast.error('Błąd podczas aktualizacji systemu');
     }

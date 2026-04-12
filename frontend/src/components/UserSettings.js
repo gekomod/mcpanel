@@ -363,9 +363,11 @@ function UserSettings() {
   const fetchNotificationSettings = async () => {
     try {
       const response = await api.get('/user/notifications');
-      setNotificationSettings(response.data);
+      if (response.data && typeof response.data === 'object') {
+        setNotificationSettings(response.data);
+      }
     } catch (error) {
-      console.error('Error fetching notification settings:', error);
+      // silent - non-critical
     }
   };
 
